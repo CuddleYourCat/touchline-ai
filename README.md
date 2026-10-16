@@ -10,7 +10,17 @@ Built for **Inside the Game: Developer Hackathon** (October 2026).
 
 ## Status
 
-Kick-off: repository and architecture decisions. See [DECISIONS.md](DECISIONS.md).
+Kick-off: solution skeleton with Aspire, OpenTelemetry defaults and CI. See [DECISIONS.md](DECISIONS.md) for the architecture decisions.
+
+## Run it locally
+
+Requires the .NET 10 SDK and Docker.
+
+```bash
+dotnet run --project src/Touchline.AppHost
+```
+
+The Aspire dashboard opens with the simulator and the Match Centre API. `GET /api/status` on the Match Centre confirms it is up.
 
 ## Architecture
 

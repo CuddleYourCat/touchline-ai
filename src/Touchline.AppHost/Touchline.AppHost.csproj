@@ -1,0 +1,14 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.1">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Touchline.Simulator\Touchline.Simulator.csproj" />
+    <ProjectReference Include="..\Touchline.MatchCentre\Touchline.MatchCentre.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AspireUseCliBundle>true</AspireUseCliBundle>
+    <UserSecretsId>e823ed02-d746-456b-afbe-e0a5faeab90e</UserSecretsId>
+  </PropertyGroup>
+
+</Project>

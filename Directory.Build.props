@@ -9,4 +9,9 @@
     <AnalysisLevel>latest</AnalysisLevel>
   </PropertyGroup>
 
+  <!-- Public API must carry XML doc comments. Missing ones fail the build (CS1591 under warnings-as-errors). -->
+  <PropertyGroup Condition="!$(MSBuildProjectName.Contains('Tests'))">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
 </Project>

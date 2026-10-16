@@ -128,6 +128,30 @@ Squashing loses the intermediate commit history of each branch. A revision label
 
 ---
 
+## ADR-010 — Projects are added when a stage needs them, around a pure domain
+
+**Status:** Accepted · Kick-off
+
+**Decision**
+The solution starts with only the projects Kick-off needs: `Touchline.AppHost`, `Touchline.ServiceDefaults`, `Touchline.Domain`, `Touchline.Simulator`, `Touchline.MatchCentre` and `Touchline.Tests.Unit`. Later projects arrive with the stage that first uses them:
+- `Touchline.EventProcessor` (Azure Functions) in Stage 1.
+- `Touchline.Agents` and `Touchline.Tests.Integration` in Stage 3.
+- `Touchline.Infrastructure`, but only once two services need the same Azure adapter.
+
+`Touchline.Domain` stays pure C#, and a unit test fails the build if it ever references an Azure or AI package.
+
+**Alternatives considered**
+- **Every planned project up front.** The whole shape is visible on day one, but several projects would sit empty for a week, and the Functions project can't run locally until Azure Functions Core Tools is installed.
+- **Layered like ai-doc-intelligence** (Domain, Application, Infrastructure shared by every deployable). Familiar, but there are more layers to cross per change, and the deployables would share more code than an event-driven system needs.
+
+**Rationale**
+Each deployable owns its Azure plumbing until sharing it is clearly worth it. The pure domain holds the football logic (events, team profiles, match state, key-moment rules), which is where the skill shots happen, so it must test without any cloud dependency.
+
+**Trade-offs**
+The solution's shape changes between stages, and the first shared adapter means a refactor to move code into `Touchline.Infrastructure`.
+
+---
+
 ## ADR-006 — Agent orchestration framework
 
 **Status:** Proposed · needed before Stage 3

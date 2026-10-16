@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Touchline.AppHost/Touchline.AppHost.csproj" />
+    <Project Path="src/Touchline.Domain/Touchline.Domain.csproj" />
+    <Project Path="src/Touchline.MatchCentre/Touchline.MatchCentre.csproj" />
+    <Project Path="src/Touchline.ServiceDefaults/Touchline.ServiceDefaults.csproj" />
+    <Project Path="src/Touchline.Simulator/Touchline.Simulator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Touchline.Tests.Unit/Touchline.Tests.Unit.csproj" />
+  </Folder>
+</Solution>
