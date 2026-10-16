@@ -1,0 +1,34 @@
+# Normalise all text files to LF in the repository
+* text=auto eol=lf
+
+# Explicitly LF
+*.cs        text eol=lf
+*.csproj    text eol=lf
+*.sln       text eol=lf
+*.props     text eol=lf
+*.targets   text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+*.xml       text eol=lf
+*.sh        text eol=lf
+*.ps1       text eol=lf
+*.dockerfile text eol=lf
+Dockerfile  text eol=lf
+.editorconfig text eol=lf
+.gitignore  text eol=lf
+
+# Windows scripts stay CRLF
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# Binaries — no line ending conversion
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.xlsx      binary
+*.zip       binary

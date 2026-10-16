@@ -1,0 +1,72 @@
+# Personal working contract for Claude Code, kept out of the public repo.
+**/claude.md
+**/.github/instructions.md
+**/*.code-workspace
+
+# Build output
+bin/
+obj/
+out/
+
+# Visual Studio
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.rsuser
+
+# VS Code — local editor state stays out, but tasks.json is the committed
+# runbook for infra/deploy.ps1. The pattern must be `.vscode/*` and not
+# `.vscode/`: git does not descend into an excluded *directory*, so a negation
+# inside one can never match.
+.vscode/*
+!.vscode/tasks.json
+
+# Rider
+.idea/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Test results and coverage
+TestResults/
+coverage/
+*.trx
+*.coveragexml
+coverage.json
+coverage.cobertura.xml
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+# User secrets (local dev only — never commit)
+**/secrets.json
+**/*.Development.json.user
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Docker
+.dockerignore.local
+
+# Azure Functions
+local.settings.json
+
+# Publish profiles
+**/Properties/PublishProfiles/
+**/publish/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
