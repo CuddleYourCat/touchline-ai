@@ -106,6 +106,28 @@ Container Apps keeps running through the judging period, so we need a budget cap
 
 ---
 
+## ADR-009 — Trunk-based development with squash-merged slice PRs and a frozen submission revision
+
+**Status:** Accepted · Kick-off
+
+*Numbered 009 because it was decided after ADR-006 to ADR-008 were proposed. It sits here with the other accepted decisions.*
+
+**Decision**
+`main` is always deployable and deploys on every merge. Work happens on short-lived branches, one per slice, merged by pull request with a squash merge once CI and a code review pass. At submission, the `v1.0-submission` tag is deployed to a Container Apps revision labelled `judging`, and that revision is what the judges use.
+
+**Alternatives considered**
+- **GitFlow with `develop` and `main`.** A familiar structure, but a second long-lived branch adds merge overhead with no payoff for a single developer on an 11-day build.
+- **Committing straight to `main`.** The fastest option, but nothing stands between a broken build and the live deployment.
+- **Merge commits instead of squash.** Keeps every intermediate commit, but `main` becomes harder to read as a story of the build.
+
+**Rationale**
+Small slices and same-day merges keep `main` close to the live app. Each PR records why the slice exists. Pinning the judged version to a revision label means work after submission can't break what the judges are looking at.
+
+**Trade-offs**
+Squashing loses the intermediate commit history of each branch. A revision label pins the code, but the Azure resources behind it stay shared, so a schema change after submission could still affect the judged revision.
+
+---
+
 ## ADR-006 — Agent orchestration framework
 
 **Status:** Proposed · needed before Stage 3
