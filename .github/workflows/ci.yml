@@ -60,9 +60,11 @@ jobs:
       - name: Build and lint Bicep
         # Compiles without signing in to Azure. Linter warnings fail the job too,
         # so the template stays as clean as the C# (warnings as errors).
+        # "|| true": grep exits 1 when it has nothing left to print, which is the
+        # clean case, and the runner's bash -e would otherwise stop the step.
         run: |
           az bicep install
-          output=$(az bicep build --file infra/main.bicep --stdout 2>&1 >/dev/null)
+          output=$(az bicep build --file infra/main.bicep --stdout 2>&1 >/dev/null | grep -v "new Bicep release" || true)
           echo "$output"
           if echo "$output" | grep -qiE "warning|error"; then exit 1; fi
 

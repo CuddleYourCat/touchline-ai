@@ -40,8 +40,8 @@ param budgetStartDate string = utcNow('yyyy-MM-01')
 @description('Match Centre image. deploy.ps1 passes the image already running, so a redeploy never rolls back to the placeholder.')
 param matchCentreImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
-@description('GitHub repository (owner/name) whose main branch may deploy the app (ADR-013).')
-param githubRepository string = 'CuddleYourCat/touchline-ai'
+@description('Subject prefix of the GitHub OIDC tokens allowed to deploy (ADR-013). The repo uses immutable subjects, which carry the owner and repository IDs, so a deleted and recreated repo with the same name gets a different prefix. Read it with: gh api repos/<owner>/<repo>/actions/oidc/customization/sub')
+param githubSubjectPrefix string = 'repo:CuddleYourCat@37294565/touchline-ai@1422432373'
 
 @description('Ingress traffic rules. deploy.ps1 passes the live rules, so a redeploy keeps revision labels such as "judging" (ADR-009).')
 param matchCentreTraffic array = [
@@ -148,12 +148,13 @@ resource ciIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31
 
 // Trusts GitHub's OIDC tokens for this repository's main branch only, so a
 // workflow run from any other branch or fork can't obtain an Azure token.
+// The subject must match the token exactly, IDs included.
 resource ciGithubCredential 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
   parent: ciIdentity
   name: 'github-main'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${githubRepository}:ref:refs/heads/main'
+    subject: '${githubSubjectPrefix}:ref:refs/heads/main'
     audiences: ['api://AzureADTokenExchange']
   }
 }
