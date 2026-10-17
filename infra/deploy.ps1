@@ -1,0 +1,302 @@
+<#
+.SYNOPSIS
+    Previews, deploys or tears down the touchline-ai Azure environment.
+
+.DESCRIPTION
+    The single entry point for every operation against infra/main.bicep
+    (ADR-012), so the deployment procedure is version-controlled.
+
+    Nothing personal is ever stored in the template, a parameter file or this
+    script, because the repository is public. Who is deploying is worked out
+    at run time:
+      - A user login gets developer roles, and budget alerts go to the user's
+        sign-in email.
+      - A service principal login (CI) gets no developer roles, and budget
+        alerts go to -OwnerEmail or the BUDGET_ALERT_EMAIL environment variable.
+
+    Before every whatif or deploy, the script reads the live state that the
+    template would otherwise reset: the running Match Centre image, its ingress
+    traffic rules (including revision labels such as "judging", ADR-009) and
+    the budget's start date. Redeploying the infrastructure therefore never
+    rolls the app back to the placeholder or drops a revision label.
+
+.PARAMETER Action
+    whatif    Preview changes without applying them. Run it before every deploy
+              and read the summary line.
+    deploy    Create the resource group if it's missing, then apply the template.
+    teardown  Delete the whole resource group, then purge the Key Vault and
+              Foundry account it held, so their names are released.
+              Destructive; asks for confirmation unless -Force is supplied.
+    principal Print who the deployment would run as, then exit.
+
+.PARAMETER ResourceGroup
+    Target resource group (ADR-011).
+
+.PARAMETER Location
+    Azure region for a new resource group, and for purging soft-deleted resources.
+
+.PARAMETER MatchCentreImage
+    Optional. The Match Centre image to deploy, for example
+    crtouchline<suffix>.azurecr.io/matchcentre:<tag>. Leave it out to keep the
+    image that's already running (or the placeholder on a first deploy).
+
+.PARAMETER OwnerEmail
+    Optional. Where budget alerts go. Defaults to the signed-in user's email;
+    required (or BUDGET_ALERT_EMAIL) when signed in as a service principal.
+
+.PARAMETER Force
+    Skip the teardown confirmation. Intended for scripted use only.
+
+.EXAMPLE
+    ./infra/deploy.ps1 -Action whatif
+
+.EXAMPLE
+    ./infra/deploy.ps1 -Action deploy -MatchCentreImage crtouchline2ryqfwse6uqn4.azurecr.io/matchcentre:abc123
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [ValidateSet('whatif', 'deploy', 'teardown', 'principal')]
+    [string]$Action,
+
+    [string]$ResourceGroup = 'rg-touchline-ai',
+
+    [string]$Location = 'swedencentral',
+
+    [string]$MatchCentreImage,
+
+    [string]$OwnerEmail,
+
+    [switch]$Force
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$TemplateFile = Join-Path $PSScriptRoot 'main.bicep'
+
+# Must match the fixed names in main.bicep.
+$MatchCentreAppName = 'ca-matchcentre'
+$BudgetName = 'budget-touchline-ai'
+$BudgetApiVersion = '2023-11-01'
+
+# ── Who is deploying ──────────────────────────────────────────────────────────
+
+function Get-Deployer {
+    $account = az account show --query "{type: user.type, name: user.name, subscription: id}" -o json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $null -eq $account) {
+        throw "Not signed in to Azure. Run 'az login' first."
+    }
+
+    if ($account.type -eq 'user') {
+        $id = az ad signed-in-user show --query id -o tsv
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($id)) {
+            throw "Could not resolve the signed-in user's object ID."
+        }
+        $email = if ($OwnerEmail) { $OwnerEmail } else { $account.name }
+        return [pscustomobject]@{ Kind = 'user'; PrincipalId = $id.Trim(); Email = $email; Subscription = $account.subscription }
+    }
+
+    # A service principal (CI) has no developer to grant roles to, and its
+    # user.name is an app ID rather than an email address.
+    $email = if ($OwnerEmail) { $OwnerEmail } else { $env:BUDGET_ALERT_EMAIL }
+    if ([string]::IsNullOrWhiteSpace($email)) {
+        throw "Signed in as a service principal: pass -OwnerEmail or set BUDGET_ALERT_EMAIL for budget alerts."
+    }
+    return [pscustomobject]@{ Kind = 'servicePrincipal'; PrincipalId = ''; Email = $email; Subscription = $account.subscription }
+}
+
+# ── Live state the template would otherwise reset ─────────────────────────────
+
+# Returns $null when the resource doesn't exist yet (first deploy).
+function Get-LiveResource {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][string]$Query,
+        [string]$ApiVersion
+    )
+
+    $arguments = @('resource', 'show', '--ids', $Id, '--query', $Query, '-o', 'json')
+    if ($ApiVersion) { $arguments += @('--api-version', $ApiVersion) }
+
+    $json = az @arguments 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) { return $null }
+    return $json | ConvertFrom-Json
+}
+
+function Get-TemplateParameterFile {
+    param([Parameter(Mandatory)]$Deployer)
+
+    $groupId = "/subscriptions/$($Deployer.Subscription)/resourceGroups/$ResourceGroup"
+    $values = [ordered]@{
+        principalId = $Deployer.PrincipalId
+        ownerEmail  = $Deployer.Email
+    }
+
+    $app = Get-LiveResource -Id "$groupId/providers/Microsoft.App/containerApps/$MatchCentreAppName" `
+        -Query "{image: properties.template.containers[0].image, traffic: properties.configuration.ingress.traffic}"
+    if ($MatchCentreImage) {
+        $values.matchCentreImage = $MatchCentreImage
+    }
+    elseif ($app) {
+        $values.matchCentreImage = $app.image
+    }
+    if ($app -and $app.traffic) {
+        $values.matchCentreTraffic = @($app.traffic)
+    }
+
+    $budgetStart = Get-LiveResource -Id "$groupId/providers/Microsoft.Consumption/budgets/$BudgetName" `
+        -Query "properties.timePeriod.startDate" -ApiVersion $BudgetApiVersion
+    if ($budgetStart) {
+        # ConvertFrom-Json may already have turned it into a local DateTime; normalise to UTC.
+        $values.budgetStartDate = ([datetime]$budgetStart).ToUniversalTime().ToString('yyyy-MM-dd')
+    }
+
+    Write-Host "  Deploying as: $($Deployer.Kind)" -ForegroundColor DarkGray
+    Write-Host "  Match Centre image: $(if ($values.Contains('matchCentreImage')) { $values.matchCentreImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
+    if ($values.Contains('matchCentreTraffic')) {
+        Write-Host "  Keeping $(@($values.matchCentreTraffic).Count) live traffic rule(s)" -ForegroundColor DarkGray
+    }
+
+    $parameters = [ordered]@{}
+    foreach ($key in $values.Keys) { $parameters[$key] = @{ value = $values[$key] } }
+
+    $file = Join-Path ([System.IO.Path]::GetTempPath()) "touchline-ai-params-$([guid]::NewGuid()).json"
+    @{
+        '$schema'      = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
+        contentVersion = '1.0.0.0'
+        parameters     = $parameters
+    } | ConvertTo-Json -Depth 10 | Set-Content -Path $file -Encoding utf8
+    return $file
+}
+
+# Runs one teardown step and reports failure without aborting the rest, so a
+# resource that is already gone doesn't stop the next one being cleaned up.
+function Invoke-TeardownStep {
+    param(
+        [Parameter(Mandatory)][string]$Description,
+        [Parameter(Mandatory)][scriptblock]$Step
+    )
+
+    Write-Host "  $Description" -ForegroundColor Cyan
+    try {
+        & $Step
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    not found or already removed - continuing" -ForegroundColor DarkYellow
+        }
+    }
+    catch {
+        Write-Host "    $($_.Exception.Message) - continuing" -ForegroundColor DarkYellow
+    }
+}
+
+# ── Actions ───────────────────────────────────────────────────────────────────
+
+function Invoke-WhatIf {
+    Write-Host "`nPreviewing deployment to '$ResourceGroup'...`n" -ForegroundColor Cyan
+    $parameterFile = Get-TemplateParameterFile -Deployer (Get-Deployer)
+    try {
+        az deployment group what-if `
+            --resource-group $ResourceGroup `
+            --template-file $TemplateFile `
+            --parameters "@$parameterFile"
+        if ($LASTEXITCODE -ne 0) { throw "what-if failed." }
+    }
+    finally {
+        Remove-Item $parameterFile -ErrorAction SilentlyContinue
+    }
+
+    Write-Host "`nRead the 'Resource changes' summary above before deploying." -ForegroundColor Yellow
+    Write-Host "On a fresh group, anything other than Create deserves a second look.`n" -ForegroundColor Yellow
+}
+
+function Invoke-Deploy {
+    $exists = az group exists --name $ResourceGroup
+    if ($exists -ne 'true') {
+        # Tags are applied by the template (Microsoft.Resources/tags), not here.
+        Write-Host "`nCreating resource group '$ResourceGroup' in $Location..." -ForegroundColor Cyan
+        az group create --name $ResourceGroup --location $Location --output none
+        if ($LASTEXITCODE -ne 0) { throw "Could not create the resource group." }
+    }
+
+    Write-Host "`nDeploying to '$ResourceGroup'...`n" -ForegroundColor Cyan
+    $parameterFile = Get-TemplateParameterFile -Deployer (Get-Deployer)
+    try {
+        az deployment group create `
+            --resource-group $ResourceGroup `
+            --name main `
+            --template-file $TemplateFile `
+            --parameters "@$parameterFile" `
+            --output none # the full deployment JSON buries the outputs; they're printed below
+        $failed = $LASTEXITCODE -ne 0
+    }
+    finally {
+        Remove-Item $parameterFile -ErrorAction SilentlyContinue
+    }
+
+    if ($failed) {
+        Write-Host "`nDeployment failed." -ForegroundColor Red
+        Write-Host "If a role assignment hasn't reached the container app yet (an ACR pull or" -ForegroundColor Yellow
+        Write-Host "UNAUTHORIZED error), wait a minute and re-run. Deployments are idempotent.`n" -ForegroundColor Yellow
+        throw "Deployment failed."
+    }
+
+    Write-Host "`nDeployed. Outputs:`n" -ForegroundColor Green
+    az deployment group show --resource-group $ResourceGroup --name main --query properties.outputs
+}
+
+function Invoke-Teardown {
+    # Read the soft-deleting resources' names before the group disappears.
+    $keyVaults = @(az resource list --resource-group $ResourceGroup --resource-type Microsoft.KeyVault/vaults --query "[].name" -o tsv)
+    $foundryAccounts = @(az resource list --resource-group $ResourceGroup --resource-type Microsoft.CognitiveServices/accounts --query "[].name" -o tsv)
+
+    Write-Host "`nAbout to delete the resource group '$ResourceGroup' and everything in it," -ForegroundColor Yellow
+    Write-Host "including the container apps, registry images, Foundry models and Key Vault secrets."
+    Write-Host "`nThis cannot be undone." -ForegroundColor Red
+
+    if (-not $Force) {
+        $confirm = (Read-Host "Type the resource group name to confirm").Trim()
+        if ($confirm -ne $ResourceGroup) {
+            Write-Host "`nCancelled. No changes made." -ForegroundColor Green
+            return
+        }
+    }
+
+    Write-Host ""
+    Invoke-TeardownStep "Deleting resource group '$ResourceGroup' (several minutes)..." {
+        az group delete --name $ResourceGroup --yes
+    }
+
+    # Key Vault and Foundry accounts soft-delete and keep holding their names.
+    # Purge them, or the next deploy fails with a name conflict that doesn't
+    # mention soft delete.
+    foreach ($name in $keyVaults | Where-Object { $_ }) {
+        Invoke-TeardownStep "Purging Key Vault '$name'..." {
+            az keyvault purge --name $name --location $Location
+        }
+    }
+    foreach ($name in $foundryAccounts | Where-Object { $_ }) {
+        Invoke-TeardownStep "Purging Foundry account '$name'..." {
+            az cognitiveservices account purge --name $name --resource-group $ResourceGroup --location $Location
+        }
+    }
+
+    Write-Host "`nTeardown complete. Record the date in the scoreboard's resource ledger.`n" -ForegroundColor Green
+}
+
+function Show-Principal {
+    $deployer = Get-Deployer
+    Write-Host "Signed in as: $($deployer.Kind)"
+    Write-Host "Object ID:    $(if ($deployer.PrincipalId) { $deployer.PrincipalId } else { '(none: no developer roles granted)' })"
+    Write-Host "Alert email:  $($deployer.Email)"
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+switch ($Action) {
+    'whatif'    { Invoke-WhatIf }
+    'deploy'    { Invoke-Deploy }
+    'teardown'  { Invoke-Teardown }
+    'principal' { Show-Principal }
+}

@@ -48,3 +48,28 @@ jobs:
           name: coverage
           path: TestResults/**/coverage.cobertura.xml
           if-no-files-found: ignore
+
+  validate-infra:
+    name: Validate infrastructure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and lint Bicep
+        # Compiles without signing in to Azure. Linter warnings fail the job too,
+        # so the template stays as clean as the C# (warnings as errors).
+        run: |
+          az bicep install
+          output=$(az bicep build --file infra/main.bicep --stdout 2>&1 >/dev/null)
+          echo "$output"
+          if echo "$output" | grep -qiE "warning|error"; then exit 1; fi
+
+      - name: Parse deploy script
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/infra/deploy.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Error "$($_.Extent.StartLineNumber): $($_.Message)" }; exit 1 }
+          Write-Host "deploy.ps1 parses cleanly"

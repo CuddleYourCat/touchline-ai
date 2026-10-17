@@ -10,7 +10,7 @@ Built for **Inside the Game: Developer Hackathon** (October 2026).
 
 ## Status
 
-Kick-off: solution skeleton with Aspire, OpenTelemetry defaults and CI. See [DECISIONS.md](DECISIONS.md) for the architecture decisions.
+Kick-off: solution skeleton with Aspire, OpenTelemetry defaults and CI, plus the Azure environment (Container Apps, Foundry, Key Vault, monitoring) deployed from Bicep. See [DECISIONS.md](DECISIONS.md) for the architecture decisions.
 
 ## Run it locally
 
@@ -21,6 +21,17 @@ dotnet run --project src/Touchline.AppHost
 ```
 
 The Aspire dashboard opens with the simulator and the Match Centre API. `GET /api/status` on the Match Centre confirms it is up.
+
+## Deploy to Azure
+
+The infrastructure is hand-written Bicep in `infra/main.bicep` (ADR-012), deployed into its own resource group (ADR-011). It needs the Azure CLI, PowerShell 7 and a signed-in `az login`.
+
+```bash
+pwsh ./infra/deploy.ps1 -Action whatif
+pwsh ./infra/deploy.ps1 -Action deploy
+```
+
+`whatif` previews the changes. `deploy` creates the resource group if needed, applies the template and prints the endpoints. `teardown` deletes everything and purges the soft-deleted Key Vault and Foundry account. No keys are used anywhere: services authenticate with a managed identity, and Foundry has local (key) authentication disabled.
 
 ## Architecture
 
