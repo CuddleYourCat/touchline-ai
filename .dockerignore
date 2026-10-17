@@ -1,0 +1,14 @@
+# Keeps the build context small. az acr build uploads it to Azure on every build.
+# No trailing slashes: the az CLI's own context packer doesn't match "dir/" patterns.
+**/bin
+**/obj
+**/TestResults
+.git
+.github
+.vs
+.vscode
+.idea
+infra
+tests
+**/*.user
+**/*.md

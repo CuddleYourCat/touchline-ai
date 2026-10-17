@@ -73,3 +73,79 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile("$PWD/infra/deploy.ps1", [ref]$null, [ref]$errors) | Out-Null
           if ($errors) { $errors | ForEach-Object { Write-Error "$($_.Extent.StartLineNumber): $($_.Message)" }; exit 1 }
           Write-Host "deploy.ps1 parses cleanly"
+
+  deploy:
+    name: Deploy Match Centre
+    # Only after both checks pass, and only for commits that reached main.
+    needs: [build-test, validate-infra]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # One deploy at a time, and never cancel one half-way through.
+    concurrency:
+      group: deploy-matchcentre
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write # lets the job request a GitHub OIDC token for the Azure login (ADR-013)
+    env:
+      IMAGE: ${{ vars.ACR_NAME }}.azurecr.io/matchcentre:${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to Azure (OIDC, no secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build the image with ACR Tasks
+        run: >
+          az acr build
+          --registry "${{ vars.ACR_NAME }}"
+          --image "matchcentre:${{ github.sha }}"
+          --file src/Touchline.MatchCentre/Dockerfile
+          .
+
+      # The az containerapp commands used below are in the core CLI, so no
+      # extension is installed: nothing to download, and no surprise upgrades.
+      - name: Deploy a new revision
+        run: |
+          # The run attempt keeps the suffix unique when a failed job is re-run
+          # for the same commit.
+          suffix="c${GITHUB_SHA::7}-${GITHUB_RUN_ATTEMPT}"
+          echo "REVISION=ca-matchcentre--$suffix" >> "$GITHUB_ENV"
+          az containerapp update \
+            --name ca-matchcentre \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --image "$IMAGE" \
+            --revision-suffix "$suffix" \
+            --output none
+
+      - name: Smoke test the new revision
+        run: |
+          # Each revision has its own FQDN in multiple-revision mode. Testing it
+          # proves the new revision serves, even while the app's main FQDN
+          # still routes to an older one (or to a pinned "judging" revision).
+          fqdn=$(az containerapp revision show --name ca-matchcentre --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --revision "$REVISION" --query properties.fqdn -o tsv)
+          # Retries cover the startup probe and a cold start from zero replicas.
+          curl --fail --silent --show-error --retry 12 --retry-delay 6 --retry-all-errors \
+            "https://$fqdn/api/status"
+
+      - name: Deactivate superseded revisions
+        run: |
+          # Keep the new revision and any revision named in the traffic rules
+          # (for example the "judging" label, ADR-009). Deactivate the rest.
+          keep=$(az containerapp ingress traffic show --name ca-matchcentre --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --query "[].revisionName" -o tsv)
+          for revision in $(az containerapp revision list --name ca-matchcentre --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --query "[?properties.active].name" -o tsv); do
+            if [ "$revision" != "$REVISION" ] && ! grep -qx "$revision" <<< "$keep"; then
+              echo "Deactivating $revision"
+              az containerapp revision deactivate --name ca-matchcentre --resource-group "${{ vars.RESOURCE_GROUP }}" \
+                --revision "$revision" --output none
+            fi
+          done

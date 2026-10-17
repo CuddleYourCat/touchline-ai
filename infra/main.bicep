@@ -40,6 +40,9 @@ param budgetStartDate string = utcNow('yyyy-MM-01')
 @description('Match Centre image. deploy.ps1 passes the image already running, so a redeploy never rolls back to the placeholder.')
 param matchCentreImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
+@description('GitHub repository (owner/name) whose main branch may deploy the app (ADR-013).')
+param githubRepository string = 'CuddleYourCat/touchline-ai'
+
 @description('Ingress traffic rules. deploy.ps1 passes the live rules, so a redeploy keeps revision labels such as "judging" (ADR-009).')
 param matchCentreTraffic array = [
   {
@@ -75,6 +78,9 @@ var roles = {
   cognitiveServicesOpenAiUser: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
   keyVaultSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6'
   keyVaultSecretsOfficer: 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
+  containerRegistryTasksContributor: 'fb382eab-e894-4461-af04-94435c366c3f'
+  containerAppsContributor: '358470bc-b998-42bd-ab17-a7e34c199c0f'
+  reader: 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
 }
 
 // ============================================================
@@ -128,6 +134,28 @@ resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-3
   name: 'id-touchline-ai'
   location: location
   tags: tags
+}
+
+// ============================================================
+// CI identity: GitHub Actions signs in with OIDC, no stored secret (ADR-013)
+// ============================================================
+
+resource ciIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-touchline-ci'
+  location: location
+  tags: tags
+}
+
+// Trusts GitHub's OIDC tokens for this repository's main branch only, so a
+// workflow run from any other branch or fork can't obtain an Azure token.
+resource ciGithubCredential 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
+  parent: ciIdentity
+  name: 'github-main'
+  properties: {
+    issuer: 'https://token.actions.githubusercontent.com'
+    subject: 'repo:${githubRepository}:ref:refs/heads/main'
+    audiences: ['api://AzureADTokenExchange']
+  }
 }
 
 // ============================================================
@@ -345,6 +373,41 @@ resource secretsUserForApps 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
+// CI identity: build images in the registry and update the one container app.
+// It can't create resources, read other resources or grant roles (ADR-013).
+resource tasksContributorForCi 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(registry.id, ciIdentity.id, roles.containerRegistryTasksContributor)
+  scope: registry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.containerRegistryTasksContributor)
+    principalId: ciIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource containerAppsContributorForCi 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(matchCentre.id, ciIdentity.id, roles.containerAppsContributor)
+  scope: matchCentre
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.containerAppsContributor)
+    principalId: ciIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// `az containerapp update` reads the app's environment before updating it, and
+// Container Apps Contributor only covers its own scope (the app). Reader on the
+// environment alone fills that gap without granting read across the group.
+resource environmentReaderForCi 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerAppsEnvironment.id, ciIdentity.id, roles.reader)
+  scope: containerAppsEnvironment
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.reader)
+    principalId: ciIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // Developer: call models and manage secrets from a local run. Skipped when a
 // service principal deploys from CI, because there's no developer to grant.
 resource foundryUserForDeveloper 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
@@ -417,3 +480,5 @@ output registryLoginServer string = registry.properties.loginServer
 output foundryEndpoint string = foundry.properties.endpoint
 output keyVaultUri string = keyVault.properties.vaultUri
 output appIdentityClientId string = appIdentity.properties.clientId
+output ciIdentityClientId string = ciIdentity.properties.clientId
+output registryName string = registry.name
