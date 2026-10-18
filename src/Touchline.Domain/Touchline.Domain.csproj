@@ -1,3 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup>
+    <!-- Team profiles ship inside the assembly, so every service sees the same squads (ADR-002). -->
+    <EmbeddedResource Include="Teams\Profiles\*.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets the unit tests feed malformed profiles to TeamProfileCatalog.Parse. -->
+    <InternalsVisibleTo Include="Touchline.Tests.Unit" />
+  </ItemGroup>
+
 </Project>

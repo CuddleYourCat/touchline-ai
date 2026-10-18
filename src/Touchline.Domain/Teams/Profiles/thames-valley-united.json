@@ -1,0 +1,30 @@
+{
+  "id": "thames-valley-united",
+  "name": "Thames Valley United",
+  "shortName": "TVU",
+  "colours": { "primary": "#1b3a6b", "secondary": "#f2b705" },
+  "tendencies": {
+    "pressingIntensity": 0.45,
+    "width": 0.5,
+    "directness": 0.65,
+    "shotAppetite": 0.5
+  },
+  "squad": [
+    { "id": "tvu-01", "name": "Marcus Holt", "shirtNumber": 1, "position": "Goalkeeper", "role": "traditional shot-stopper" },
+    { "id": "tvu-02", "name": "Aaron Sykes", "shirtNumber": 2, "position": "Defender", "role": "defensive right-back" },
+    { "id": "tvu-03", "name": "Liam Dorsey", "shirtNumber": 3, "position": "Defender", "role": "attacking left wing-back" },
+    { "id": "tvu-04", "name": "Niall Corrigan", "shirtNumber": 4, "position": "Midfielder", "role": "holding midfielder who screens the back line" },
+    { "id": "tvu-05", "name": "Joel Mbeki", "shirtNumber": 5, "position": "Defender", "role": "physical centre-back" },
+    { "id": "tvu-06", "name": "Stefan Kraus", "shirtNumber": 6, "position": "Defender", "role": "organising centre-back" },
+    { "id": "tvu-07", "name": "Jordan Vance", "shirtNumber": 7, "position": "Forward", "role": "quick right winger who runs in behind" },
+    { "id": "tvu-08", "name": "Tariq Benali", "shirtNumber": 8, "position": "Midfielder", "role": "tireless central midfielder" },
+    { "id": "tvu-09", "name": "Kieran Moss", "shirtNumber": 9, "position": "Forward", "role": "penalty-box striker" },
+    { "id": "tvu-10", "name": "Hugo Lestrade", "shirtNumber": 10, "position": "Midfielder", "role": "set-piece specialist" },
+    { "id": "tvu-11", "name": "Rafael Duarte", "shirtNumber": 11, "position": "Forward", "role": "left winger who crosses early" },
+    { "id": "tvu-15", "name": "Sean Whitlock", "shirtNumber": 15, "position": "Defender", "role": "versatile defender" },
+    { "id": "tvu-17", "name": "Owen Pask", "shirtNumber": 17, "position": "Defender", "role": "young full-back" },
+    { "id": "tvu-18", "name": "Ben Achterberg", "shirtNumber": 18, "position": "Midfielder", "role": "late runner into the box" },
+    { "id": "tvu-20", "name": "Ade Olusanya", "shirtNumber": 20, "position": "Forward", "role": "powerful forward off the bench" },
+    { "id": "tvu-22", "name": "Pete Ridley", "shirtNumber": 22, "position": "Goalkeeper", "role": "reserve goalkeeper" }
+  ]
+}

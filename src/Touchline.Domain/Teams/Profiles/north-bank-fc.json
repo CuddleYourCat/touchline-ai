@@ -1,0 +1,30 @@
+{
+  "id": "north-bank-fc",
+  "name": "North Bank FC",
+  "shortName": "NBK",
+  "colours": { "primary": "#d4202a", "secondary": "#ffffff" },
+  "tendencies": {
+    "pressingIntensity": 0.8,
+    "width": 0.7,
+    "directness": 0.4,
+    "shotAppetite": 0.55
+  },
+  "squad": [
+    { "id": "nbfc-01", "name": "Tomas Varga", "shirtNumber": 1, "position": "Goalkeeper", "role": "sweeper keeper, comfortable with the ball at his feet" },
+    { "id": "nbfc-02", "name": "Kofi Mensah-Hale", "shirtNumber": 2, "position": "Defender", "role": "inverted right-back who steps into midfield" },
+    { "id": "nbfc-03", "name": "Jamie Castell", "shirtNumber": 3, "position": "Defender", "role": "overlapping left-back" },
+    { "id": "nbfc-04", "name": "Luka Ferreira", "shirtNumber": 4, "position": "Defender", "role": "ball-playing centre-back" },
+    { "id": "nbfc-05", "name": "Theo Lindqvist", "shirtNumber": 5, "position": "Midfielder", "role": "deep-lying playmaker" },
+    { "id": "nbfc-06", "name": "Dan Okafor", "shirtNumber": 6, "position": "Defender", "role": "commanding centre-back, strong in the air" },
+    { "id": "nbfc-07", "name": "Reggie Ashworth", "shirtNumber": 7, "position": "Forward", "role": "inverted right winger, left-footed, cuts inside to shoot" },
+    { "id": "nbfc-08", "name": "Marco Sienna", "shirtNumber": 8, "position": "Midfielder", "role": "box-to-box runner" },
+    { "id": "nbfc-09", "name": "Callum Pryce", "shirtNumber": 9, "position": "Forward", "role": "pressing centre-forward" },
+    { "id": "nbfc-10", "name": "Elias Brook", "shirtNumber": 10, "position": "Midfielder", "role": "creative number ten" },
+    { "id": "nbfc-11", "name": "Noah Kerrigan", "shirtNumber": 11, "position": "Forward", "role": "direct left winger who beats players one-on-one" },
+    { "id": "nbfc-13", "name": "Ollie Brandt", "shirtNumber": 13, "position": "Goalkeeper", "role": "reserve goalkeeper, shot-stopper" },
+    { "id": "nbfc-14", "name": "Idris Bello", "shirtNumber": 14, "position": "Forward", "role": "pacy forward off the bench" },
+    { "id": "nbfc-15", "name": "Ruben Aalto", "shirtNumber": 15, "position": "Defender", "role": "cover centre-back" },
+    { "id": "nbfc-16", "name": "Sami Haddad", "shirtNumber": 16, "position": "Midfielder", "role": "ball-winning midfielder" },
+    { "id": "nbfc-19", "name": "Felix Moreau", "shirtNumber": 19, "position": "Forward", "role": "target forward who holds the ball up" }
+  ]
+}
