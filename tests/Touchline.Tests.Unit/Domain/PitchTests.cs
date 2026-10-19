@@ -35,6 +35,17 @@ public class PitchTests
         new PitchPosition(94.5, 30).ToString().Should().Be("(94.5, 30)");
     }
 
+    [TestCase(10, 34, TeamSide.Home, true, TestName = "The home penalty area is near X = 0")]
+    [TestCase(95, 34, TeamSide.Away, true, TestName = "The away penalty area is near X = 105")]
+    [TestCase(95, 34, TeamSide.Home, false, TestName = "The opposition's area isn't the team's own")]
+    [TestCase(16.5, 54.16, TeamSide.Home, true, TestName = "The area's edges are inside it")]
+    [TestCase(16.6, 34, TeamSide.Home, false, TestName = "Just beyond the area's depth is outside it")]
+    [TestCase(10, 13.8, TeamSide.Home, false, TestName = "Wide of the area is outside it")]
+    public void Penalty_area_membership(double x, double y, TeamSide defending, bool expected)
+    {
+        PitchDimensions.IsInPenaltyArea(new PitchPosition(x, y), defending).Should().Be(expected);
+    }
+
     [Test]
     public void The_corners_of_the_pitch_are_valid_positions()
     {

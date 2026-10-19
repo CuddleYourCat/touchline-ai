@@ -135,6 +135,27 @@ public class MatchStateTests
     }
 
     [Test]
+    public void Second_player_fields_are_only_valid_on_their_own_event_type()
+    {
+        var recipientOnShot = ShotEvent(1, ShotOutcome.Saved, 0.2) with { RecipientPlayerId = "nbfc-09" };
+        var assistOnPass = Event(1, MatchEventType.Pass) with { AssistPlayerId = "nbfc-10" };
+        var fouledOnTackle = Event(1, MatchEventType.Tackle) with { FouledPlayerId = "tvu-09" };
+
+        foreach (var invalid in new[] { recipientOnShot, assistOnPass, fouledOnTackle })
+        {
+            invalid.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>();
+        }
+
+        var valid = () =>
+        {
+            (Event(1, MatchEventType.Pass) with { RecipientPlayerId = "nbfc-09" }).EnsureValid();
+            (ShotEvent(1, ShotOutcome.Goal, 0.4) with { AssistPlayerId = "nbfc-10" }).EnsureValid();
+            (Event(1, MatchEventType.Foul) with { FouledPlayerId = "tvu-09" }).EnsureValid();
+        };
+        valid.Should().NotThrow();
+    }
+
+    [Test]
     public void Expected_goals_that_are_not_a_number_are_rejected()
     {
         var create = () => new ShotDetail(double.NaN, ShotOutcome.Saved, ShotSituation.OpenPlay);

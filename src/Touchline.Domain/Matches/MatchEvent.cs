@@ -83,14 +83,24 @@ public sealed record MatchEvent
     /// <summary>The card shown, present only when <see cref="Type"/> is <see cref="MatchEventType.Card"/>.</summary>
     public CardColour? Card { get; init; }
 
+    /// <summary>For a pass: the team-mate it was aimed at (ADR-017). Only valid on passes.</summary>
+    public string? RecipientPlayerId { get; init; }
+
+    /// <summary>For a shot: the team-mate whose pass or delivery created it (ADR-017). Only valid on shots.</summary>
+    public string? AssistPlayerId { get; init; }
+
+    /// <summary>For a foul: the opponent who was fouled (ADR-017). Only valid on fouls.</summary>
+    public string? FouledPlayerId { get; init; }
+
     /// <summary>True when this event is a shot that went in.</summary>
     [JsonIgnore]
     public bool IsGoal => Shot is { Outcome: ShotOutcome.Goal };
 
     /// <summary>
     /// Checks that the event's parts agree with its type: a shot carries its detail, a card
-    /// carries its colour, neither appears on any other type, and a shot's
-    /// <see cref="Successful"/> flag matches whether it was on target.
+    /// carries its colour, neither appears on any other type, a shot's
+    /// <see cref="Successful"/> flag matches whether it was on target, and each second-player
+    /// field (ADR-017) appears only on its own event type.
     /// </summary>
     /// <exception cref="ArgumentException">The event contradicts itself.</exception>
     public void EnsureValid()
@@ -103,6 +113,9 @@ public sealed record MatchEvent
             { Type: not MatchEventType.Card, Card: not null } => $"a {Type} event has a card colour",
             { Shot: { } shot } when Successful != shot.OnTarget =>
                 $"a shot marked Successful = {Successful} has outcome {shot.Outcome}",
+            { Type: not MatchEventType.Pass, RecipientPlayerId: not null } => $"a {Type} event has a recipient",
+            { Type: not MatchEventType.Shot, AssistPlayerId: not null } => $"a {Type} event has an assist",
+            { Type: not MatchEventType.Foul, FouledPlayerId: not null } => $"a {Type} event has a fouled player",
             _ => null
         };
 

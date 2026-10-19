@@ -220,6 +220,22 @@ public class KeyMomentDetectorTests
     }
 
     [Test]
+    public void A_penalty_names_who_was_fouled_and_by_whom()
+    {
+        var foul = Foul(TeamSide.Away, 99, 34) with { PlayerId = "tvu-05", FouledPlayerId = "nbfc-07" };
+
+        _detector.Detect(foul, KickOff)!.Reason.Should().Contain("Foul on Reggie Ashworth (NBK) by Joel Mbeki (TVU)");
+    }
+
+    [Test]
+    public void A_goal_names_the_assist()
+    {
+        var goal = Shot(ShotOutcome.Goal, 0.41) with { AssistPlayerId = "nbfc-10" };
+
+        _detector.Detect(goal, KickOff)!.Reason.Should().Contain("assisted by Elias Brook (NBK)");
+    }
+
+    [Test]
     public void A_player_missing_from_the_squads_is_named_by_id()
     {
         var unknown = Card(CardColour.Red) with { PlayerId = "guest-99" };

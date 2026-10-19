@@ -20,10 +20,6 @@ public sealed class KeyMomentDetector
     /// <summary>The default xG at or above which a missed shot counts as a big chance.</summary>
     public const double DefaultBigChanceThreshold = 0.30;
 
-    private const double _centreLine = PitchDimensions.Width / 2;
-    private const double _penaltyAreaTop = _centreLine + PitchDimensions.PenaltyAreaWidth / 2;
-    private const double _penaltyAreaBottom = _centreLine - PitchDimensions.PenaltyAreaWidth / 2;
-
     private readonly IReadOnlyDictionary<string, (Player Player, TeamProfile Team)> _players;
 
     /// <summary>
@@ -76,10 +72,10 @@ public sealed class KeyMomentDetector
         var who = Describe(matchEvent.PlayerId);
         return matchEvent switch
         {
-            { Type: MatchEventType.Foul } when IsInOwnPenaltyArea(matchEvent.Start, matchEvent.Team)
-                => Moment(KeyMomentKind.PenaltyAwarded, matchEvent, $"{matchEvent.Time}: Penalty. Foul by {who} inside their own area."),
+            { Type: MatchEventType.Foul } when PitchDimensions.IsInPenaltyArea(matchEvent.Start, matchEvent.Team)
+                => Moment(KeyMomentKind.PenaltyAwarded, matchEvent, $"{matchEvent.Time}: Penalty. Foul{On(matchEvent.FouledPlayerId)} by {who} inside their own area."),
             { Type: MatchEventType.Shot, Shot: { Outcome: ShotOutcome.Goal } }
-                => Moment(KeyMomentKind.Goal, matchEvent, $"{matchEvent.Time}: GOAL! {who} scores. {ScoreAfterGoal(before, matchEvent.Team)}."),
+                => Moment(KeyMomentKind.Goal, matchEvent, $"{matchEvent.Time}: GOAL! {who} scores{AssistedBy(matchEvent.AssistPlayerId)}. {ScoreAfterGoal(before, matchEvent.Team)}."),
             { Type: MatchEventType.Shot, Shot: { } shot } when shot.ExpectedGoals >= BigChanceThreshold
                 => Moment(KeyMomentKind.BigChance, matchEvent, $"{matchEvent.Time}: Big chance for {who}, xG {shot.ExpectedGoals:0.00}, {shot.Outcome}."),
             { Type: MatchEventType.Card, Card: CardColour.Red }
@@ -97,16 +93,12 @@ public sealed class KeyMomentDetector
             ? $"{entry.Player.Name} ({entry.Team.ShortName})"
             : playerId ?? "unknown player";
 
+    private string On(string? fouledPlayerId) => fouledPlayerId is null ? string.Empty : $" on {Describe(fouledPlayerId)}";
+
+    private string AssistedBy(string? assistPlayerId) => assistPlayerId is null ? string.Empty : $", assisted by {Describe(assistPlayerId)}";
+
     // Reads only the score, so it doesn't depend on `before` being exactly one event behind.
     private static string ScoreAfterGoal(MatchState before, TeamSide scorer) => scorer == TeamSide.Home
         ? (before with { Home = before.Home with { Goals = before.Home.Goals + 1 } }).Score
         : (before with { Away = before.Away with { Goals = before.Away.Goals + 1 } }).Score;
-
-    private static bool IsInOwnPenaltyArea(PitchPosition at, TeamSide defending)
-    {
-        var fromOwnGoalLine = defending == TeamSide.Home ? at.X : PitchDimensions.Length - at.X;
-
-        return at.Y is >= _penaltyAreaBottom and <= _penaltyAreaTop
-            && fromOwnGoalLine <= PitchDimensions.PenaltyAreaDepth;
-    }
 }

@@ -283,6 +283,48 @@ The emulator doesn't do everything: there's no Entra ID authentication, and its 
 
 ---
 
+## ADR-017 — Events name the second player with type-specific fields
+
+**Status:** Accepted · 1st half
+
+**Decision**
+`MatchEvent` gains three optional properties, each valid on one event type only:
+- **`RecipientPlayerId`** on a **pass**: the team-mate it was aimed at.
+- **`AssistPlayerId`** on a **shot**: the team-mate whose pass or set-piece delivery created it.
+- **`FouledPlayerId`** on a **foul**: the opponent who was fouled.
+
+`EnsureValid` rejects any of them on the wrong event type. The simulator sets them, because it chose who passed, who shot and who was tackled, so it knows the truth.
+
+**Alternatives considered**
+- **One generic `RelatedPlayerId`**, whose meaning depends on the event type, as in several commercial data feeds. Fewer properties, but every reader has to know the per-type meaning, and an agent prompt is less clear.
+- **Deriving them in the Event Processor** (the assist as the last team-mate pass in the possession, the fouled player as the opponent who last had the ball). No schema change, but it needs state across events, and it's ambiguous around deflections and off-ball fouls.
+
+**Rationale**
+Raised during skill shot 1. A penalty reason should say who was fouled, and a goal reason who made the assist. Named fields are self-documenting, checkable, and give the agents unambiguous facts at no extra cost in tokens or code.
+
+**Trade-offs**
+There are three nullable properties on every event, most of them empty on any given event. A future relationship (for example "tackled player" on a tackle) means another field and another `EnsureValid` rule.
+
+---
+
+## ADR-018 — The match engine lives in Touchline.Simulator
+
+**Status:** Accepted · 1st half
+
+**Decision**
+The possession-chain engine (ADR-014) is in `Touchline.Simulator`, beside the worker that runs it, as plain classes with no Azure dependency. The domain stays the shared vocabulary every service needs: events, state, team profiles and key-moment rules.
+
+**Alternatives considered**
+- **Putting the engine in `Touchline.Domain`.** It would be reusable anywhere, for example by an agent tool that replays "what if" scenarios, but every service would then carry the engine whether it used it or not.
+
+**Rationale**
+Only the simulator generates matches. The Event Processor and the agents consume events, so they shouldn't depend on how events are made. The engine can still move later if a second consumer appears.
+
+**Trade-offs**
+The unit tests now reference `Touchline.Simulator` as well, and an engine class can't be reused from another service without a project reference or a move.
+
+---
+
 ## ADR-006 — Agent orchestration framework
 
 **Status:** Proposed · needed before Stage 3

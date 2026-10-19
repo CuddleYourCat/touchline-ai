@@ -23,6 +23,20 @@ public static class PitchDimensions
     public const double PenaltyAreaWidth = 40.32;
 
     /// <summary>
+    /// Whether a position is inside the penalty area a team defends, edges included. The
+    /// one definition the simulator (awarding penalties) and the key-moment detector
+    /// (flagging them) both use, so they can never disagree.
+    /// </summary>
+    /// <param name="at">The position to test.</param>
+    /// <param name="defending">The team whose own penalty area is meant.</param>
+    /// <returns>True when the position is inside that area.</returns>
+    public static bool IsInPenaltyArea(PitchPosition at, TeamSide defending)
+    {
+        var fromOwnGoalLine = defending == TeamSide.Home ? at.X : Length - at.X;
+        return Math.Abs(at.Y - Width / 2) <= PenaltyAreaWidth / 2 && fromOwnGoalLine <= PenaltyAreaDepth;
+    }
+
+    /// <summary>
     /// The centre of the goal a team is attacking.
     /// </summary>
     /// <param name="attacking">The team taking the shot.</param>

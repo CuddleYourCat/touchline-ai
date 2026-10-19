@@ -22,6 +22,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Touchline.Domain\Touchline.Domain.csproj" />
     <ProjectReference Include="..\..\src\Touchline.MatchCentre\Touchline.MatchCentre.csproj" />
+    <!-- Aliased: the Simulator and the Match Centre both have a public top-level Program class (.NET 10). -->
+    <ProjectReference Include="..\..\src\Touchline.Simulator\Touchline.Simulator.csproj" Aliases="simulator" />
   </ItemGroup>
 
 </Project>
