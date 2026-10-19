@@ -16,17 +16,47 @@ public enum PlayerPosition
     Forward
 }
 
+/// <summary>The foot a player prefers to strike the ball with (ADR-019).</summary>
+public enum PreferredFoot
+{
+    // Numbered from 1, so a zero (an unset value) is caught by validation rather than read
+    // as a real foot.
+
+    /// <summary>Left-footed. The right is the weaker foot.</summary>
+    Left = 1,
+
+    /// <summary>Right-footed. The left is the weaker foot.</summary>
+    Right = 2,
+
+    /// <summary>Two-footed: neither foot is weaker.</summary>
+    Both = 3
+}
+
 /// <summary>
 /// A fictional player (ADR-002). <see cref="Role"/> describes their type in plain words,
 /// for example "inverted winger, left-footed", which the agents can use when explaining
-/// a moment.
+/// a moment. The traits (ADR-019) change what happens in a match, never xG or xPass, which
+/// stay average-player measures.
 /// </summary>
 /// <param name="Id">Stable identifier used in events, for example <c>nbfc-07</c>.</param>
 /// <param name="Name">Display name.</param>
 /// <param name="ShirtNumber">Squad number.</param>
 /// <param name="Position">Broad position.</param>
 /// <param name="Role">Playing style, in plain words.</param>
-public sealed record Player(string Id, string Name, int ShirtNumber, PlayerPosition Position, string Role);
+/// <param name="PreferredFoot">The foot the player prefers to strike the ball with.</param>
+/// <param name="TopSpeedKmh">The player's recorded previous best top speed, in km/h.</param>
+/// <param name="Finishing">Shooting quality, from 0 to 1, where 0.5 is an average player.</param>
+/// <param name="Passing">Passing quality, from 0 to 1, where 0.5 is an average player.</param>
+public sealed record Player(
+    string Id,
+    string Name,
+    int ShirtNumber,
+    PlayerPosition Position,
+    string Role,
+    PreferredFoot PreferredFoot,
+    double TopSpeedKmh,
+    double Finishing,
+    double Passing);
 
 /// <summary>Kit colours, as CSS colour values.</summary>
 /// <param name="Primary">Main shirt colour.</param>
@@ -57,6 +87,9 @@ public sealed record TeamProfile
 
     /// <summary>Three-letter abbreviation for scoreboards.</summary>
     public required string ShortName { get; init; }
+
+    /// <summary>The club's fictional home ground, named in the match metadata (ADR-019).</summary>
+    public required string Venue { get; init; }
 
     /// <summary>Kit colours.</summary>
     public required TeamColours Colours { get; init; }

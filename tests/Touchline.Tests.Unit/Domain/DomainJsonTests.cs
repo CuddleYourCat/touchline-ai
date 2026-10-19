@@ -21,8 +21,49 @@ public class DomainJsonTests
         Start = new PitchPosition(94.2, 29.5),
         End = new PitchPosition(105, 33.1),
         Successful = true,
-        Shot = new ShotDetail(0.41, ShotOutcome.Goal, ShotSituation.Counter)
+        UnderPressure = true,
+        Shot = new ShotDetail(0.41, ShotOutcome.Goal, ShotSituation.Counter, BodyPart.LeftFoot, weakFoot: true, speedKmh: 88.4)
     };
+
+    // Added in the richer-events slice (ADR-019)
+
+    [Test]
+    public void Pass_carry_and_metadata_events_survive_a_json_round_trip_unchanged()
+    {
+        var events = new[]
+        {
+            _goal with { Type = MatchEventType.Pass, Shot = null, Pass = new PassDetail(0.62, 71.3, weakFoot: true) },
+            _goal with { Type = MatchEventType.Carry, Shot = null, Carry = new CarryDetail(33.1) },
+            _goal with { Type = MatchEventType.MatchMetadata, Shot = null, UnderPressure = false, Metadata = TestEvents.Metadata }
+        };
+
+        foreach (var original in events)
+        {
+            var back = JsonSerializer.Deserialize<MatchEvent>(JsonSerializer.Serialize(original, DomainJson.Options), DomainJson.Options);
+
+            back.Should().BeEquivalentTo(original, original.Type.ToString());
+        }
+    }
+
+    [Test]
+    public void A_body_part_sent_as_an_undefined_number_is_rejected_on_read()
+    {
+        var json = JsonSerializer.Serialize(_goal, DomainJson.Options).Replace("\"bodyPart\":\"LeftFoot\"", "\"bodyPart\":7", StringComparison.Ordinal);
+
+        var read = () => JsonSerializer.Deserialize<MatchEvent>(json, DomainJson.Options);
+
+        read.Should().Throw<ArgumentOutOfRangeException>("JSON accepts any number for an enum, so the constructor checks it");
+    }
+
+    [Test]
+    public void A_detail_with_a_missing_constructor_value_is_rejected_on_read()
+    {
+        var json = JsonSerializer.Serialize(_goal, DomainJson.Options).Replace(",\"speedKmh\":88.4", "", StringComparison.Ordinal);
+
+        var read = () => JsonSerializer.Deserialize<MatchEvent>(json, DomainJson.Options);
+
+        read.Should().Throw<JsonException>("a missing speed must not quietly become 0").WithMessage("*speedKmh*");
+    }
 
     [Test]
     public void A_match_event_survives_a_json_round_trip_unchanged()

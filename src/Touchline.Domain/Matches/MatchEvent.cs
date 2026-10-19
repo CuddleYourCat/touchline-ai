@@ -6,6 +6,12 @@ namespace Touchline.Domain.Matches;
 /// <summary>What happened in a match event.</summary>
 public enum MatchEventType
 {
+    /// <summary>
+    /// The match's context, always the first event (ADR-019). See <see cref="MatchEvent.Metadata"/>.
+    /// By convention its team is <see cref="TeamSide.Home"/> and it starts on the centre spot.
+    /// </summary>
+    MatchMetadata,
+
     /// <summary>Play starts or restarts from the centre spot.</summary>
     KickOff,
 
@@ -77,8 +83,23 @@ public sealed record MatchEvent
     /// </summary>
     public bool Successful { get; init; } = true;
 
+    /// <summary>
+    /// True when an opponent was closing the player down (ADR-019). Only valid on passes,
+    /// carries and shots.
+    /// </summary>
+    public bool UnderPressure { get; init; }
+
     /// <summary>Shot detail, present only when <see cref="Type"/> is <see cref="MatchEventType.Shot"/>.</summary>
     public ShotDetail? Shot { get; init; }
+
+    /// <summary>Pass detail, including xPass (ADR-019). Present only when <see cref="Type"/> is <see cref="MatchEventType.Pass"/>.</summary>
+    public PassDetail? Pass { get; init; }
+
+    /// <summary>Carry detail, the player's speed (ADR-019). Present only when <see cref="Type"/> is <see cref="MatchEventType.Carry"/>.</summary>
+    public CarryDetail? Carry { get; init; }
+
+    /// <summary>The match's context (ADR-019). Present only when <see cref="Type"/> is <see cref="MatchEventType.MatchMetadata"/>.</summary>
+    public MatchMetadata? Metadata { get; init; }
 
     /// <summary>The card shown, present only when <see cref="Type"/> is <see cref="MatchEventType.Card"/>.</summary>
     public CardColour? Card { get; init; }
@@ -97,31 +118,53 @@ public sealed record MatchEvent
     public bool IsGoal => Shot is { Outcome: ShotOutcome.Goal };
 
     /// <summary>
-    /// Checks that the event's parts agree with its type: a shot carries its detail, a card
-    /// carries its colour, neither appears on any other type, a shot's
-    /// <see cref="Successful"/> flag matches whether it was on target, and each second-player
-    /// field (ADR-017) appears only on its own event type.
+    /// Checks that the event's parts agree with its type: each detail (shot, card colour,
+    /// pass, carry, metadata) is present on its own type and on no other, a shot's
+    /// <see cref="Successful"/> flag matches whether it was on target, each second-player
+    /// field (ADR-017) appears only on its own event type, only passes, carries and shots
+    /// are marked as under pressure, the metadata event names no player and no end, and the
+    /// type, team and card colour are defined values (JSON accepts any number for an enum).
     /// </summary>
     /// <exception cref="ArgumentException">The event contradicts itself.</exception>
     public void EnsureValid()
     {
-        var problem = this switch
-        {
-            { Type: MatchEventType.Shot, Shot: null } => "a shot has no shot detail",
-            { Type: not MatchEventType.Shot, Shot: not null } => $"a {Type} event has shot detail",
-            { Type: MatchEventType.Card, Card: null } => "a card event has no card colour",
-            { Type: not MatchEventType.Card, Card: not null } => $"a {Type} event has a card colour",
-            { Shot: { } shot } when Successful != shot.OnTarget =>
-                $"a shot marked Successful = {Successful} has outcome {shot.Outcome}",
-            { Type: not MatchEventType.Pass, RecipientPlayerId: not null } => $"a {Type} event has a recipient",
-            { Type: not MatchEventType.Shot, AssistPlayerId: not null } => $"a {Type} event has an assist",
-            { Type: not MatchEventType.Foul, FouledPlayerId: not null } => $"a {Type} event has a fouled player",
-            _ => null
-        };
+        var problem = UndefinedEnum()
+            ?? DetailMismatch(MatchEventType.Shot, Shot, "shot detail")
+            ?? DetailMismatch(MatchEventType.Card, Card, "card colour")
+            ?? DetailMismatch(MatchEventType.Pass, Pass, "pass detail")
+            ?? DetailMismatch(MatchEventType.Carry, Carry, "carry detail")
+            ?? DetailMismatch(MatchEventType.MatchMetadata, Metadata, "match metadata")
+            ?? this switch
+            {
+                { Shot: { } shot } when Successful != shot.OnTarget =>
+                    $"a shot marked Successful = {Successful} has outcome {shot.Outcome}",
+                { Type: not MatchEventType.Pass, RecipientPlayerId: not null } => $"a {Type} event has a recipient",
+                { Type: not MatchEventType.Shot, AssistPlayerId: not null } => $"a {Type} event has an assist",
+                { Type: not MatchEventType.Foul, FouledPlayerId: not null } => $"a {Type} event has a fouled player",
+                { UnderPressure: true, Type: not (MatchEventType.Pass or MatchEventType.Carry or MatchEventType.Shot) } =>
+                    $"a {Type} event is marked as under pressure",
+                { Type: MatchEventType.MatchMetadata, PlayerId: not null } => "the metadata event names a player",
+                { Type: MatchEventType.MatchMetadata, End: not null } => "the metadata event has an end position",
+                _ => null
+            };
 
         if (problem is not null)
         {
             throw new ArgumentException($"Event {Sequence} in match '{MatchId}' is invalid: {problem}.");
         }
     }
+
+    private string? UndefinedEnum() =>
+        !Enum.IsDefined(Type) ? $"the event type {Type} isn't defined"
+        : !Enum.IsDefined(Team) ? $"the team {Team} isn't defined"
+        : Card is { } card && !Enum.IsDefined(card) ? $"the card colour {card} isn't defined"
+        : null;
+
+    // A detail belongs to exactly one event type: required there, and forbidden everywhere else.
+    private string? DetailMismatch(MatchEventType owner, object? detail, string name) => (Type == owner, detail is null) switch
+    {
+        (true, true) => $"a {owner} event has no {name}",
+        (false, false) => $"a {Type} event has {name}",
+        _ => null
+    };
 }

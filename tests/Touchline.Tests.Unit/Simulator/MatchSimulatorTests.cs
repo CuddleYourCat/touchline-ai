@@ -50,23 +50,11 @@ public class MatchSimulatorTests
     {
         var match = PlayMatch(seed: 7);
 
-        match[0].Type.Should().Be(MatchEventType.KickOff);
+        match[1].Type.Should().Be(MatchEventType.KickOff, "the metadata comes first, then play starts");
         match[^1].Type.Should().Be(MatchEventType.PeriodEnd);
         match[^1].Time.Period.Should().Be(MatchPeriod.SecondHalf);
         match.Count(e => e.Type == MatchEventType.PeriodEnd).Should().Be(2);
         match.Where(e => e.Type == MatchEventType.PeriodEnd).First().Time.Clock.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMinutes(45));
-    }
-
-    [Test]
-    public void Only_players_on_the_pitch_take_part()
-    {
-        var squadIds = NorthBank.Squad.Concat(ThamesValley.Squad).Select(p => p.Id).ToHashSet();
-
-        var named = PlayMatch(seed: 11)
-            .SelectMany(e => new[] { e.PlayerId, e.RecipientPlayerId, e.AssistPlayerId, e.FouledPlayerId })
-            .OfType<string>();
-
-        named.Should().OnlyContain(id => squadIds.Contains(id));
     }
 
     [Test]
@@ -168,4 +156,117 @@ public class MatchSimulatorTests
         northBank.Should().BeGreaterThan(thamesValley * 1.10,
             "North Bank FC presses at 0.8 against Thames Valley United's 0.45, so it should win the ball high clearly more often");
     }
+
+    // Added in the richer-events slice (ADR-019)
+
+    private static readonly Dictionary<string, Player> _players =
+        NorthBank.Squad.Concat(ThamesValley.Squad).ToDictionary(p => p.Id);
+
+    [Test]
+    public void The_first_event_is_the_match_metadata_and_it_is_the_only_one()
+    {
+        var kickOff = new DateTimeOffset(2026, 10, 25, 16, 30, 0, TimeSpan.Zero);
+        var match = new MatchSimulator(NorthBank, ThamesValley, seed: 7, kickOffUtc: kickOff).Play().ToList();
+
+        var metadata = match[0].Metadata;
+        match[0].Type.Should().Be(MatchEventType.MatchMetadata);
+        match[0].Sequence.Should().Be(1);
+        match.Should().ContainSingle(e => e.Type == MatchEventType.MatchMetadata);
+
+        metadata!.Venue.Should().Be(NorthBank.Venue, "the match is played at the home ground");
+        metadata.KickOffUtc.Should().Be(kickOff);
+        metadata.Seed.Should().Be(7);
+        metadata.Home.ShortName.Should().Be("NBK");
+        metadata.Away.ShortName.Should().Be("TVU");
+        metadata.Home.StartingEleven.Should().HaveCount(11).And.OnlyHaveUniqueItems();
+        metadata.Away.StartingEleven.Should().HaveCount(11).And.OnlyHaveUniqueItems();
+        _players[metadata.Home.StartingEleven[0]].Position.Should().Be(PlayerPosition.Goalkeeper);
+    }
+
+    [Test]
+    public void Only_the_starting_elevens_named_in_the_metadata_take_part()
+    {
+        var match = PlayMatch(seed: 11);
+        var starters = match[0].Metadata!.Home.StartingEleven.Concat(match[0].Metadata!.Away.StartingEleven).ToHashSet();
+
+        match.SelectMany(e => new[] { e.PlayerId, e.RecipientPlayerId, e.AssistPlayerId, e.FouledPlayerId })
+            .OfType<string>()
+            .Should().OnlyContain(id => starters.Contains(id), "there are no substitutions yet");
+    }
+
+    [Test]
+    public void Passes_carry_xpass_and_both_pressured_and_unpressured_actions_appear()
+    {
+        var events = _season.Take(20).SelectMany(m => m).ToList();
+        var passes = events.Where(e => e.Type == MatchEventType.Pass).ToList();
+
+        passes.Should().OnlyContain(p => p.Pass!.ExpectedCompletion > 0 && p.Pass.ExpectedCompletion < 1);
+        passes.Select(p => p.Pass!.ExpectedCompletion).Distinct().Should().HaveCountGreaterThan(3, "distance, pressure and the target's third all change xPass");
+        foreach (var type in new[] { MatchEventType.Pass, MatchEventType.Carry, MatchEventType.Shot })
+        {
+            events.Where(e => e.Type == type).Should().Contain(e => e.UnderPressure, type.ToString())
+                .And.Contain(e => !e.UnderPressure, type.ToString());
+        }
+    }
+
+    [Test]
+    public void Speeds_are_realistic_for_the_ball_and_the_player()
+    {
+        var events = _season.Take(50).SelectMany(m => m).ToList();
+
+        events.Where(e => e.Pass is not null).Should().OnlyContain(e => e.Pass!.SpeedKmh >= 30 && e.Pass.SpeedKmh <= 90);
+        events.Where(e => e.Shot is { BodyPart: BodyPart.Head }).Should().NotBeEmpty()
+            .And.OnlyContain(e => e.Shot!.SpeedKmh >= 40 && e.Shot.SpeedKmh <= 70);
+        events.Where(e => e.Shot is { BodyPart: not BodyPart.Head }).Should().OnlyContain(e => e.Shot!.SpeedKmh >= 54 && e.Shot.SpeedKmh <= 125);
+        events.Where(e => e.Carry is not null).Should().OnlyContain(e => e.Carry!.SpeedKmh >= 0.7 * _players[e.PlayerId!].TopSpeedKmh - 0.05);
+    }
+
+    [Test]
+    public void A_carry_beats_the_player_s_recorded_top_speed_only_rarely_and_only_just()
+    {
+        var carries = _season.SelectMany(m => m).Where(e => e.Carry is not null).ToList();
+        var faster = carries.Where(e => e.Carry!.SpeedKmh > _players[e.PlayerId!].TopSpeedKmh).ToList();
+        TestContext.Out.WriteLine($"Carries faster than the recorded best: {faster.Count} in {_season.Count} matches");
+
+        faster.Should().NotBeEmpty("records do get broken, and the milestones detector needs them");
+        faster.Count.Should().BeLessThan(_season.Count, "fewer than one a match");
+        faster.Should().OnlyContain(e => e.Carry!.SpeedKmh <= _players[e.PlayerId!].TopSpeedKmh + 0.5);
+        carries.Should().NotContain(e => e.Carry!.SpeedKmh == _players[e.PlayerId!].TopSpeedKmh,
+            "a record-breaking carry must not round back down to exactly the record");
+    }
+
+    [Test]
+    public void The_kick_off_time_is_recorded_in_utc_whatever_offset_it_is_given_in()
+    {
+        var britishSummerTime = new DateTimeOffset(2026, 10, 24, 15, 0, 0, TimeSpan.FromHours(1));
+
+        var metadata = new MatchSimulator(NorthBank, ThamesValley, seed: 7, kickOffUtc: britishSummerTime).Play().First().Metadata!;
+
+        metadata.KickOffUtc.Offset.Should().Be(TimeSpan.Zero);
+        metadata.KickOffUtc.Should().Be(britishSummerTime, "it's the same instant");
+        metadata.KickOffUtc.Hour.Should().Be(14);
+    }
+
+    [Test]
+    public void The_weaker_foot_is_never_used_by_two_footed_players_or_from_set_pieces()
+    {
+        var shots = _season.SelectMany(m => m).Where(e => e.Shot is not null).ToList();
+
+        shots.Where(e => e.Shot!.WeakFoot).Should().NotBeEmpty()
+            .And.OnlyContain(e => _players[e.PlayerId!].PreferredFoot != PreferredFoot.Both)
+            .And.OnlyContain(e => e.Shot!.Situation == ShotSituation.OpenPlay || e.Shot.Situation == ShotSituation.Counter);
+        _season.SelectMany(m => m).Where(e => e.Pass is { WeakFoot: true })
+            .Should().OnlyContain(e => _players[e.PlayerId!].PreferredFoot != PreferredFoot.Both);
+    }
+
+    [Test]
+    public void A_footed_shot_uses_the_foot_that_matches_the_weak_foot_flag()
+    {
+        var footed = _season.SelectMany(m => m).Where(e => e.Shot is { BodyPart: not BodyPart.Head }).ToList();
+
+        footed.Where(e => _players[e.PlayerId!].PreferredFoot != PreferredFoot.Both)
+            .Should().OnlyContain(e => (e.Shot!.BodyPart == StrongerFoot(_players[e.PlayerId!].PreferredFoot)) != e.Shot.WeakFoot);
+    }
+
+    private static BodyPart StrongerFoot(PreferredFoot foot) => foot == PreferredFoot.Left ? BodyPart.LeftFoot : BodyPart.RightFoot;
 }

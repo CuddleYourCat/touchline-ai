@@ -10,7 +10,7 @@ namespace Touchline.Tests.Unit.Simulator;
 public class ExpectedGoalsModelTests
 {
     private static double OpenPlay(double x, double y = 34) =>
-        ExpectedGoalsModel.Calculate(new PitchPosition(x, y), TeamSide.Home, ShotSituation.OpenPlay);
+        ExpectedGoalsModel.Calculate(new PitchPosition(x, y), TeamSide.Home, ShotSituation.OpenPlay, BodyPart.RightFoot);
 
     [TestCase(99, 0.50, TestName = "A central shot from 6 m is about 0.50")]
     [TestCase(94, 0.30, TestName = "A central shot from 11 m is about 0.30")]
@@ -23,7 +23,7 @@ public class ExpectedGoalsModelTests
     [Test]
     public void A_penalty_is_worth_0_76()
     {
-        ExpectedGoalsModel.Calculate(new PitchPosition(94, 34), TeamSide.Home, ShotSituation.Penalty).Should().Be(0.76);
+        ExpectedGoalsModel.Calculate(new PitchPosition(94, 34), TeamSide.Home, ShotSituation.Penalty, BodyPart.RightFoot).Should().Be(0.76);
     }
 
     [Test]
@@ -35,8 +35,8 @@ public class ExpectedGoalsModelTests
     [Test]
     public void Both_teams_shoot_at_the_opposite_goal()
     {
-        var homeFrom11 = ExpectedGoalsModel.Calculate(new PitchPosition(94, 34), TeamSide.Home, ShotSituation.OpenPlay);
-        var awayFrom11 = ExpectedGoalsModel.Calculate(new PitchPosition(11, 34), TeamSide.Away, ShotSituation.OpenPlay);
+        var homeFrom11 = ExpectedGoalsModel.Calculate(new PitchPosition(94, 34), TeamSide.Home, ShotSituation.OpenPlay, BodyPart.RightFoot);
+        var awayFrom11 = ExpectedGoalsModel.Calculate(new PitchPosition(11, 34), TeamSide.Away, ShotSituation.OpenPlay, BodyPart.RightFoot);
 
         awayFrom11.Should().BeApproximately(homeFrom11, 1e-9);
     }
@@ -45,11 +45,21 @@ public class ExpectedGoalsModelTests
     public void Counters_beat_open_play_which_beats_set_pieces()
     {
         var at = new PitchPosition(90, 34);
-        var counter = ExpectedGoalsModel.Calculate(at, TeamSide.Home, ShotSituation.Counter);
-        var openPlay = ExpectedGoalsModel.Calculate(at, TeamSide.Home, ShotSituation.OpenPlay);
-        var setPiece = ExpectedGoalsModel.Calculate(at, TeamSide.Home, ShotSituation.SetPiece);
+        var counter = ExpectedGoalsModel.Calculate(at, TeamSide.Home, ShotSituation.Counter, BodyPart.RightFoot);
+        var openPlay = ExpectedGoalsModel.Calculate(at, TeamSide.Home, ShotSituation.OpenPlay, BodyPart.RightFoot);
+        var setPiece = ExpectedGoalsModel.Calculate(at, TeamSide.Home, ShotSituation.SetPiece, BodyPart.RightFoot);
 
         counter.Should().BeGreaterThan(openPlay);
         openPlay.Should().BeGreaterThan(setPiece);
+    }
+
+    [Test]
+    public void A_header_is_worth_less_than_the_same_chance_on_the_foot_and_either_foot_is_equal()
+    {
+        var at = new PitchPosition(96, 34);
+        double Xg(BodyPart part) => ExpectedGoalsModel.Calculate(at, TeamSide.Home, ShotSituation.OpenPlay, part);
+
+        Xg(BodyPart.Head).Should().BeApproximately(Xg(BodyPart.RightFoot) * ExpectedGoalsModel.HeaderFactor, 1e-9);
+        Xg(BodyPart.LeftFoot).Should().Be(Xg(BodyPart.RightFoot), "xG is for an average player, so the shooter's weaker foot doesn't lower it");
     }
 }

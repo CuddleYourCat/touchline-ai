@@ -42,6 +42,19 @@ public enum CardColour
     Red
 }
 
+/// <summary>What a shot was struck with (ADR-019).</summary>
+public enum BodyPart
+{
+    /// <summary>The left foot.</summary>
+    LeftFoot,
+
+    /// <summary>The right foot.</summary>
+    RightFoot,
+
+    /// <summary>A header.</summary>
+    Head
+}
+
 /// <summary>
 /// The detail of a shot.
 /// </summary>
@@ -53,22 +66,42 @@ public sealed record ShotDetail
     /// <param name="expectedGoals">The chance quality: the probability an average player scores from here, from 0 to 1.</param>
     /// <param name="outcome">How the shot ended.</param>
     /// <param name="situation">The kind of play it came from.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="expectedGoals"/> isn't a number between 0 and 1.</exception>
-    public ShotDetail(double expectedGoals, ShotOutcome outcome, ShotSituation situation)
+    /// <param name="bodyPart">What the shot was struck with.</param>
+    /// <param name="weakFoot">True when the shooter used their weaker foot. Never true for a header.</param>
+    /// <param name="speedKmh">The ball's speed, in km/h.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// xG isn't between 0 and 1, the speed isn't a plausible ball speed, or an enum value isn't defined.
+    /// </exception>
+    /// <exception cref="ArgumentException">A header is marked as a weak-foot shot.</exception>
+    public ShotDetail(double expectedGoals, ShotOutcome outcome, ShotSituation situation, BodyPart bodyPart, bool weakFoot, double speedKmh)
     {
-        // Comparisons with NaN are always false, so range checks alone would let it through.
-        if (!double.IsFinite(expectedGoals) || expectedGoals < 0 || expectedGoals > 1)
+        if (weakFoot && bodyPart == BodyPart.Head)
         {
-            throw new ArgumentOutOfRangeException(nameof(expectedGoals), expectedGoals, "xG must be a number between 0 and 1.");
+            throw new ArgumentException("A header can't be struck with the weaker foot.", nameof(weakFoot));
         }
 
-        ExpectedGoals = expectedGoals;
-        Outcome = outcome;
-        Situation = situation;
+        ExpectedGoals = DetailRules.Probability(expectedGoals, nameof(expectedGoals), "xG");
+        Outcome = DetailRules.Defined(outcome, nameof(outcome));
+        Situation = DetailRules.Defined(situation, nameof(situation));
+        BodyPart = DetailRules.Defined(bodyPart, nameof(bodyPart));
+        WeakFoot = weakFoot;
+        SpeedKmh = DetailRules.SpeedKmh(speedKmh, nameof(speedKmh));
     }
 
-    /// <summary>The probability an average player scores this chance (xG), from 0 to 1.</summary>
+    /// <summary>
+    /// The probability an average player scores this chance (xG), from 0 to 1. It includes
+    /// the body part, as public xG models do, but not the shooter's foot or finishing quality.
+    /// </summary>
     public double ExpectedGoals { get; }
+
+    /// <summary>What the shot was struck with.</summary>
+    public BodyPart BodyPart { get; }
+
+    /// <summary>True when the shooter used their weaker foot.</summary>
+    public bool WeakFoot { get; }
+
+    /// <summary>The ball's speed, in km/h.</summary>
+    public double SpeedKmh { get; }
 
     /// <summary>How the shot ended.</summary>
     public ShotOutcome Outcome { get; }

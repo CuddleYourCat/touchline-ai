@@ -9,8 +9,9 @@ namespace Touchline.Tests.Unit.Simulator;
 
 /// <summary>
 /// Plays 200 seeded matches and checks the per-match averages land inside realistic ranges
-/// for a top-flight league (agreed for slice 03). Seeds are fixed, so the result is exact
-/// and repeatable: a failure here means a tuning change moved the game, never flakiness.
+/// for a top-flight league (agreed for slice 03, extended by ADR-019). Seeds are fixed, so
+/// the result is exact and repeatable: a failure here means a tuning change moved the game,
+/// never flakiness.
 /// </summary>
 [TestFixture]
 public class CalibrationTests
@@ -47,15 +48,22 @@ public class CalibrationTests
         _averages.YellowCards.Should().BeInRange(2.5, 5, "yellow cards per match");
         _averages.Penalties.Should().BeInRange(0.1, 0.5, "penalties per match");
         _averages.RedCards.Should().BeInRange(0.05, 0.25, "red cards per match, including second yellows");
+
+        // ADR-019
+        _averages.WeakFootShareOfFootedShots.Should().BeInRange(0.15, 0.30, "weak-foot shots as a share of footed shots");
+        _averages.HeaderShare.Should().BeInRange(0.10, 0.20, "headers as a share of all shots");
+        _averages.MeanExpectedCompletion.Should().BeApproximately(_averages.PassCompletion, 0.02, "xPass should track pass completion");
     }
 
     private sealed record MatchAverages(
         double Goals, double Shots, double OnTargetShare, double ExpectedGoals, double Passes,
-        double PassCompletion, double Fouls, double YellowCards, double RedCards, double Penalties, double Events)
+        double PassCompletion, double Fouls, double YellowCards, double RedCards, double Penalties, double Events,
+        double WeakFootShareOfFootedShots, double HeaderShare, double MeanExpectedCompletion)
     {
         public static MatchAverages From(IReadOnlyList<List<MatchEvent>> games)
         {
             var shots = games.SelectMany(g => g).Where(e => e.Type == MatchEventType.Shot).ToList();
+            var footed = shots.Where(s => s.Shot!.BodyPart != BodyPart.Head).ToList();
             var passes = games.SelectMany(g => g).Where(e => e.Type == MatchEventType.Pass).ToList();
             double PerMatch(Func<MatchEvent, bool> predicate) => games.Average(g => g.Count(predicate));
 
@@ -70,7 +78,10 @@ public class CalibrationTests
                 YellowCards: PerMatch(e => e.Card == CardColour.Yellow),
                 RedCards: PerMatch(e => e.Card == CardColour.Red),
                 Penalties: PerMatch(e => e.Shot is { Situation: ShotSituation.Penalty }),
-                Events: games.Average(g => g.Count));
+                Events: games.Average(g => g.Count),
+                WeakFootShareOfFootedShots: footed.Count(s => s.Shot!.WeakFoot) / (double)footed.Count,
+                HeaderShare: (shots.Count - footed.Count) / (double)shots.Count,
+                MeanExpectedCompletion: passes.Average(p => p.Pass!.ExpectedCompletion));
         }
     }
 }

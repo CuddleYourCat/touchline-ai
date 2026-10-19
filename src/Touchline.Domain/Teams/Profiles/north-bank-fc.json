@@ -2,6 +2,7 @@
   "id": "north-bank-fc",
   "name": "North Bank FC",
   "shortName": "NBK",
+  "venue": "Northgate Stadium",
   "colours": { "primary": "#d4202a", "secondary": "#ffffff" },
   "tendencies": {
     "pressingIntensity": 0.8,
@@ -10,21 +11,21 @@
     "shotAppetite": 0.55
   },
   "squad": [
-    { "id": "nbfc-01", "name": "Tomas Varga", "shirtNumber": 1, "position": "Goalkeeper", "role": "sweeper keeper, comfortable with the ball at his feet" },
-    { "id": "nbfc-02", "name": "Kofi Mensah-Hale", "shirtNumber": 2, "position": "Defender", "role": "inverted right-back who steps into midfield" },
-    { "id": "nbfc-03", "name": "Jamie Castell", "shirtNumber": 3, "position": "Defender", "role": "overlapping left-back" },
-    { "id": "nbfc-04", "name": "Luka Ferreira", "shirtNumber": 4, "position": "Defender", "role": "ball-playing centre-back" },
-    { "id": "nbfc-05", "name": "Theo Lindqvist", "shirtNumber": 5, "position": "Midfielder", "role": "deep-lying playmaker" },
-    { "id": "nbfc-06", "name": "Dan Okafor", "shirtNumber": 6, "position": "Defender", "role": "commanding centre-back, strong in the air" },
-    { "id": "nbfc-07", "name": "Reggie Ashworth", "shirtNumber": 7, "position": "Forward", "role": "inverted right winger, left-footed, cuts inside to shoot" },
-    { "id": "nbfc-08", "name": "Marco Sienna", "shirtNumber": 8, "position": "Midfielder", "role": "box-to-box runner" },
-    { "id": "nbfc-09", "name": "Callum Pryce", "shirtNumber": 9, "position": "Forward", "role": "pressing centre-forward" },
-    { "id": "nbfc-10", "name": "Elias Brook", "shirtNumber": 10, "position": "Midfielder", "role": "creative number ten" },
-    { "id": "nbfc-11", "name": "Noah Kerrigan", "shirtNumber": 11, "position": "Forward", "role": "direct left winger who beats players one-on-one" },
-    { "id": "nbfc-13", "name": "Ollie Brandt", "shirtNumber": 13, "position": "Goalkeeper", "role": "reserve goalkeeper, shot-stopper" },
-    { "id": "nbfc-14", "name": "Idris Bello", "shirtNumber": 14, "position": "Forward", "role": "pacy forward off the bench" },
-    { "id": "nbfc-15", "name": "Ruben Aalto", "shirtNumber": 15, "position": "Defender", "role": "cover centre-back" },
-    { "id": "nbfc-16", "name": "Sami Haddad", "shirtNumber": 16, "position": "Midfielder", "role": "ball-winning midfielder" },
-    { "id": "nbfc-19", "name": "Felix Moreau", "shirtNumber": 19, "position": "Forward", "role": "target forward who holds the ball up" }
+    { "id": "nbfc-01", "name": "Tomas Varga", "shirtNumber": 1, "position": "Goalkeeper", "role": "sweeper keeper, comfortable with the ball at his feet", "preferredFoot": "Right", "topSpeedKmh": 30.1, "finishing": 0.05, "passing": 0.70 },
+    { "id": "nbfc-02", "name": "Kofi Mensah-Hale", "shirtNumber": 2, "position": "Defender", "role": "inverted right-back who steps into midfield", "preferredFoot": "Right", "topSpeedKmh": 33.4, "finishing": 0.30, "passing": 0.59 },
+    { "id": "nbfc-03", "name": "Jamie Castell", "shirtNumber": 3, "position": "Defender", "role": "overlapping left-back, left-footed", "preferredFoot": "Left", "topSpeedKmh": 34.6, "finishing": 0.28, "passing": 0.49 },
+    { "id": "nbfc-04", "name": "Luka Ferreira", "shirtNumber": 4, "position": "Defender", "role": "ball-playing centre-back", "preferredFoot": "Right", "topSpeedKmh": 32.0, "finishing": 0.25, "passing": 0.62 },
+    { "id": "nbfc-05", "name": "Theo Lindqvist", "shirtNumber": 5, "position": "Midfielder", "role": "deep-lying playmaker", "preferredFoot": "Right", "topSpeedKmh": 31.2, "finishing": 0.40, "passing": 0.75 },
+    { "id": "nbfc-06", "name": "Dan Okafor", "shirtNumber": 6, "position": "Defender", "role": "commanding centre-back, strong in the air", "preferredFoot": "Right", "topSpeedKmh": 32.6, "finishing": 0.32, "passing": 0.42 },
+    { "id": "nbfc-07", "name": "Reggie Ashworth", "shirtNumber": 7, "position": "Forward", "role": "inverted right winger, left-footed, cuts inside to shoot", "preferredFoot": "Left", "topSpeedKmh": 35.8, "finishing": 0.78, "passing": 0.55 },
+    { "id": "nbfc-08", "name": "Marco Sienna", "shirtNumber": 8, "position": "Midfielder", "role": "box-to-box runner", "preferredFoot": "Right", "topSpeedKmh": 33.9, "finishing": 0.55, "passing": 0.53 },
+    { "id": "nbfc-09", "name": "Callum Pryce", "shirtNumber": 9, "position": "Forward", "role": "pressing centre-forward", "preferredFoot": "Right", "topSpeedKmh": 34.1, "finishing": 0.72, "passing": 0.37 },
+    { "id": "nbfc-10", "name": "Elias Brook", "shirtNumber": 10, "position": "Midfielder", "role": "creative number ten, two-footed", "preferredFoot": "Both", "topSpeedKmh": 32.5, "finishing": 0.62, "passing": 0.72 },
+    { "id": "nbfc-11", "name": "Noah Kerrigan", "shirtNumber": 11, "position": "Forward", "role": "direct left winger who beats players one-on-one", "preferredFoot": "Left", "topSpeedKmh": 36.4, "finishing": 0.60, "passing": 0.45 },
+    { "id": "nbfc-13", "name": "Ollie Brandt", "shirtNumber": 13, "position": "Goalkeeper", "role": "reserve goalkeeper, shot-stopper", "preferredFoot": "Right", "topSpeedKmh": 29.4, "finishing": 0.05, "passing": 0.45 },
+    { "id": "nbfc-14", "name": "Idris Bello", "shirtNumber": 14, "position": "Forward", "role": "pacy forward off the bench", "preferredFoot": "Right", "topSpeedKmh": 36.1, "finishing": 0.58, "passing": 0.37 },
+    { "id": "nbfc-15", "name": "Ruben Aalto", "shirtNumber": 15, "position": "Defender", "role": "cover centre-back, left-footed", "preferredFoot": "Left", "topSpeedKmh": 31.8, "finishing": 0.22, "passing": 0.45 },
+    { "id": "nbfc-16", "name": "Sami Haddad", "shirtNumber": 16, "position": "Midfielder", "role": "ball-winning midfielder", "preferredFoot": "Right", "topSpeedKmh": 32.8, "finishing": 0.38, "passing": 0.51 },
+    { "id": "nbfc-19", "name": "Felix Moreau", "shirtNumber": 19, "position": "Forward", "role": "target forward who holds the ball up", "preferredFoot": "Right", "topSpeedKmh": 31.5, "finishing": 0.66, "passing": 0.42 }
   ]
 }

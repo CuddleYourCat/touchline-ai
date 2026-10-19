@@ -13,6 +13,8 @@ public static class TeamProfileCatalog
 {
     private const string _resourcePrefix = "Touchline.Domain.Teams.Profiles.";
     private const int _minimumSquadSize = 11;
+    private const double _minimumTopSpeedKmh = 20;
+    private const double _maximumTopSpeedKmh = 40;
 
     // Lazy<T> is thread-safe by default, so concurrent first calls load the files once.
     private static readonly Lazy<IReadOnlyDictionary<string, TeamProfile>> _embedded = new(LoadAllEmbedded);
@@ -96,6 +98,7 @@ public static class TeamProfileCatalog
         RequireText(profile.Id, "the team ID", problems);
         RequireText(profile.Name, "the team name", problems);
         RequireText(profile.ShortName, "the short name", problems);
+        RequireText(profile.Venue, "the venue", problems);
 
         // "required" only checks a property is present; an explicit null still gets through.
         if (profile.Squad is null || profile.Tendencies is null || profile.Colours is null)
@@ -109,6 +112,7 @@ public static class TeamProfileCatalog
             RequireText(player.Id, $"{label}'s ID", problems);
             RequireText(player.Name, $"{label}'s name", problems);
             RequireText(player.Role, $"{label}'s role", problems);
+            problems.AddRange(TraitProblems(player, label));
         }
 
         if (profile.Squad.Count < _minimumSquadSize)
@@ -133,7 +137,7 @@ public static class TeamProfileCatalog
                      (nameof(tendencies.ShotAppetite), tendencies.ShotAppetite)
                  })
         {
-            if (!double.IsFinite(value) || value < 0 || value > 1)
+            if (!Ranges.IsBetween(value, 0, 1))
             {
                 problems.Add($"{name} is {value.ToString(CultureInfo.InvariantCulture)}; tendencies must be between 0 and 1");
             }
@@ -142,6 +146,29 @@ public static class TeamProfileCatalog
         if (problems.Count > 0)
         {
             throw new InvalidDataException($"Team profile '{source}' is invalid: {string.Join("; ", problems)}.");
+        }
+    }
+
+    // The traits of ADR-019. Top speeds are checked against a human range, so a value in m/s
+    // (about 9) or a typo (335) is caught.
+    private static IEnumerable<string> TraitProblems(Player player, string label)
+    {
+        if (!Enum.IsDefined(player.PreferredFoot))
+        {
+            yield return $"{label}'s preferred foot is missing";
+        }
+
+        if (!Ranges.IsBetween(player.TopSpeedKmh, _minimumTopSpeedKmh, _maximumTopSpeedKmh))
+        {
+            yield return $"{label}'s top speed is {player.TopSpeedKmh.ToString(CultureInfo.InvariantCulture)} km/h; it must be between {_minimumTopSpeedKmh} and {_maximumTopSpeedKmh}";
+        }
+
+        foreach (var (name, value) in new[] { ("finishing", player.Finishing), ("passing", player.Passing) })
+        {
+            if (!Ranges.IsBetween(value, 0, 1))
+            {
+                yield return $"{label}'s {name} is {value.ToString(CultureInfo.InvariantCulture)}; ratings must be between 0 and 1";
+            }
         }
     }
 

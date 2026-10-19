@@ -9,7 +9,7 @@ public class MatchStateTests
 {
     private const string _matchId = "nbk-tvu-0001";
 
-    private static MatchEvent Event(long sequence, MatchEventType type, TeamSide team = TeamSide.Home) => new()
+    private static MatchEvent Event(long sequence, MatchEventType type, TeamSide team = TeamSide.Home) => new MatchEvent
     {
         Sequence = sequence,
         MatchId = _matchId,
@@ -19,11 +19,11 @@ public class MatchStateTests
         Team = team,
         PlayerId = team == TeamSide.Home ? "nbfc-07" : "tvu-09",
         Start = new PitchPosition(94, 30)
-    };
+    }.WithRequiredDetail();
 
     private static MatchEvent ShotEvent(long sequence, ShotOutcome outcome, double xg, TeamSide team = TeamSide.Home)
     {
-        var shot = new ShotDetail(xg, outcome, ShotSituation.OpenPlay);
+        var shot = new ShotDetail(xg, outcome, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
         return Event(sequence, MatchEventType.Shot, team) with { Shot = shot, Successful = shot.OnTarget };
     }
 
@@ -103,7 +103,7 @@ public class MatchStateTests
     [TestCase(1.01)]
     public void Expected_goals_outside_zero_to_one_are_rejected(double xg)
     {
-        var create = () => new ShotDetail(xg, ShotOutcome.Saved, ShotSituation.OpenPlay);
+        var create = () => new ShotDetail(xg, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
 
         create.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -155,10 +155,164 @@ public class MatchStateTests
         valid.Should().NotThrow();
     }
 
+    // Added in the richer-events slice (ADR-019)
+
+    [TestCase(MatchEventType.Pass, TestName = "A pass without pass detail is rejected")]
+    [TestCase(MatchEventType.Carry, TestName = "A carry without carry detail is rejected")]
+    [TestCase(MatchEventType.MatchMetadata, TestName = "A metadata event without metadata is rejected")]
+    public void An_event_missing_its_required_detail_is_rejected(MatchEventType type)
+    {
+        var bare = Event(1, type) with { Pass = null, Carry = null, Metadata = null };
+
+        bare.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage($"*a {type} event has no*");
+    }
+
+    [Test]
+    public void A_detail_on_the_wrong_event_type_is_rejected()
+    {
+        var wrong = new[]
+        {
+            ShotEvent(1, ShotOutcome.Saved, 0.2) with { Pass = new PassDetail(0.8, 40, weakFoot: false) },
+            Event(1, MatchEventType.Pass) with { Carry = new CarryDetail(30) },
+            Event(1, MatchEventType.KickOff) with { Metadata = TestEvents.Metadata }
+        };
+
+        foreach (var invalid in wrong)
+        {
+            invalid.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>();
+        }
+    }
+
+    [TestCase(MatchEventType.Pass, true)]
+    [TestCase(MatchEventType.Carry, true)]
+    [TestCase(MatchEventType.Tackle, false)]
+    [TestCase(MatchEventType.Foul, false)]
+    [TestCase(MatchEventType.KickOff, false)]
+    public void Only_passes_carries_and_shots_can_be_under_pressure(MatchEventType type, bool allowed)
+    {
+        var pressed = Event(1, type) with { UnderPressure = true };
+
+        if (allowed)
+        {
+            pressed.Invoking(e => e.EnsureValid()).Should().NotThrow();
+        }
+        else
+        {
+            pressed.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*under pressure*");
+        }
+    }
+
+    [Test]
+    public void A_header_cannot_be_on_the_weaker_foot()
+    {
+        var create = () => new ShotDetail(0.2, ShotOutcome.Saved, ShotSituation.SetPiece, BodyPart.Head, weakFoot: true, speedKmh: 55);
+
+        create.Should().Throw<ArgumentException>().WithMessage("*header*");
+    }
+
+    [TestCase(-0.1)]
+    [TestCase(1.1)]
+    [TestCase(double.NaN)]
+    public void An_xpass_outside_0_to_1_is_rejected(double xPass)
+    {
+        var create = () => new PassDetail(xPass, 40, weakFoot: false);
+
+        create.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [TestCase(0)]
+    [TestCase(-5)]
+    [TestCase(300)]
+    [TestCase(double.PositiveInfinity)]
+    public void An_implausible_speed_is_rejected(double speedKmh)
+    {
+        new Action(() => _ = new CarryDetail(speedKmh)).Should().Throw<ArgumentOutOfRangeException>();
+        new Action(() => _ = new PassDetail(0.8, speedKmh, weakFoot: false)).Should().Throw<ArgumentOutOfRangeException>();
+        new Action(() => _ = new ShotDetail(0.1, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh))
+            .Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Test]
+    public void The_metadata_event_changes_no_totals()
+    {
+        var state = MatchState.KickOff(_matchId).Apply(Event(1, MatchEventType.MatchMetadata));
+
+        state.Home.Should().Be(TeamStats.Empty);
+        state.Away.Should().Be(TeamStats.Empty);
+        state.LastSequence.Should().Be(1);
+    }
+
+    // Added after code review
+
+    [Test]
+    public void A_metadata_event_that_names_a_player_or_an_end_is_rejected()
+    {
+        var withPlayer = Event(1, MatchEventType.MatchMetadata) with { PlayerId = "nbfc-07" };
+        var withEnd = Event(1, MatchEventType.MatchMetadata) with { End = new PitchPosition(60, 34) };
+
+        withPlayer.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*names a player*");
+        withEnd.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*end position*");
+    }
+
+    private static readonly string[] _elevenPlayers = [.. Enumerable.Range(1, 11).Select(n => $"p-{n}")];
+
+    [TestCase(10, false, TestName = "A starting eleven of ten players is rejected")]
+    [TestCase(11, true, TestName = "A starting eleven with a repeated player is rejected")]
+    public void A_starting_eleven_must_be_eleven_different_players(int count, bool repeatOne)
+    {
+        var players = _elevenPlayers.Take(count).ToList();
+        if (repeatOne)
+        {
+            players[10] = players[0];
+        }
+
+        var create = () => new TeamSheet("north-bank-fc", "North Bank FC", "NBK", players);
+
+        create.Should().Throw<ArgumentException>().WithMessage("*11 different player IDs*");
+    }
+
+    [Test]
+    public void Metadata_without_a_starting_eleven_venue_or_second_team_is_rejected()
+    {
+        var sheet = TestEvents.Metadata.Home;
+
+        new Action(() => _ = new TeamSheet("x", "X", "XXX", null!)).Should().Throw<ArgumentException>();
+        new Action(() => _ = new TeamSheet(" ", "X", "XXX", _elevenPlayers)).Should().Throw<ArgumentException>().WithMessage("*id*");
+        new Action(() => _ = new MatchMetadata(sheet, TestEvents.Metadata.Away, "", DateTimeOffset.UnixEpoch, 1))
+            .Should().Throw<ArgumentException>().WithMessage("*venue*");
+        new Action(() => _ = new MatchMetadata(sheet, null!, "Ground", DateTimeOffset.UnixEpoch, 1)).Should().Throw<ArgumentNullException>();
+        new Action(() => _ = new MatchMetadata(sheet, sheet, "Ground", DateTimeOffset.UnixEpoch, 1))
+            .Should().Throw<ArgumentException>().WithMessage("*can't play itself*");
+    }
+
+    [Test]
+    public void Team_sheets_with_the_same_players_are_equal_even_as_different_lists()
+    {
+        var first = new TeamSheet("north-bank-fc", "North Bank FC", "NBK", _elevenPlayers.ToList());
+        var second = new TeamSheet("north-bank-fc", "North Bank FC", "NBK", _elevenPlayers.ToArray());
+        var reordered = new TeamSheet("north-bank-fc", "North Bank FC", "NBK", Enumerable.Reverse(_elevenPlayers).ToList());
+
+        second.Should().Be(first);
+        second.GetHashCode().Should().Be(first.GetHashCode());
+        reordered.Should().NotBe(first, "the order matters: the goalkeeper comes first");
+    }
+
+    [Test]
+    public void Undefined_enum_values_are_rejected()
+    {
+        var create = () => new ShotDetail(0.2, ShotOutcome.Saved, ShotSituation.OpenPlay, (BodyPart)7, weakFoot: false, speedKmh: 80);
+        var unknownType = Event(1, (MatchEventType)42);
+        var unknownTeam = Event(1, MatchEventType.Tackle, (TeamSide)3);
+
+        create.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*BodyPart*");
+        unknownType.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*event type 42*");
+        unknownTeam.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*team 3*");
+    }
+
     [Test]
     public void Expected_goals_that_are_not_a_number_are_rejected()
     {
-        var create = () => new ShotDetail(double.NaN, ShotOutcome.Saved, ShotSituation.OpenPlay);
+        var create = () => new ShotDetail(double.NaN, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
 
         create.Should().Throw<ArgumentOutOfRangeException>();
     }

@@ -325,6 +325,74 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 
 ---
 
+## ADR-019 — Richer events: metadata, pressure, xPass, speeds and player traits
+
+**Status:** Accepted · 1st half, before slice 04
+
+**Decision**
+
+*Match metadata*
+- A new **`MatchMetadata`** event at sequence 1, before kick-off. It carries the two team IDs and names, both starting elevens, a fictional venue, the kick-off time (UTC) and the seed.
+- It is a `MatchEvent` like any other, so the stream has one type. By convention its `Team` is `Home` and its `Start` is the centre spot. `MatchState.Apply` accepts it and changes nothing but the sequence.
+
+*Pressure and difficulty*
+- **`UnderPressure`** (bool) on passes, carries and shots. The engine already decides it and currently throws it away.
+- **xPass** on every pass: the probability that an **average player** completes that pass, from distance, pressure, the target's third and long ball. This is the number the engine already computes. It lives in a new **`PassDetail`**, beside the pass's speed.
+
+*Speeds, all in km/h*
+- **`SpeedKmh`** on passes (ball speed, about 30–90), shots (about 60–125 footed, 10% slower on the weak foot so down to 54, and 40–70 headed) and carries (the player's speed).
+- Carry distance isn't stored. It's derived from `Start` and `End`.
+
+*Player traits, in the team profiles*
+- **`PreferredFoot`**: Left, Right or Both. The free-text `Role` keeps its description; this is the structured version.
+- **`TopSpeedKmh`**: the player's **recorded previous best**, for example 34.2.
+- **`Finishing`** and **`Passing`**: ratings from 0 to 1, where 0.5 is an average player.
+- `TeamProfileCatalog` validates all four. Every player in both squads gets values that match their `Role`.
+
+*How the traits are used: they affect outcomes, not expectations*
+- **Shots record a `BodyPart`** (LeftFoot, RightFoot, Head) and a **`WeakFoot`** flag. The engine picks the body part from the situation (headers from corners and crosses) and the shooter's preferred foot (a "Both" player never has a weak foot).
+- **xG stays an average-player measure**, but now includes the body part: a header's xG is 0.6 × the footed value, as in public xG models.
+- **The result** uses the player: the chance of scoring is xG × a finishing factor (0.75–1.25 across the rating range) × 0.8 on the weak foot. A pass completes with xPass × a passing factor, × 0.9 on the weak foot.
+- **Carry speed** is drawn from 70–98% of the player's `TopSpeedKmh`. Very rarely (about once in 400 sprints) a carry exceeds it by 0.1 to 0.5 km/h. The minimum gain is the 0.1 km/h that speeds are rounded to, so a record is never "beaten" by a speed equal to it.
+- The event stores **only the speed**. Spotting a **new personal best** is left to the milestones detector, which compares speeds with the profile and with earlier carries in the match.
+
+*Settled during the build*
+- **`PassDetail` also records `WeakFoot`**, because a weak-foot pass completes less often, and the Analyst should be able to say why.
+- **The venue is the home club's ground**, from a new required `Venue` on `TeamProfile`: Northgate Stadium and Kennet Meadow.
+- **`DomainJson` now sets `RespectRequiredConstructorParameters`.** A constructor value missing from the JSON (a player's top speed, a shot's speed) is an error, instead of quietly becoming 0. `PreferredFoot` starts at 1, so an unset foot fails validation too.
+
+*Settled at code review*
+- **Weak-foot factors are relative to the stronger foot, and the two are normalised.** An average one-footed player uses their weaker foot 22% of the time, and that mix is part of "average". So when the weaker foot is possible, the stronger foot is scaled slightly up (×1.046 for shots, ×1.022 for passes) and the weaker one down (0.8 and 0.9 of the stronger), keeping the mix at 1. Without that, xG and xPass would overstate every one-footed player.
+- **Outfield ratings average 0.5**, as the definition requires. Passing was lowered by 0.13 across the outfield, from about 0.63, where the surplus had been hiding the un-normalised weak-foot penalty.
+- **Metadata is validated on construction.** Each team sheet needs an ID, a name, a short name and eleven different player IDs. The venue is required, the two teams must differ, the kick-off is stored in UTC whatever offset it arrives in, and the metadata event may not name a player or an end position. `TeamSheet` compares its starting eleven by value, so two identical sheets read from JSON are equal.
+- **Enum values are checked.** JSON accepts any number for an enum, so `EnsureValid` rejects an undefined type, team or card colour, and `ShotDetail` an undefined outcome, situation or body part.
+
+*Calibration*
+- The existing ranges stay.
+- New checks:
+  - weak-foot shots are 15–30% of footed shots, and headers 10–20% of all shots;
+  - mean xPass is within 0.02 of the actual completion rate;
+  - goals stay within ±0.4 of xG over 200 matches, because the ratings average 0.5.
+
+**Alternatives considered**
+- **Player-adjusted xG and xPass**, where a weak-foot shot or a poor finisher gets a lower number. More personal, but the numbers stop being comparable across players, and the over- and under-performance story disappears into them.
+- **No player traits.** Simplest, but footedness, finishing and pace never appear in the match or the explanations.
+- **Metadata as a separate match document.** A smaller event type, but every consumer must fetch it separately, and stream-only consumers (the overlay feed) start without names or line-ups.
+- **Speeds in m/s**, the SI unit. Consistent with metres and seconds, but every display and prompt has to convert.
+- **A personal-best flag on the carry.** Cheaper to read, but the simulator would be deciding a milestone, which belongs to the deterministic detector.
+
+**Rationale**
+- The brief asks for match metadata, pressure, pass difficulty, and player and ball speeds (backlog items i-a and ii).
+- Adding them **before** slice 04 fixes the event schema once: the producer, the stored documents and the consumers are never changed for it later.
+- Keeping xG and xPass as average-player measures matches industry practice, and it gives the Analyst a true story to tell: *"Ashworth beat his xG on his weaker right foot."*
+
+**Trade-offs**
+- **`MatchMetadata` gives `Team` and `Start` conventional values**, because they are required members. That's a small wart in exchange for a single event type.
+- **Every player now carries four numbers to keep consistent with their `Role`** text. The catalog checks the ranges, not the consistency.
+- **Each trait adds randomness**, so all pinned seed tests and the calibration have to be re-run, and the engine's random draws (and so every seeded match) change.
+
+---
+
 ## ADR-006 — Agent orchestration framework
 
 **Status:** Proposed · needed before Stage 3

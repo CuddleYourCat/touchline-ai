@@ -14,18 +14,26 @@ namespace Touchline.Simulator.Engine;
 /// </summary>
 public sealed class MatchSimulator
 {
+    /// <summary>
+    /// The kick-off time recorded in the metadata when none is given. It's fixed rather than
+    /// "now", so a seed alone replays the identical stream.
+    /// </summary>
+    public static readonly DateTimeOffset DefaultKickOffUtc = new(2026, 10, 24, 14, 0, 0, TimeSpan.Zero);
+
     private readonly TeamProfile _home;
     private readonly TeamProfile _away;
     private readonly int _seed;
+    private readonly DateTimeOffset _kickOffUtc;
 
     /// <summary>
     /// Sets up a match.
     /// </summary>
-    /// <param name="home">The home team, attacking towards X = 105.</param>
+    /// <param name="home">The home team, attacking towards X = 105. The match is played at its venue.</param>
     /// <param name="away">The away team, attacking towards X = 0.</param>
     /// <param name="seed">Random seed. The same seed replays the same match.</param>
     /// <param name="matchId">The match ID stamped on every event. Defaults to <c>{home}-{away}-{seed}</c>.</param>
-    public MatchSimulator(TeamProfile home, TeamProfile away, int seed, string? matchId = null)
+    /// <param name="kickOffUtc">The kick-off time recorded in the metadata. Defaults to <see cref="DefaultKickOffUtc"/>.</param>
+    public MatchSimulator(TeamProfile home, TeamProfile away, int seed, string? matchId = null, DateTimeOffset? kickOffUtc = null)
     {
         ArgumentNullException.ThrowIfNull(home);
         ArgumentNullException.ThrowIfNull(away);
@@ -33,6 +41,7 @@ public sealed class MatchSimulator
         _home = home;
         _away = away;
         _seed = seed;
+        _kickOffUtc = kickOffUtc ?? DefaultKickOffUtc;
         MatchId = matchId ?? string.Create(CultureInfo.InvariantCulture, $"{home.ShortName}-{away.ShortName}-{seed}").ToLowerInvariant();
     }
 
@@ -43,14 +52,18 @@ public sealed class MatchSimulator
     /// Plays the match. Events are produced lazily, one at a time, so a caller can publish
     /// each event as it's made. Each call replays the match from the start.
     /// </summary>
-    /// <returns>Every event of the match, in sequence order, from kick-off to full time.</returns>
-    public IEnumerable<MatchEvent> Play() => new Run(_home, _away, _seed, MatchId).Events();
+    /// <returns>
+    /// Every event of the match, in sequence order: the match metadata, then kick-off to full time.
+    /// </returns>
+    public IEnumerable<MatchEvent> Play() => new Run(_home, _away, _seed, MatchId, _kickOffUtc).Events();
 
     /// <summary>The mutable state of one playing of the match. Never shared.</summary>
     private sealed class Run
     {
         private readonly SeededRandom _random;
         private readonly string _matchId;
+        private readonly int _seed;
+        private readonly DateTimeOffset _kickOffUtc;
         private readonly Dictionary<TeamSide, Lineup> _lineups;
 
         private long _sequence;
@@ -67,15 +80,20 @@ public sealed class MatchSimulator
         private Player? _lastPasser;
         private int _cornersInPossession;
 
-        public Run(TeamProfile home, TeamProfile away, int seed, string matchId)
+        public Run(TeamProfile home, TeamProfile away, int seed, string matchId, DateTimeOffset kickOffUtc)
         {
             _random = new SeededRandom(seed);
             _matchId = matchId;
+            _seed = seed;
+            _kickOffUtc = kickOffUtc;
             _lineups = new() { [TeamSide.Home] = new Lineup(home), [TeamSide.Away] = new Lineup(away) };
         }
 
         public IEnumerable<MatchEvent> Events()
         {
+            _period = MatchPeriod.FirstHalf;
+            yield return Metadata();
+
             foreach (var (period, start, added, kickingOff) in new[]
                      {
                          (MatchPeriod.FirstHalf, TimeSpan.Zero, FirstHalfAddedMinutes, TeamSide.Home),
@@ -103,6 +121,19 @@ public sealed class MatchSimulator
             }
         }
 
+        // The first event (ADR-019). Team and Start are required members, so they take the
+        // conventional values: the home side and the centre spot.
+        private MatchEvent Metadata() => Emit(MatchEventType.MatchMetadata, TeamSide.Home, null, Centre) with
+        {
+            Metadata = new MatchMetadata(Sheet(TeamSide.Home), Sheet(TeamSide.Away), _lineups[TeamSide.Home].Team.Venue, _kickOffUtc, _seed)
+        };
+
+        private TeamSheet Sheet(TeamSide side)
+        {
+            var team = _lineups[side].Team;
+            return new TeamSheet(team.Id, team.Name, team.ShortName, _lineups[side].OnPitch.Select(p => p.Id).ToList());
+        }
+
         private static PitchPosition Centre => new(PitchDimensions.Length / 2, PitchDimensions.Width / 2);
 
         private Lineup Attackers => _lineups[_team];
@@ -128,8 +159,9 @@ public sealed class MatchSimulator
                 Advance(DuelSeconds);
             }
 
+            var headerChance = PitchDimensions.IsInPenaltyArea(_ball, Other(_team)) ? OpenPlayHeaderShareInBox : 0;
             var events = _random.NextDouble() < ShotChance(distanceToGoal)
-                ? Shoot(_counter ? ShotSituation.Counter : ShotSituation.OpenPlay)
+                ? Shoot(_counter ? ShotSituation.Counter : ShotSituation.OpenPlay, headerChance: headerChance, underPressure: underPressure)
                 : _random.NextDouble() < CarryShare
                     ? Carry(underPressure)
                     : Pass(underPressure);
@@ -170,13 +202,22 @@ public sealed class MatchSimulator
             var target = Move(_ball, forward, sideways);
             var recipient = Attackers.Pick(_random, PitchZone.Locate(target, _team).Third, except: _carrier);
 
-            var success = PassSuccessShort
+            // xPass: how often an average player completes this pass (ADR-019).
+            var expectedCompletion = PassSuccessShort
                 - (isLong ? PassSuccessLongPenalty : 0)
                 - (underPressure ? PassSuccessPressurePenalty : 0)
                 - (PitchZone.Locate(target, _team).Third == Third.Attacking ? PassSuccessAttackingThirdPenalty : 0);
-            var completed = _random.NextDouble() < success;
+            var weakFoot = UsesWeakFoot(_carrier, allowWeakFoot: true);
+            var footFactor = FootFactor(_carrier, weakFootPossible: true, weakFoot, WeakFootPassFactor, StrongFootPassFactor);
+            var completed = _random.NextDouble() < PassCompletion(_carrier, expectedCompletion, footFactor);
+            var speed = Math.Round(Uniform(isLong ? LongPassSpeedKmh : ShortPassSpeedKmh), 1);
 
-            yield return Emit(MatchEventType.Pass, _team, _carrier.Id, _ball, target, completed) with { RecipientPlayerId = recipient.Id };
+            yield return Emit(MatchEventType.Pass, _team, _carrier.Id, _ball, target, completed) with
+            {
+                RecipientPlayerId = recipient.Id,
+                UnderPressure = underPressure,
+                Pass = new PassDetail(expectedCompletion, speed, weakFoot)
+            };
             Advance(PassSeconds);
 
             if (completed)
@@ -201,7 +242,11 @@ public sealed class MatchSimulator
             var tackleChance = (TackleBase + TacklePerPressingIntensity * pressing) * (underPressure ? TackleUnderPressureFactor : 1);
             if (_random.NextDouble() >= tackleChance)
             {
-                yield return Emit(MatchEventType.Carry, _team, _carrier.Id, _ball, end);
+                yield return Emit(MatchEventType.Carry, _team, _carrier.Id, _ball, end) with
+                {
+                    UnderPressure = underPressure,
+                    Carry = new CarryDetail(CarrySpeed(_carrier))
+                };
                 Advance(CarrySeconds);
                 _ball = end;
                 yield break;
@@ -306,17 +351,27 @@ public sealed class MatchSimulator
             return Emit(MatchEventType.Card, team, player.Id, _ball) with { Card = CardColour.Red };
         }
 
-        private IEnumerable<MatchEvent> Shoot(ShotSituation situation, double xgFactor = 1)
+        private IEnumerable<MatchEvent> Shoot(ShotSituation situation, double xgFactor = 1, double headerChance = 0, bool underPressure = false)
         {
-            var xg = Math.Clamp(ExpectedGoalsModel.Calculate(_ball, _team, situation) * xgFactor, 0.01, 0.95);
-            var outcome = ShotOutcomeFor(xg);
-            var shot = new ShotDetail(xg, outcome, situation);
+            // Set pieces and penalties are always struck on the stronger foot.
+            var openPlay = situation is ShotSituation.OpenPlay or ShotSituation.Counter;
+            var (bodyPart, weakFoot) = headerChance > 0 && _random.NextDouble() < headerChance
+                ? (BodyPart.Head, false)
+                : Foot(_carrier, allowWeakFoot: openPlay);
+
+            // xG is for an average player. The shooter's finishing and foot change the result only (ADR-019).
+            var xg = Math.Clamp(ExpectedGoalsModel.Calculate(_ball, _team, situation, bodyPart) * xgFactor, 0.01, 0.95);
+            var footFactor = FootFactor(_carrier, weakFootPossible: openPlay && bodyPart != BodyPart.Head, weakFoot, WeakFootShotFactor, StrongFootShotFactor);
+            var scoringChance = Math.Min(MaxScoringChance, xg * FinishingFactor(_carrier) * footFactor);
+            var outcome = ShotOutcomeFor(scoringChance);
+            var shot = new ShotDetail(xg, outcome, situation, bodyPart, weakFoot, ShotSpeed(situation, bodyPart, weakFoot));
             var assist = situation == ShotSituation.Penalty || _lastPasser == _carrier ? null : _lastPasser;
 
             yield return Emit(MatchEventType.Shot, _team, _carrier.Id, _ball, ShotEnd(outcome), shot.OnTarget) with
             {
                 Shot = shot,
-                AssistPlayerId = assist?.Id
+                AssistPlayerId = assist?.Id,
+                UnderPressure = underPressure
             };
             Advance((ShotSeconds, ShotSeconds));
 
@@ -358,9 +413,63 @@ public sealed class MatchSimulator
             }
         }
 
-        private ShotOutcome ShotOutcomeFor(double xg)
+        // A one-footed player strikes with their stronger foot, or sometimes the weaker one when
+        // it's allowed. A two-footed player has no weaker foot, so either foot will do.
+        private (BodyPart Foot, bool WeakFoot) Foot(Player player, bool allowWeakFoot)
         {
-            if (_random.NextDouble() < xg)
+            if (player.PreferredFoot == PreferredFoot.Both)
+            {
+                return (_random.Next(2) == 0 ? BodyPart.LeftFoot : BodyPart.RightFoot, false);
+            }
+
+            var (strong, weak) = player.PreferredFoot == PreferredFoot.Left
+                ? (BodyPart.LeftFoot, BodyPart.RightFoot)
+                : (BodyPart.RightFoot, BodyPart.LeftFoot);
+
+            return UsesWeakFoot(player, allowWeakFoot) ? (weak, true) : (strong, false);
+        }
+
+        // Only the weak-foot question, for actions that don't record which foot (passes).
+        // A two-footed player costs no random draw.
+        private bool UsesWeakFoot(Player player, bool allowWeakFoot) =>
+            allowWeakFoot && player.PreferredFoot != PreferredFoot.Both && _random.NextDouble() < WeakFootShare;
+
+        // When a one-footed player could have used either foot, the feet are scaled so their
+        // usual mix averages 1, and xG and xPass stay true for an average player (ADR-019).
+        private static double FootFactor(Player player, bool weakFootPossible, bool weakFoot, double weakFactor, double strongFactor) =>
+            !weakFootPossible || player.PreferredFoot == PreferredFoot.Both ? 1
+            : weakFoot ? weakFactor * strongFactor
+            : strongFactor;
+
+        private static double FinishingFactor(Player player) => FinishingFactorMin + FinishingFactorRange * player.Finishing;
+
+        private static double PassCompletion(Player passer, double expectedCompletion, double footFactor) =>
+            Math.Min(MaxPassCompletion, expectedCompletion * (PassingFactorMin + PassingFactorRange * passer.Passing) * footFactor);
+
+        private double ShotSpeed(ShotSituation situation, BodyPart bodyPart, bool weakFoot)
+        {
+            var speed = bodyPart == BodyPart.Head ? Uniform(HeaderSpeedKmh)
+                : situation == ShotSituation.Penalty ? Uniform(PenaltySpeedKmh)
+                : Math.Clamp(Normal(FootedShotSpeedMeanKmh, FootedShotSpeedSpreadKmh), FootedShotSpeedLimitsKmh.Min, FootedShotSpeedLimitsKmh.Max);
+
+            return Math.Round(speed * (weakFoot ? WeakFootSpeedFactor : 1), 1);
+        }
+
+        // Below the player's recorded best, except for the rare sprint that beats it. Whether
+        // that's a new personal best is for the milestones detector to say (ADR-019).
+        private double CarrySpeed(Player player)
+        {
+            var share = Uniform(CarrySpeedShareOfTop);
+            var speed = share >= SprintShareOfTop && _random.NextDouble() < PersonalBestChancePerSprint
+                ? player.TopSpeedKmh + Uniform(PersonalBestGainKmh)
+                : player.TopSpeedKmh * share;
+
+            return Math.Round(speed, 1);
+        }
+
+        private ShotOutcome ShotOutcomeFor(double scoringChance)
+        {
+            if (_random.NextDouble() < scoringChance)
             {
                 return ShotOutcome.Goal;
             }
@@ -393,9 +502,14 @@ public sealed class MatchSimulator
                 goal.X == 0 ? Uniform(3, 11) : PitchDimensions.Length - Uniform(3, 11),
                 Uniform(28, 40));
             var target = Attackers.Pick(_random, Third.Attacking, except: taker);
-            var won = _random.NextDouble() < CornerDeliveryWon;
+            var won = _random.NextDouble() < PassCompletion(taker, CornerDeliveryWon, footFactor: 1);
+            var speed = Math.Round(Uniform(LongPassSpeedKmh), 1);
 
-            yield return Emit(MatchEventType.Pass, _team, taker.Id, flag, landing, won) with { RecipientPlayerId = target.Id };
+            yield return Emit(MatchEventType.Pass, _team, taker.Id, flag, landing, won) with
+            {
+                RecipientPlayerId = target.Id,
+                Pass = new PassDetail(CornerDeliveryWon, speed, weakFoot: false)
+            };
             Advance(PassSeconds);
 
             if (won)
@@ -403,7 +517,7 @@ public sealed class MatchSimulator
                 _lastPasser = taker;
                 _carrier = target;
                 _ball = landing;
-                foreach (var e in Shoot(ShotSituation.SetPiece))
+                foreach (var e in Shoot(ShotSituation.SetPiece, headerChance: CornerHeaderShare))
                 {
                     yield return e;
                 }
@@ -470,6 +584,8 @@ public sealed class MatchSimulator
             defending == TeamSide.Home ? new PitchPosition(5.5, 34) : new PitchPosition(PitchDimensions.Length - 5.5, 34);
 
         private double Uniform(double min, double max) => min + _random.NextDouble() * (max - min);
+
+        private double Uniform((double Min, double Max) range) => Uniform(range.Min, range.Max);
 
         private int Sign() => _random.Next(2) == 0 ? -1 : 1;
 

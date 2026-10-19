@@ -71,6 +71,51 @@ internal static class EngineTuning
     // many actions.
     public const int CounterActions = 4;
 
+    // Body part (ADR-019): headers come from corners, and from some chances inside the box.
+    public const double CornerHeaderShare = 0.85;
+    public const double OpenPlayHeaderShareInBox = 0.12;
+
+    // How often a one-footed player uses their weaker foot in open play. Set pieces and
+    // penalties are always taken on the stronger foot.
+    public const double WeakFootShare = 0.22;
+
+    // Player traits change outcomes, never xG or xPass (ADR-019). A rating of 0.5 is a
+    // factor of 1: finishing runs from 0.75 to 1.25, passing from 0.92 to 1.08.
+    public const double FinishingFactorMin = 0.75;
+    public const double FinishingFactorRange = 0.5;
+    public const double PassingFactorMin = 0.92;
+    public const double PassingFactorRange = 0.16;
+
+    // The weaker foot as a share of the stronger one. An average player's own mix of feet is
+    // part of "average", so when the weaker foot is possible both feet are scaled to keep the
+    // mix at 1: the stronger foot is slightly above average and the weaker one below it.
+    // Without that, xG and xPass would overstate every one-footed player by about 2–4%.
+    public const double WeakFootShotFactor = 0.8;
+    public const double WeakFootPassFactor = 0.9;
+    public const double StrongFootShotFactor = 1 / (1 - WeakFootShare * (1 - WeakFootShotFactor));
+    public const double StrongFootPassFactor = 1 / (1 - WeakFootShare * (1 - WeakFootPassFactor));
+
+    public const double MaxScoringChance = 0.97;
+    public const double MaxPassCompletion = 0.99;
+
+    // Speeds, in km/h (ADR-019).
+    public static readonly (double Min, double Max) ShortPassSpeedKmh = (30, 60);
+    public static readonly (double Min, double Max) LongPassSpeedKmh = (55, 90);
+    public static readonly (double Min, double Max) HeaderSpeedKmh = (40, 70);
+    public static readonly (double Min, double Max) PenaltySpeedKmh = (80, 110);
+    public const double FootedShotSpeedMeanKmh = 92;
+    public const double FootedShotSpeedSpreadKmh = 13;
+    public static readonly (double Min, double Max) FootedShotSpeedLimitsKmh = (60, 125);
+    public const double WeakFootSpeedFactor = 0.9;
+
+    // A carry is run at 70–98% of the player's recorded top speed. A sprint (90% or more)
+    // very rarely beats that record, by 0.1 to 0.5 km/h. The gain is at least the 0.1 km/h
+    // speeds are rounded to, so a record-breaking carry never rounds back down to the record.
+    public static readonly (double Min, double Max) CarrySpeedShareOfTop = (0.70, 0.98);
+    public const double SprintShareOfTop = 0.90;
+    public const double PersonalBestChancePerSprint = 1 / 400.0;
+    public static readonly (double Min, double Max) PersonalBestGainKmh = (0.1, 0.5);
+
     // Seconds each kind of moment takes, as (minimum, maximum).
     public static readonly (int Min, int Max) PassSeconds = (2, 5);
     public static readonly (int Min, int Max) CarrySeconds = (2, 4);
