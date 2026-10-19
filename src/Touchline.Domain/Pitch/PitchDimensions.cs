@@ -16,6 +16,12 @@ public static class PitchDimensions
     /// <summary>Width of the pitch in metres, touchline to touchline.</summary>
     public const double Width = 68;
 
+    /// <summary>How far each penalty area reaches out from its goal line, in metres.</summary>
+    public const double PenaltyAreaDepth = 16.5;
+
+    /// <summary>Width of each penalty area, centred on the goal, in metres.</summary>
+    public const double PenaltyAreaWidth = 40.32;
+
     /// <summary>
     /// The centre of the goal a team is attacking.
     /// </summary>
