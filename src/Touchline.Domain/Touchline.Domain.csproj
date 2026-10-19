@@ -3,6 +3,8 @@
   <ItemGroup>
     <!-- Team profiles ship inside the assembly, so every service sees the same squads (ADR-002). -->
     <EmbeddedResource Include="Teams\Profiles\*.json" />
+    <!-- Referee profiles likewise (ADR-020). -->
+    <EmbeddedResource Include="Officials\*.json" />
   </ItemGroup>
 
   <ItemGroup>

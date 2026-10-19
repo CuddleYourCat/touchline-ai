@@ -121,15 +121,19 @@ public class TeamProfileCatalogTests
     {
         var squads = _profiles.Values.SelectMany(p => p.Squad).Where(p => p.Position != PlayerPosition.Goalkeeper).ToList();
 
-        // 0.5 is average by definition, so xG and xPass stay honest across a whole league.
-        squads.Average(p => p.Finishing).Should().BeInRange(0.42, 0.58);
+        // 0.5 is average by definition, so xPass stays honest across a whole league. Finishing
+        // is balanced per shot instead, because forwards take most shots (see CalibrationTests).
         squads.Average(p => p.Passing).Should().BeInRange(0.45, 0.55);
+        squads.Average(p => p.Discipline).Should().BeInRange(0.45, 0.55);
     }
 
     [TestCase("\"topSpeedKmh\": 32.5", "\"topSpeedKmh\": 9.0", "top speed is 9 km/h", TestName = "A top speed in m/s is rejected")]
     [TestCase("\"finishing\": 0.5", "\"finishing\": 5", "finishing is 5", TestName = "A rating above 1 is rejected")]
+    [TestCase("\"discipline\": 0.5", "\"discipline\": -0.1", "discipline is -0.1", TestName = "A negative discipline is rejected")]
     [TestCase("\"preferredFoot\": \"Right\", ", "", "preferredFoot", TestName = "A player without a preferred foot is rejected")]
     [TestCase("\"venue\": \"Test Ground\",", "", "venue", TestName = "A team without a venue is rejected")]
+    [TestCase("\"discipline\": 0.5 }", "\"discipline\": 0.5, \"dive\": { \"left\": 1, \"stay\": 0, \"right\": 1 } }", "isn't a goalkeeper", TestName = "A dive bias on an outfield player is rejected")]
+    [TestCase("\"discipline\": 0.5 }", "\"discipline\": 0.5, \"penaltyAim\": { \"lowLeft\": -1, \"lowCentre\": 0, \"lowRight\": 2, \"highLeft\": 0, \"highCentre\": 0, \"highRight\": 0 } }", "penalty aim", TestName = "A negative penalty-aim weight is rejected")]
     public void A_profile_with_a_bad_or_missing_trait_is_rejected(string find, string replaceWith, string expected)
     {
         var json = ValidProfileJson("bad-trait").Replace(find, replaceWith, StringComparison.Ordinal);
@@ -144,7 +148,7 @@ public class TeamProfileCatalogTests
     private static string ValidProfileJson(string id)
     {
         var players = Enumerable.Range(1, 11).Select(n =>
-            $$"""{ "id": "{{id}}-{{n}}", "name": "Player {{n}}", "shirtNumber": {{n}}, "position": "{{(n == 1 ? "Goalkeeper" : "Midfielder")}}", "role": "{{(n == 1 ? "keeper" : "runner")}}", "preferredFoot": "Right", "topSpeedKmh": 32.5, "finishing": 0.5, "passing": 0.5 }""");
+            $$"""{ "id": "{{id}}-{{n}}", "name": "Player {{n}}", "shirtNumber": {{n}}, "position": "{{(n == 1 ? "Goalkeeper" : "Midfielder")}}", "role": "{{(n == 1 ? "keeper" : "runner")}}", "preferredFoot": "Right", "topSpeedKmh": 32.5, "finishing": 0.5, "passing": 0.5, "discipline": 0.5 }""");
 
         return $$"""
             {

@@ -33,13 +33,36 @@ public class PlayerTraitTests
     [Test]
     public void Strong_finishers_score_more_per_xg_than_weak_finishers()
     {
-        var strong = Shots(s => _players[s.PlayerId!].Finishing >= 0.65);
-        var weak = Shots(s => _players[s.PlayerId!].Finishing <= 0.35);
+        var strong = Shots(s => _players[s.PlayerId!].Finishing >= 0.55);
+        var weak = Shots(s => _players[s.PlayerId!].Finishing <= 0.25);
         TestContext.Out.WriteLine($"Goals per xG: strong finishers {GoalsPerXg(strong):0.00} ({strong.Count} shots), weak {GoalsPerXg(weak):0.00} ({weak.Count} shots)");
 
         GoalsPerXg(strong).Should().BeGreaterThan(1.0, "a strong finisher beats an average player's xG");
         GoalsPerXg(weak).Should().BeLessThan(1.0, "a weak finisher falls short of it");
-        GoalsPerXg(strong).Should().BeGreaterThan(GoalsPerXg(weak) * 1.15);
+        GoalsPerXg(strong).Should().BeGreaterThan(GoalsPerXg(weak) * 1.10, "the factors differ by about 1.26, and noise is about 6%");
+    }
+
+    // Added in the officials, temperament and height slice (ADR-020)
+
+    [Test]
+    public void The_average_shot_is_taken_at_average_finishing()
+    {
+        // xG models learn from the players who shoot, mostly forwards, so 0.5 means the
+        // average shot, not the average squad member. Otherwise goals run ahead of xG.
+        var shooters = Shots(_ => true).Select(s => _players[s.PlayerId!].Finishing).ToList();
+        TestContext.Out.WriteLine($"Finishing per shot: {shooters.Average():0.000}");
+
+        shooters.Average().Should().BeInRange(0.45, 0.55);
+    }
+
+    [Test]
+    public void Penalties_convert_at_close_to_their_xg_whatever_the_duels_decide()
+    {
+        var penalties = _events.Where(e => e.Shot is { Situation: ShotSituation.Penalty }).ToList();
+        var conversion = penalties.Count(p => p.IsGoal) / (double)penalties.Count;
+        TestContext.Out.WriteLine($"Penalties: {penalties.Count}, converted {conversion:P1}");
+
+        conversion.Should().BeInRange(0.70, 0.82, "an average penalty is worth 0.76");
     }
 
     [Test]

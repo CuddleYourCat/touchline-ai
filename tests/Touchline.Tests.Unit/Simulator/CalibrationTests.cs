@@ -53,12 +53,17 @@ public class CalibrationTests
         _averages.WeakFootShareOfFootedShots.Should().BeInRange(0.15, 0.30, "weak-foot shots as a share of footed shots");
         _averages.HeaderShare.Should().BeInRange(0.10, 0.20, "headers as a share of all shots");
         _averages.MeanExpectedCompletion.Should().BeApproximately(_averages.PassCompletion, 0.02, "xPass should track pass completion");
+
+        // ADR-020
+        _averages.WoodworkHits.Should().BeInRange(0.5, 1.3, "shots hitting the post or bar per match");
+        _averages.Advantages.Should().BeInRange(2, 6, "advantages played per match");
     }
 
     private sealed record MatchAverages(
         double Goals, double Shots, double OnTargetShare, double ExpectedGoals, double Passes,
         double PassCompletion, double Fouls, double YellowCards, double RedCards, double Penalties, double Events,
-        double WeakFootShareOfFootedShots, double HeaderShare, double MeanExpectedCompletion)
+        double WeakFootShareOfFootedShots, double HeaderShare, double MeanExpectedCompletion,
+        double WoodworkHits, double Advantages)
     {
         public static MatchAverages From(IReadOnlyList<List<MatchEvent>> games)
         {
@@ -81,7 +86,9 @@ public class CalibrationTests
                 Events: games.Average(g => g.Count),
                 WeakFootShareOfFootedShots: footed.Count(s => s.Shot!.WeakFoot) / (double)footed.Count,
                 HeaderShare: (shots.Count - footed.Count) / (double)shots.Count,
-                MeanExpectedCompletion: passes.Average(p => p.Pass!.ExpectedCompletion));
+                MeanExpectedCompletion: passes.Average(p => p.Pass!.ExpectedCompletion),
+                WoodworkHits: PerMatch(e => e.Shot is { HitWoodwork: true }),
+                Advantages: PerMatch(e => e.AdvantagePlayed));
         }
     }
 }

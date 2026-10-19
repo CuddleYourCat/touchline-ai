@@ -28,7 +28,7 @@ public class KeyMomentDetectorTests
 
     private static MatchEvent Shot(ShotOutcome outcome, double xg, TeamSide team = TeamSide.Home, long sequence = 1)
     {
-        var detail = new ShotDetail(xg, outcome, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
+        var detail = TestEvents.Shot(xg, outcome, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
         var at = team == TeamSide.Home ? new PitchPosition(94, 32) : new PitchPosition(11, 32);
         return Event(MatchEventType.Shot, team, at, sequence) with { Shot = detail, Successful = detail.OnTarget };
     }
@@ -37,7 +37,7 @@ public class KeyMomentDetectorTests
         Event(MatchEventType.Foul, foulingTeam, new PitchPosition(x, y));
 
     private static MatchEvent Card(CardColour colour) =>
-        Event(MatchEventType.Card, TeamSide.Away, new PitchPosition(52.5, 34)) with { Card = colour };
+        Event(MatchEventType.Card, TeamSide.Away, new PitchPosition(52.5, 34), sequence: 2) with { Card = colour };
 
     // Goals
 
@@ -206,7 +206,7 @@ public class KeyMomentDetectorTests
     {
         var passWithShotDetail = Event(MatchEventType.Pass, TeamSide.Home, new PitchPosition(94, 32))
             with
-        { Shot = new ShotDetail(0.5, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90) };
+        { Shot = TestEvents.Shot(0.5, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90) };
 
         var detect = () => _detector.Detect(passWithShotDetail, KickOff);
 

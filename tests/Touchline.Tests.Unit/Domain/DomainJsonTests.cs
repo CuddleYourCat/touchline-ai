@@ -22,7 +22,7 @@ public class DomainJsonTests
         End = new PitchPosition(105, 33.1),
         Successful = true,
         UnderPressure = true,
-        Shot = new ShotDetail(0.41, ShotOutcome.Goal, ShotSituation.Counter, BodyPart.LeftFoot, weakFoot: true, speedKmh: 88.4)
+        Shot = TestEvents.Shot(0.41, ShotOutcome.Goal, ShotSituation.Counter, BodyPart.LeftFoot, weakFoot: true, speedKmh: 88.4)
     };
 
     // Added in the richer-events slice (ADR-019)
@@ -32,12 +32,33 @@ public class DomainJsonTests
     {
         var events = new[]
         {
-            _goal with { Type = MatchEventType.Pass, Shot = null, Pass = new PassDetail(0.62, 71.3, weakFoot: true) },
+            _goal with { Type = MatchEventType.Pass, Shot = null, Pass = new PassDetail(0.62, 71.3, weakFoot: true, PassHeight.Ground) },
             _goal with { Type = MatchEventType.Carry, Shot = null, Carry = new CarryDetail(33.1) },
             _goal with { Type = MatchEventType.MatchMetadata, Shot = null, UnderPressure = false, Metadata = TestEvents.Metadata }
         };
 
         foreach (var original in events)
+        {
+            var back = JsonSerializer.Deserialize<MatchEvent>(JsonSerializer.Serialize(original, DomainJson.Options), DomainJson.Options);
+
+            back.Should().BeEquivalentTo(original, original.Type.ToString());
+        }
+    }
+
+    [Test]
+    public void A_penalty_off_the_post_and_a_fixture_s_metadata_survive_a_json_round_trip()
+    {
+        var penalty = _goal with
+        {
+            Successful = false,
+            Shot = new ShotDetail(0.76, ShotOutcome.OffTarget, ShotSituation.Penalty, BodyPart.LeftFoot, false, 96.2, new GoalMouthPosition(-3.66, 1.2), true, DiveDirection.Right)
+        };
+        var fixture = new MatchMetadata(
+            TestEvents.Metadata.Home, TestEvents.Metadata.Away, "Northgate Stadium", DateTimeOffset.UnixEpoch, 9,
+            TestEvents.Referee, MatchKind.Fixture, "2026-27", 4);
+        var metadataEvent = _goal with { Type = MatchEventType.MatchMetadata, Shot = null, UnderPressure = false, PlayerId = null, End = null, Metadata = fixture };
+
+        foreach (var original in new[] { penalty, metadataEvent })
         {
             var back = JsonSerializer.Deserialize<MatchEvent>(JsonSerializer.Serialize(original, DomainJson.Options), DomainJson.Options);
 

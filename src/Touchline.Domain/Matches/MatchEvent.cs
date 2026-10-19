@@ -113,6 +113,18 @@ public sealed record MatchEvent
     /// <summary>For a foul: the opponent who was fouled (ADR-017). Only valid on fouls.</summary>
     public string? FouledPlayerId { get; init; }
 
+    /// <summary>
+    /// For a foul: true when the referee played advantage and the fouled team kept the ball
+    /// (ADR-020). Any card follows at the next stoppage. Only valid on fouls.
+    /// </summary>
+    public bool AdvantagePlayed { get; init; }
+
+    /// <summary>
+    /// For a card: the sequence of the foul it punishes (ADR-020). Required on every card,
+    /// because a card shown after advantage can trail its foul by several events.
+    /// </summary>
+    public long? FoulSequence { get; init; }
+
     /// <summary>True when this event is a shot that went in.</summary>
     [JsonIgnore]
     public bool IsGoal => Shot is { Outcome: ShotOutcome.Goal };
@@ -122,8 +134,9 @@ public sealed record MatchEvent
     /// pass, carry, metadata) is present on its own type and on no other, a shot's
     /// <see cref="Successful"/> flag matches whether it was on target, each second-player
     /// field (ADR-017) appears only on its own event type, only passes, carries and shots
-    /// are marked as under pressure, the metadata event names no player and no end, and the
-    /// type, team and card colour are defined values (JSON accepts any number for an enum).
+    /// are marked as under pressure, the metadata event names no player and no end, only a
+    /// foul plays advantage, every card names an earlier foul, and the type, team and card
+    /// colour are defined values (JSON accepts any number for an enum).
     /// </summary>
     /// <exception cref="ArgumentException">The event contradicts itself.</exception>
     public void EnsureValid()
@@ -145,6 +158,14 @@ public sealed record MatchEvent
                     $"a {Type} event is marked as under pressure",
                 { Type: MatchEventType.MatchMetadata, PlayerId: not null } => "the metadata event names a player",
                 { Type: MatchEventType.MatchMetadata, End: not null } => "the metadata event has an end position",
+                // A replay under its fixture's ID would overwrite the fixture's stored documents (ADR-021).
+                { Metadata: { Kind: MatchKind.Replay, ReplayOf: { } original } } when original == MatchId =>
+                    "a replay must have its own match ID, not the ID of the fixture it replays",
+                { Type: not MatchEventType.Foul, AdvantagePlayed: true } => $"a {Type} event says advantage was played",
+                { Type: MatchEventType.Card, FoulSequence: null } => "a card names no foul",
+                { Type: MatchEventType.Card, FoulSequence: { } foul } when foul < 1 || foul >= Sequence =>
+                    $"a card names foul {foul}, which isn't an earlier event",
+                { Type: not MatchEventType.Card, FoulSequence: not null } => $"a {Type} event names a foul sequence",
                 _ => null
             };
 

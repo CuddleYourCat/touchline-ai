@@ -47,6 +47,9 @@ public enum PreferredFoot
 /// <param name="TopSpeedKmh">The player's recorded previous best top speed, in km/h.</param>
 /// <param name="Finishing">Shooting quality, from 0 to 1, where 0.5 is an average player.</param>
 /// <param name="Passing">Passing quality, from 0 to 1, where 0.5 is an average player.</param>
+/// <param name="Discipline">Temperament (ADR-020), from 0 (a hot-head) to 1 (never in trouble), where 0.5 is average.</param>
+/// <param name="PenaltyAim">Where the player tends to aim a penalty, or null for the league-average aim.</param>
+/// <param name="Dive">A goalkeeper's penalty dive bias, or null for the league average. Goalkeepers only.</param>
 public sealed record Player(
     string Id,
     string Name,
@@ -56,7 +59,43 @@ public sealed record Player(
     PreferredFoot PreferredFoot,
     double TopSpeedKmh,
     double Finishing,
-    double Passing);
+    double Passing,
+    double Discipline,
+    PenaltyAim? PenaltyAim = null,
+    DiveBias? Dive = null);
+
+/// <summary>
+/// How often a taker aims a penalty at each sixth of the goal, from the taker's point of view
+/// (ADR-020). The weights needn't add up to 1: they're relative.
+/// </summary>
+/// <param name="LowLeft">Bottom left.</param>
+/// <param name="LowCentre">Bottom centre.</param>
+/// <param name="LowRight">Bottom right.</param>
+/// <param name="HighLeft">Top left.</param>
+/// <param name="HighCentre">Top centre.</param>
+/// <param name="HighRight">Top right.</param>
+public sealed record PenaltyAim(double LowLeft, double LowCentre, double LowRight, double HighLeft, double HighCentre, double HighRight)
+{
+    /// <summary>The league-average aim: mostly low and to the sides.</summary>
+    public static PenaltyAim LeagueAverage { get; } = new(0.22, 0.08, 0.22, 0.14, 0.06, 0.14);
+
+    /// <summary>The weights in <see cref="Pitch.GoalZone"/> order.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<double> Weights => [LowLeft, LowCentre, LowRight, HighLeft, HighCentre, HighRight];
+}
+
+/// <summary>
+/// How often a goalkeeper dives each way for a penalty, from the <b>taker's</b> point of view
+/// (ADR-020). The weights are relative.
+/// </summary>
+/// <param name="Left">Dives to the taker's left.</param>
+/// <param name="Stay">Stays in the middle.</param>
+/// <param name="Right">Dives to the taker's right.</param>
+public sealed record DiveBias(double Left, double Stay, double Right)
+{
+    /// <summary>The league-average keeper: either side equally, rarely staying put.</summary>
+    public static DiveBias LeagueAverage { get; } = new(0.45, 0.10, 0.45);
+}
 
 /// <summary>Kit colours, as CSS colour values.</summary>
 /// <param name="Primary">Main shirt colour.</param>

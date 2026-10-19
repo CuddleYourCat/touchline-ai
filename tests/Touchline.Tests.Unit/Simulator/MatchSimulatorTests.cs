@@ -105,9 +105,10 @@ public class MatchSimulatorTests
     [Test]
     public void A_counter_ends_when_play_stops_for_a_foul()
     {
+        // A foul where advantage was played doesn't stop play, so the counter rightly carries on (ADR-020).
         var countersAfterFouls = _season.SelectMany(m => m
             .Where(e => e.Shot is { Situation: ShotSituation.Counter })
-            .Where(shot => m.Any(e => e.PossessionId == shot.PossessionId && e.Type == MatchEventType.Foul && e.Sequence < shot.Sequence)));
+            .Where(shot => m.Any(e => e.PossessionId == shot.PossessionId && e is { Type: MatchEventType.Foul, AdvantagePlayed: false } && e.Sequence < shot.Sequence)));
 
         countersAfterFouls.Should().BeEmpty();
     }
@@ -166,7 +167,7 @@ public class MatchSimulatorTests
     public void The_first_event_is_the_match_metadata_and_it_is_the_only_one()
     {
         var kickOff = new DateTimeOffset(2026, 10, 25, 16, 30, 0, TimeSpan.Zero);
-        var match = new MatchSimulator(NorthBank, ThamesValley, seed: 7, kickOffUtc: kickOff).Play().ToList();
+        var match = new MatchSimulator(NorthBank, ThamesValley, seed: 7, new MatchOptions { KickOffUtc = kickOff }).Play().ToList();
 
         var metadata = match[0].Metadata;
         match[0].Type.Should().Be(MatchEventType.MatchMetadata);
@@ -240,7 +241,7 @@ public class MatchSimulatorTests
     {
         var britishSummerTime = new DateTimeOffset(2026, 10, 24, 15, 0, 0, TimeSpan.FromHours(1));
 
-        var metadata = new MatchSimulator(NorthBank, ThamesValley, seed: 7, kickOffUtc: britishSummerTime).Play().First().Metadata!;
+        var metadata = new MatchSimulator(NorthBank, ThamesValley, seed: 7, new MatchOptions { KickOffUtc = britishSummerTime }).Play().First().Metadata!;
 
         metadata.KickOffUtc.Offset.Should().Be(TimeSpan.Zero);
         metadata.KickOffUtc.Should().Be(britishSummerTime, "it's the same instant");

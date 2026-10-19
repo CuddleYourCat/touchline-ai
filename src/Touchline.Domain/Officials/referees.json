@@ -1,0 +1,6 @@
+[
+  { "id": "ref-calloway", "name": "Ruth Calloway", "style": "consistent and unfussy, the league's benchmark", "strictness": 0.5, "whistle": 0.5, "advantage": 0.5 },
+  { "id": "ref-delacroix", "name": "Martin Delacroix", "style": "talks to players rather than booking them", "strictness": 0.15, "whistle": 0.45, "advantage": 0.6 },
+  { "id": "ref-okonkwo-ward", "name": "Ines Okonkwo-Ward", "style": "lets the game flow and plays a long advantage", "strictness": 0.45, "whistle": 0.2, "advantage": 0.9 },
+  { "id": "ref-pell", "name": "Graham Pell", "style": "a stickler who blows for everything and reaches for his pocket early", "strictness": 0.9, "whistle": 0.85, "advantage": 0.2 }
+]

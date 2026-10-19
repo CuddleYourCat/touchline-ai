@@ -32,15 +32,26 @@ internal sealed class Lineup
     public Lineup(TeamProfile team)
     {
         Team = team;
-        _onPitch = _shape
+        _onPitch = [.. StartingEleven(team)];
+    }
+
+    /// <summary>
+    /// The eleven who start, goalkeeper first. It's the one definition used both for play and
+    /// for the metadata's team sheet, so the two can't disagree.
+    /// </summary>
+    public static IReadOnlyList<Player> StartingEleven(TeamProfile team)
+    {
+        var eleven = _shape
             .SelectMany(slot => team.Squad.Where(p => p.Position == slot.Position).Take(slot.Count))
             .ToList();
 
-        if (_onPitch.Count < 11)
+        if (eleven.Count < 11)
         {
             // A squad short in one position fills the gaps from whoever is left.
-            _onPitch.AddRange(team.Squad.Except(_onPitch).Take(11 - _onPitch.Count));
+            eleven.AddRange(team.Squad.Except(eleven).Take(11 - eleven.Count));
         }
+
+        return eleven;
     }
 
     public TeamProfile Team { get; }
@@ -81,6 +92,12 @@ internal sealed class Lineup
         _onPitch.FirstOrDefault(p => p.Position == PlayerPosition.Forward)
         ?? _onPitch.FirstOrDefault(p => p.Position == PlayerPosition.Midfielder)
         ?? _onPitch[0];
+
+    /// <summary>The goalkeeper on the pitch, or null if none is left.</summary>
+    public Player? Goalkeeper => _onPitch.FirstOrDefault(p => p.Position == PlayerPosition.Goalkeeper);
+
+    /// <summary>Whether a player is still on the pitch (not sent off).</summary>
+    public bool IsOnPitch(Player player) => _onPitch.Contains(player);
 
     /// <summary>How many of this team's players have been sent off.</summary>
     public int SentOffCount { get; private set; }

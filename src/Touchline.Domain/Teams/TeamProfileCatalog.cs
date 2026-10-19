@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Reflection;
-using System.Text.Json;
 
 namespace Touchline.Domain.Teams;
 
@@ -57,12 +55,7 @@ public static class TeamProfileCatalog
 
     private static IReadOnlyDictionary<string, TeamProfile> LoadAllEmbedded()
     {
-        var assembly = typeof(TeamProfileCatalog).Assembly;
-        var names = assembly.GetManifestResourceNames()
-            .Where(name => name.StartsWith(_resourcePrefix, StringComparison.Ordinal) && name.EndsWith(".json", StringComparison.Ordinal))
-            .ToList();
-
-        var streams = names.Select(name => (name, Open(assembly, name))).ToList();
+        var streams = EmbeddedJson.Names(_resourcePrefix).Select(name => (name, EmbeddedJson.Open(name))).ToList();
         try
         {
             return Parse(streams);
@@ -73,22 +66,7 @@ public static class TeamProfileCatalog
         }
     }
 
-    private static Stream Open(Assembly assembly, string resourceName) =>
-        assembly.GetManifestResourceStream(resourceName)
-        ?? throw new InvalidDataException($"Embedded resource '{resourceName}' could not be opened.");
-
-    private static TeamProfile Deserialize(string source, Stream json)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<TeamProfile>(json, DomainJson.Options)
-                ?? throw new InvalidDataException($"Team profile '{source}' is empty.");
-        }
-        catch (JsonException ex)
-        {
-            throw new InvalidDataException($"Team profile '{source}' isn't valid JSON for a team: {ex.Message}", ex);
-        }
-    }
+    private static TeamProfile Deserialize(string source, Stream json) => EmbeddedJson.Deserialize<TeamProfile>(source, json, "Team profile");
 
     private static void Validate(TeamProfile profile, string source)
     {
@@ -125,8 +103,8 @@ public static class TeamProfileCatalog
             problems.Add("the squad has no goalkeeper");
         }
 
-        problems.AddRange(Duplicates(profile.Squad.Select(p => p.Id), "player ID"));
-        problems.AddRange(Duplicates(profile.Squad.Select(p => p.ShirtNumber.ToString(CultureInfo.InvariantCulture)), "shirt number"));
+        problems.AddRange(CatalogChecks.Duplicates(profile.Squad.Select(p => p.Id), "player ID"));
+        problems.AddRange(CatalogChecks.Duplicates(profile.Squad.Select(p => p.ShirtNumber.ToString(CultureInfo.InvariantCulture)), "shirt number"));
 
         var tendencies = profile.Tendencies;
         foreach (var (name, value) in new[]
@@ -163,14 +141,37 @@ public static class TeamProfileCatalog
             yield return $"{label}'s top speed is {player.TopSpeedKmh.ToString(CultureInfo.InvariantCulture)} km/h; it must be between {_minimumTopSpeedKmh} and {_maximumTopSpeedKmh}";
         }
 
-        foreach (var (name, value) in new[] { ("finishing", player.Finishing), ("passing", player.Passing) })
+        foreach (var (name, value) in new[] { ("finishing", player.Finishing), ("passing", player.Passing), ("discipline", player.Discipline) })
         {
             if (!Ranges.IsBetween(value, 0, 1))
             {
                 yield return $"{label}'s {name} is {value.ToString(CultureInfo.InvariantCulture)}; ratings must be between 0 and 1";
             }
         }
+
+        // ADR-020: an aim or a dive bias is a set of weights, so each must be a non-negative
+        // number and at least one must be above zero.
+        if (player.PenaltyAim is { } aim && !AreWeights(aim.Weights))
+        {
+            yield return $"{label}'s penalty aim must be non-negative weights with at least one above 0";
+        }
+
+        if (player.Dive is { } dive)
+        {
+            if (player.Position != PlayerPosition.Goalkeeper)
+            {
+                yield return $"{label} has a dive bias but isn't a goalkeeper";
+            }
+
+            if (!AreWeights([dive.Left, dive.Stay, dive.Right]))
+            {
+                yield return $"{label}'s dive bias must be non-negative weights with at least one above 0";
+            }
+        }
     }
+
+    private static bool AreWeights(IReadOnlyList<double> weights) =>
+        weights.All(w => Ranges.IsBetween(w, 0, double.MaxValue)) && weights.Sum() > 0;
 
     private static void RequireText(string? value, string label, List<string> problems)
     {
@@ -179,10 +180,4 @@ public static class TeamProfileCatalog
             problems.Add($"{label} is missing");
         }
     }
-
-    private static IEnumerable<string> Duplicates(IEnumerable<string> values, string label) =>
-        values.Where(v => !string.IsNullOrWhiteSpace(v))
-            .GroupBy(v => v)
-            .Where(group => group.Count() > 1)
-            .Select(group => $"duplicate {label} '{group.Key}'");
 }

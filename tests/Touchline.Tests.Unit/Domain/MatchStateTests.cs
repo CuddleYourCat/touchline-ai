@@ -23,7 +23,7 @@ public class MatchStateTests
 
     private static MatchEvent ShotEvent(long sequence, ShotOutcome outcome, double xg, TeamSide team = TeamSide.Home)
     {
-        var shot = new ShotDetail(xg, outcome, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
+        var shot = TestEvents.Shot(xg, outcome, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
         return Event(sequence, MatchEventType.Shot, team) with { Shot = shot, Successful = shot.OnTarget };
     }
 
@@ -103,7 +103,7 @@ public class MatchStateTests
     [TestCase(1.01)]
     public void Expected_goals_outside_zero_to_one_are_rejected(double xg)
     {
-        var create = () => new ShotDetail(xg, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
+        var create = () => TestEvents.Shot(xg, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
 
         create.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -172,7 +172,7 @@ public class MatchStateTests
     {
         var wrong = new[]
         {
-            ShotEvent(1, ShotOutcome.Saved, 0.2) with { Pass = new PassDetail(0.8, 40, weakFoot: false) },
+            ShotEvent(1, ShotOutcome.Saved, 0.2) with { Pass = new PassDetail(0.8, 40, weakFoot: false, PassHeight.Ground) },
             Event(1, MatchEventType.Pass) with { Carry = new CarryDetail(30) },
             Event(1, MatchEventType.KickOff) with { Metadata = TestEvents.Metadata }
         };
@@ -205,7 +205,7 @@ public class MatchStateTests
     [Test]
     public void A_header_cannot_be_on_the_weaker_foot()
     {
-        var create = () => new ShotDetail(0.2, ShotOutcome.Saved, ShotSituation.SetPiece, BodyPart.Head, weakFoot: true, speedKmh: 55);
+        var create = () => TestEvents.Shot(0.2, ShotOutcome.Saved, ShotSituation.SetPiece, BodyPart.Head, weakFoot: true, speedKmh: 55);
 
         create.Should().Throw<ArgumentException>().WithMessage("*header*");
     }
@@ -215,7 +215,7 @@ public class MatchStateTests
     [TestCase(double.NaN)]
     public void An_xpass_outside_0_to_1_is_rejected(double xPass)
     {
-        var create = () => new PassDetail(xPass, 40, weakFoot: false);
+        var create = () => new PassDetail(xPass, 40, weakFoot: false, PassHeight.Ground);
 
         create.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -227,8 +227,8 @@ public class MatchStateTests
     public void An_implausible_speed_is_rejected(double speedKmh)
     {
         new Action(() => _ = new CarryDetail(speedKmh)).Should().Throw<ArgumentOutOfRangeException>();
-        new Action(() => _ = new PassDetail(0.8, speedKmh, weakFoot: false)).Should().Throw<ArgumentOutOfRangeException>();
-        new Action(() => _ = new ShotDetail(0.1, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh))
+        new Action(() => _ = new PassDetail(0.8, speedKmh, weakFoot: false, PassHeight.Ground)).Should().Throw<ArgumentOutOfRangeException>();
+        new Action(() => _ = TestEvents.Shot(0.1, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh))
             .Should().Throw<ArgumentOutOfRangeException>();
     }
 
@@ -278,10 +278,10 @@ public class MatchStateTests
 
         new Action(() => _ = new TeamSheet("x", "X", "XXX", null!)).Should().Throw<ArgumentException>();
         new Action(() => _ = new TeamSheet(" ", "X", "XXX", _elevenPlayers)).Should().Throw<ArgumentException>().WithMessage("*id*");
-        new Action(() => _ = new MatchMetadata(sheet, TestEvents.Metadata.Away, "", DateTimeOffset.UnixEpoch, 1))
+        new Action(() => _ = new MatchMetadata(sheet, TestEvents.Metadata.Away, "", DateTimeOffset.UnixEpoch, 1, TestEvents.Referee, MatchKind.Exhibition))
             .Should().Throw<ArgumentException>().WithMessage("*venue*");
-        new Action(() => _ = new MatchMetadata(sheet, null!, "Ground", DateTimeOffset.UnixEpoch, 1)).Should().Throw<ArgumentNullException>();
-        new Action(() => _ = new MatchMetadata(sheet, sheet, "Ground", DateTimeOffset.UnixEpoch, 1))
+        new Action(() => _ = new MatchMetadata(sheet, null!, "Ground", DateTimeOffset.UnixEpoch, 1, TestEvents.Referee, MatchKind.Exhibition)).Should().Throw<ArgumentNullException>();
+        new Action(() => _ = new MatchMetadata(sheet, sheet, "Ground", DateTimeOffset.UnixEpoch, 1, TestEvents.Referee, MatchKind.Exhibition))
             .Should().Throw<ArgumentException>().WithMessage("*can't play itself*");
     }
 
@@ -300,7 +300,7 @@ public class MatchStateTests
     [Test]
     public void Undefined_enum_values_are_rejected()
     {
-        var create = () => new ShotDetail(0.2, ShotOutcome.Saved, ShotSituation.OpenPlay, (BodyPart)7, weakFoot: false, speedKmh: 80);
+        var create = () => TestEvents.Shot(0.2, ShotOutcome.Saved, ShotSituation.OpenPlay, (BodyPart)7, weakFoot: false, speedKmh: 80);
         var unknownType = Event(1, (MatchEventType)42);
         var unknownTeam = Event(1, MatchEventType.Tackle, (TeamSide)3);
 
@@ -312,7 +312,7 @@ public class MatchStateTests
     [Test]
     public void Expected_goals_that_are_not_a_number_are_rejected()
     {
-        var create = () => new ShotDetail(double.NaN, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
+        var create = () => TestEvents.Shot(double.NaN, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
 
         create.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -333,5 +333,112 @@ public class MatchStateTests
         var secondHalfKickOff = MatchTime.At(MatchPeriod.SecondHalf, 45);
 
         addedTime.CompareTo(secondHalfKickOff).Should().BeNegative();
+    }
+
+    // Added in the officials, temperament and height slice (ADR-020)
+
+    [Test]
+    public void A_card_must_name_an_earlier_foul()
+    {
+        var noFoul = Event(1, MatchEventType.Card) with { Card = CardColour.Yellow };
+        var itself = Event(5, MatchEventType.Card) with { Card = CardColour.Yellow, FoulSequence = 5 };
+        var valid = Event(5, MatchEventType.Card) with { Card = CardColour.Yellow, FoulSequence = 2 };
+
+        noFoul.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*names no foul*");
+        itself.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*isn't an earlier event*");
+        valid.Invoking(e => e.EnsureValid()).Should().NotThrow();
+    }
+
+    [Test]
+    public void Advantage_and_foul_sequences_belong_to_fouls_and_cards_only()
+    {
+        var advantageOnTackle = Event(1, MatchEventType.Tackle) with { AdvantagePlayed = true };
+        var foulSequenceOnPass = Event(3, MatchEventType.Pass) with { FoulSequence = 2 };
+        var advantageOnFoul = Event(1, MatchEventType.Foul) with { AdvantagePlayed = true, FouledPlayerId = "tvu-09" };
+
+        advantageOnTackle.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*advantage*");
+        foulSequenceOnPass.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*foul sequence*");
+        advantageOnFoul.Invoking(e => e.EnsureValid()).Should().NotThrow();
+    }
+
+    [TestCase(ShotOutcome.Goal, 5.0, 1.0, false, TestName = "A goal outside the frame is rejected")]
+    [TestCase(ShotOutcome.Saved, 0.0, 1.0, true, TestName = "A save off the woodwork is rejected")]
+    [TestCase(ShotOutcome.OffTarget, 1.0, 1.0, false, TestName = "A miss inside the frame is rejected")]
+    [TestCase(ShotOutcome.OffTarget, 6.0, 1.0, true, TestName = "Woodwork away from the frame is rejected")]
+    public void A_goal_mouth_that_contradicts_the_outcome_is_rejected(ShotOutcome outcome, double across, double up, bool woodwork)
+    {
+        var create = () => new ShotDetail(0.2, outcome, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(across, up), woodwork, null);
+
+        create.Should().Throw<ArgumentException>();
+    }
+
+    [Test]
+    public void Goal_mouth_rules_for_blocks_woodwork_and_penalties()
+    {
+        var blockedWithGoalMouth = () => new ShotDetail(0.2, ShotOutcome.Blocked, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(0, 1), false, null);
+        var missWithout = () => new ShotDetail(0.2, ShotOutcome.OffTarget, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, null, false, null);
+        var penaltyWithoutDive = () => new ShotDetail(0.76, ShotOutcome.Goal, ShotSituation.Penalty, BodyPart.RightFoot, false, 95, new GoalMouthPosition(2, 0.5), false, null);
+        var diveInOpenPlay = () => new ShotDetail(0.2, ShotOutcome.Goal, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(2, 0.5), false, DiveDirection.Left);
+        var inOffThePost = () => new ShotDetail(0.2, ShotOutcome.Goal, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(3.5, 0.5), true, null);
+        var offTheBar = () => new ShotDetail(0.2, ShotOutcome.OffTarget, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(1, 2.44), true, null);
+
+        blockedWithGoalMouth.Should().Throw<ArgumentException>().WithMessage("*never reached the goal line*");
+        missWithout.Should().Throw<ArgumentException>().WithMessage("*needs a goal-mouth position*");
+        penaltyWithoutDive.Should().Throw<ArgumentException>().WithMessage("*keeper's dive*");
+        diveInOpenPlay.Should().Throw<ArgumentException>().WithMessage("*only a penalty*");
+        inOffThePost.Should().NotThrow("in off the post is a goal that hit the woodwork");
+        offTheBar.Should().NotThrow();
+    }
+
+    [Test]
+    public void The_kind_of_match_decides_which_season_details_are_needed()
+    {
+        var home = TestEvents.Metadata.Home;
+        var away = TestEvents.Metadata.Away;
+        MatchMetadata Create(MatchKind kind, string? season = null, int? round = null, string? replayOf = null) =>
+            new(home, away, "Ground", DateTimeOffset.UnixEpoch, 1, TestEvents.Referee, kind, season, round, replayOf);
+
+        new Action(() => Create(MatchKind.Fixture, "2026-27")).Should().Throw<ArgumentException>().WithMessage("*season and a round*");
+        new Action(() => Create(MatchKind.Fixture, "2026-27", 0)).Should().Throw<ArgumentException>().WithMessage("*season and a round*");
+        new Action(() => Create(MatchKind.Replay)).Should().Throw<ArgumentException>().WithMessage("*name the match it replays*");
+        new Action(() => Create(MatchKind.Exhibition, replayOf: "nbk-tvu-1")).Should().Throw<ArgumentException>().WithMessage("*only a replay*");
+        new Action(() => Create(MatchKind.Fixture, "2026-27", 3)).Should().NotThrow();
+        new Action(() => Create(MatchKind.Replay, replayOf: "nbk-tvu-1")).Should().NotThrow();
+    }
+
+    // Added after code review
+
+    [TestCase("2026-27", null)]
+    [TestCase(null, 5)]
+    public void An_exhibition_with_a_season_or_round_is_rejected_as_a_forgotten_fixture(string? season, int? round)
+    {
+        var create = () => new MatchMetadata(
+            TestEvents.Metadata.Home, TestEvents.Metadata.Away, "Ground", DateTimeOffset.UnixEpoch, 1, TestEvents.Referee, MatchKind.Exhibition, season, round);
+
+        create.Should().Throw<ArgumentException>().WithMessage("*did you mean a fixture*");
+    }
+
+    [Test]
+    public void A_replay_under_its_fixture_s_match_id_is_rejected()
+    {
+        var replay = new MatchMetadata(
+            TestEvents.Metadata.Home, TestEvents.Metadata.Away, "Ground", DateTimeOffset.UnixEpoch, 1, TestEvents.Referee, MatchKind.Replay, replayOf: _matchId);
+        var sameId = Event(1, MatchEventType.MatchMetadata) with { Metadata = replay };
+        var ownId = sameId with { MatchId = $"{_matchId}-replay-1" };
+
+        sameId.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*own match ID*");
+        ownId.Invoking(e => e.EnsureValid()).Should().NotThrow();
+    }
+
+    [Test]
+    public void A_shot_problem_names_the_parameter_at_fault()
+    {
+        var saveOffTheWoodwork = () => new ShotDetail(0.2, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(0, 1), true, null);
+        var goalOutside = () => new ShotDetail(0.2, ShotOutcome.Goal, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(6, 1), false, null);
+        var penaltyWithoutDive = () => new ShotDetail(0.76, ShotOutcome.Goal, ShotSituation.Penalty, BodyPart.RightFoot, false, 95, new GoalMouthPosition(2, 0.5), false, null);
+
+        saveOffTheWoodwork.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("hitWoodwork");
+        goalOutside.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("goalMouth");
+        penaltyWithoutDive.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("keeperDive");
     }
 }

@@ -71,10 +71,28 @@ public sealed record TeamSheet
     }
 }
 
+/// <summary>The referee named in the match metadata (ADR-020).</summary>
+/// <param name="Id">The referee profile ID, for example <c>ref-pell</c>.</param>
+/// <param name="Name">Display name.</param>
+public sealed record RefereeSheet(string Id, string Name);
+
+/// <summary>What kind of match this is, which decides whether it counts towards the season (ADR-020, ADR-021).</summary>
+public enum MatchKind
+{
+    /// <summary>A demo or test match. Never counts. The default, so nothing pollutes the season by accident.</summary>
+    Exhibition,
+
+    /// <summary>An official match. Counts towards the season.</summary>
+    Fixture,
+
+    /// <summary>A re-run of a fixture. Never counts, and names the original.</summary>
+    Replay
+}
+
 /// <summary>
 /// The context of a match, carried by the first event of the stream (ADR-019), so every
-/// consumer, including stream-only ones such as the overlay feed, starts with the teams and
-/// line-ups.
+/// consumer, including stream-only ones such as the overlay feed, starts with the teams,
+/// line-ups and referee, and knows whether the match counts (ADR-020).
 /// </summary>
 public sealed record MatchMetadata
 {
@@ -86,15 +104,51 @@ public sealed record MatchMetadata
     /// <param name="venue">The home team's fictional ground.</param>
     /// <param name="kickOffUtc">The scheduled kick-off time. It's stored in UTC whatever offset it's given in.</param>
     /// <param name="seed">The simulator seed, which replays the identical match.</param>
-    /// <exception cref="ArgumentNullException">A team sheet is missing.</exception>
-    /// <exception cref="ArgumentException">The venue is missing, or both sheets are the same team.</exception>
-    public MatchMetadata(TeamSheet home, TeamSheet away, string venue, DateTimeOffset kickOffUtc, int seed)
+    /// <param name="referee">Who is refereeing.</param>
+    /// <param name="kind">Whether the match counts towards the season.</param>
+    /// <param name="season">The season, for example "2026-27". Required on a fixture.</param>
+    /// <param name="round">The round of the season, from 1. Required on a fixture.</param>
+    /// <param name="replayOf">The match ID of the fixture being replayed. Required on a replay, and only allowed there.</param>
+    /// <exception cref="ArgumentNullException">A team sheet or the referee is missing.</exception>
+    /// <exception cref="ArgumentException">
+    /// The venue is missing, both sheets are the same team, or the season details don't match the kind of match.
+    /// </exception>
+    public MatchMetadata(
+        TeamSheet home,
+        TeamSheet away,
+        string venue,
+        DateTimeOffset kickOffUtc,
+        int seed,
+        RefereeSheet referee,
+        MatchKind kind,
+        string? season = null,
+        int? round = null,
+        string? replayOf = null)
     {
         ArgumentNullException.ThrowIfNull(home);
         ArgumentNullException.ThrowIfNull(away);
+        ArgumentNullException.ThrowIfNull(referee);
         if (home.Id == away.Id)
         {
             throw new ArgumentException($"A team can't play itself ('{home.Id}').", nameof(away));
+        }
+
+        DetailRules.Text(referee.Id, "referee.Id");
+        DetailRules.Text(referee.Name, "referee.Name");
+
+        var problem = DetailRules.Defined(kind, nameof(kind)) switch
+        {
+            MatchKind.Fixture when string.IsNullOrWhiteSpace(season) || round is not >= 1 => "a fixture needs a season and a round from 1",
+            // A season label on an exhibition is almost always a fixture with its kind forgotten,
+            // which would silently leave that round out of the season.
+            MatchKind.Exhibition when season is not null || round is not null => "an exhibition has no season or round; did you mean a fixture?",
+            not MatchKind.Replay when replayOf is not null => $"only a replay names the match it replays, not a {kind}",
+            MatchKind.Replay when string.IsNullOrWhiteSpace(replayOf) => "a replay must name the match it replays",
+            _ => null
+        };
+        if (problem is not null)
+        {
+            throw new ArgumentException($"The match metadata is invalid: {problem}.", nameof(kind));
         }
 
         Home = home;
@@ -102,7 +156,27 @@ public sealed record MatchMetadata
         Venue = DetailRules.Text(venue, nameof(venue));
         KickOffUtc = kickOffUtc.ToUniversalTime();
         Seed = seed;
+        Referee = referee;
+        Kind = kind;
+        Season = season;
+        Round = round;
+        ReplayOf = replayOf;
     }
+
+    /// <summary>Who is refereeing.</summary>
+    public RefereeSheet Referee { get; }
+
+    /// <summary>Whether the match counts towards the season. Only a <see cref="MatchKind.Fixture"/> does.</summary>
+    public MatchKind Kind { get; }
+
+    /// <summary>The season, for example "2026-27", or null for an exhibition.</summary>
+    public string? Season { get; }
+
+    /// <summary>The round of the season, from 1, or null for an exhibition.</summary>
+    public int? Round { get; }
+
+    /// <summary>For a replay, the match ID of the fixture it re-runs.</summary>
+    public string? ReplayOf { get; }
 
     /// <summary>The home team.</summary>
     public TeamSheet Home { get; }

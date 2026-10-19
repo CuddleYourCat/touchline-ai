@@ -393,6 +393,146 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 
 ---
 
+## ADR-020 — Officials, temperament and the height of the ball
+
+**Status:** Accepted · 1st half, before slice 04
+
+**Decision**
+
+*Referees*
+- **A referee catalog**, embedded JSON like the team profiles, holds four fictional referees, from strict to lenient. Each `RefereeProfile` has an ID, a name and three traits from 0 to 1, where 0.5 is an average referee:
+  - **`Strictness`**: cards per foul. Across the range, about 3 to 5 yellows a match.
+  - **`Whistle`**: how readily a challenge is given as a foul. Across the range, about 18 to 25 fouls a match.
+  - **`Advantage`**: how often play goes on after a foul, from about 15% to 45% of fouls outside the box.
+- **The caller picks the referee**, or the seed does (`seed` modulo the catalog size, so no random draw is used and the match itself doesn't change). The same match can be replayed with a different referee.
+- **`MatchMetadata` names the referee** (ID and name), so every consumer knows who's officiating.
+- A test guards against real referees' surnames, as one already does for players (ADR-002).
+
+*Advantage*
+- **A foul where play goes on** is still a `Foul` event, with **`AdvantagePlayed = true`**. The attacking team keeps the ball, and the move (its counter and its assist) carries on.
+- **A card the foul deserved is shown at the next stoppage**: a goal, a shot that goes dead, the next foul given, a corner or the end of the half. That's what real referees do, and it gives the commentary its "he's come back to book him" moment. It still counts towards a second yellow.
+- **Every `Card` event names its foul**, in a new `FoulSequence` field (valid on cards only). A deferred card can trail its foul by several events, so consumers link the two by sequence, not by adjacency.
+- A foul inside the box is never played on. It's a penalty.
+
+*Temperament*
+- **`Discipline`**, a player trait from 0 (a hot-head) to 1 (never in trouble), where 0.5 is average.
+- It scales both how often the player's tackles are fouls and how often those fouls earn a card, by ×1.41 at 0 down to ×0.59 at 1. So a hot-head picks up about **twice** an average player's cards.
+- Each squad's outfield average is 0.5, and the `Role` text matches the trait (for example "ball-winning midfielder, short-tempered").
+
+*Height*
+- **Shots record a `GoalMouth` position**: `Across` (metres from the centre of the goal, along the goal line) and `Up` (metres above the ground). The frame is ±3.66 m across and 2.44 m up.
+  - It's **relative to the frame, not clipped to it**. A miss wide reads `Across = 5.1`, and one sent "over like a rugby kick" reads `Up = 7.5`.
+  - Every shot that reaches the goal line has one. A blocked shot doesn't.
+  - `ShotDetail` checks it agrees with the outcome: inside the frame for a goal or a save, outside it for a miss, and on the frame for a woodwork hit.
+- **`HitWoodwork`** is a flag beside the outcome, not a fifth outcome:
+  - *In off the post* is a `Goal` with the flag set.
+  - *Off the bar and out* is `OffTarget` with the flag set. The ball rebounds into play, contested by both teams, and can lead to a second shot.
+  - Commercial data feeds count woodwork-and-out as off target, so on-target figures stay comparable.
+- **`PassHeight`** on `PassDetail`: Ground, Low or High. Short passes are mostly on the ground, long balls mostly in the air, and corners are always High.
+- **An open-play header needs a cross**: the header chance inside the box applies only after a completed High pass. Headers no longer appear from nowhere.
+
+*Penalties: taker against keeper*
+- **Six goal-mouth zones**: left, centre or right, each low or high, **from the taker's point of view**. `GoalMouth.Across` uses the same view on every shot: positive is the shooter's right.
+- **Takers have an aim** (`PenaltyAim`, weights over the six zones), and **goalkeepers a dive bias** (`Dive`: left, stay or right). Both are optional in the profile. A player without one uses the league-average distribution.
+- **The duel**: the keeper commits to a dive, and the taker's zone is drawn from their aim.
+  - Guess right, and a low shot is often saved and a high one sometimes.
+  - Guess wrong, and only a miss (more likely when aiming high) stops a goal.
+  - Finishing then scales the result, as for every shot.
+- **xG stays 0.76**, the average player's conversion, and the tendencies change only the outcome. The calibration checks that conversion over a season stays within 0.70 to 0.82.
+- The last five penalties per taker are a season projection (ADR-021). The events record everything it needs: the taker, the zone through the goal-mouth position, and the outcome.
+
+*Season hooks in the metadata (the schema for ADR-021)*
+- **`Kind`**: the type of match.
+  - `Fixture`: an official match, which counts towards the season.
+  - `Replay`: a re-run of a fixture, which never counts, and names the original in **`ReplayOf`**.
+  - `Exhibition`: a demo or test match, which never counts. **It's the default**, so a test run or a demo can't pollute the season by accident.
+- **`Season`** (for example "2026-27") and **`Round`**, both required on a fixture.
+- A replay has its own match ID, so its documents never overwrite the fixture's.
+
+*Calibration*
+- The existing ranges stay.
+- New checks:
+  - about 0.5 to 1.3 woodwork hits a match;
+  - penalty conversion stays within 0.70 to 0.82;
+  - 2 to 6 advantages played a match;
+  - the strictest referee shows at least 1.5 more yellows a match than the most lenient;
+  - a hot-head (Discipline 0.2) collects at least 1.5 times the cards per appearance of a calm team-mate in the same position;
+  - headers stay at 10–20% of shots.
+
+*Settled during the build*
+- **`ShotDetail` also records `KeeperDive`** on penalties. A keeper's predictable dive can't be found from the season's data unless every dive is recorded, so it belongs in the event, like the taker's zone.
+- **Finishing is balanced per shot, not per squad.** xG models learn from the players who actually shoot, mostly forwards. With squad-average ratings of 0.5, goals ran 15% ahead of xG once headers needed crosses and rebounds fell to attackers. Outfield finishing was lowered by 0.12, so the average shot is now taken at about 0.46, and a test checks the shot-weighted average stays within 0.45 to 0.55. Passing, discipline and the referees' traits are still balanced per player, because everyone passes, tackles and is refereed.
+- **The whistle runs from 0.80 to 1.20**, wider than first drafted, so the referees' fouls actually span about 18 to 25 a match (Pell 23.0, Okonkwo-Ward 19.0).
+- **The hot-head check asks for 1.5, not 1.7.** On temperament alone, a 0.2 against a 0.6 is about 1.9 times the cards. A booked player eases off like anyone else, which brings it to about 1.7 to 2.1 depending on the seeds.
+- **`MatchSimulator` takes a `MatchOptions`** (match ID, kick-off, referee, kind, season, round, replay), all optional, with an exhibition as the default. It builds the metadata when the match is set up, so invalid options fail at once rather than mid-stream.
+- **The engine is split into partial files**: the core (the match loop, passes, carries, possession), fouls and officiating, shots, and player traits.
+
+*Settled at code review*
+- **A replay never shares its fixture's match ID.** By default it's `{fixture}-replay-{seed}`. An explicit ID equal to `ReplayOf` is refused by the simulator, and a metadata event whose replay names its own match ID fails `EnsureValid`, so the Event Processor rejects it too. Otherwise a replay's documents would overwrite the fixture's (ADR-021).
+- **An exhibition can't carry a season or a round.** That combination is almost always a fixture whose kind was forgotten, which would silently drop a round from the season.
+- **A penalty always lands in the zone it was aimed at**: goals, saves, misses (over the bar above that column, or wide on its side) and woodwork (that side's post, or the bar above it). A low shot down the middle can't miss or hit a post, only be saved. So a taker's history, and the scout that reads it, is never misled.
+- **The metadata's starting eleven and the players on the pitch come from one definition**, `Lineup.StartingEleven`, so ADR-021's unavailability list can't make them disagree.
+- **Advantage applies outside the box and outside the fouled team's own third.** The 15–45% is the share of those fouls, roughly 10–30% of all fouls.
+
+**Alternatives considered**
+- **One default referee.** Simpler, but referee style never varies, so the brief's referee story can't be told.
+- **A referee chosen by the seed only.** Deterministic, but "the same match with a strict referee" is impossible as a demo.
+- **Showing a deferred card at once**, while play goes on. Simpler to simulate, but it isn't how football works.
+- **No advantage events**, where a lenient referee simply gives fewer fouls. The smallest change, but "let the game play on" never appears in the data.
+- **A `Woodwork` outcome.** Easy to read, but in off the post would lose the detail, and every switch over outcomes would need a new branch.
+- **Full 3D ball flight.** No consumer needs a trajectory. The goal mouth and pass height carry the moments people talk about.
+
+**Rationale**
+- Officials and temperament are among the strongest real causes of cards and fouls. Without them, every booking is just bad luck, and the Analyst can't explain *why* a match was scrappy.
+- The goal mouth makes finishing visible (top corner or straight at the keeper), and it's the basis of post-shot xG if we ever want it.
+- Every schema change here lands before Event Hubs fixes the shape (slice 04), like ADR-019's.
+
+**Trade-offs**
+- **A deferred card means state across events**: the engine has to remember the pending card, and `FoulSequence` adds one more optional field to every event.
+- **The referee choice changes the match but not the random sequence**, so the same seed with two referees gives two different, still repeatable, matches.
+- **Another catalog and another trait to keep consistent with `Role`** text.
+- **Seeded matches change again**, so the calibration is re-run.
+
+---
+
+## ADR-021 — Season state: profiles in Cosmos DB, stats as an idempotent projection
+
+**Status:** Accepted · built with slices 04 and 05
+
+**Decision**
+
+*Profiles*
+- **Cosmos DB is the source of truth** for team, player and referee profiles.
+- The embedded JSON files become **seed data**, loaded at provisioning. They also remain the offline fixtures the unit tests use, so no test needs a database.
+
+*Season state is derived, never written by the simulator*
+- The Event Processor projects the event stream into Cosmos DB. That includes:
+  - per-player season stats (appearances, goals, assists, xG, passes, cards and so on);
+  - suspensions;
+  - each taker's last five penalties, with goal-mouth position and outcome.
+- **Only `Fixture` matches count** (ADR-020). `Replay` and `Exhibition` matches are processed for their own documents, but never touch the season.
+- **The projection is idempotent.** Each player's contribution to a match is one document, with ID `{matchId}:{playerId}`, written with an upsert. Season totals are the sum of those documents, so a fixture delivered twice (Event Hubs is at-least-once) overwrites rather than double-counts.
+
+*Suspensions*
+- The fictional league's rules are decided when this ADR is accepted (proposed: five yellows means a one-match ban, and a red card means one match).
+- Before kick-off, the simulator worker reads who is unavailable and passes that list in. The engine stays pure, with no database dependency.
+
+**Alternatives considered**
+- **Profiles stay in JSON, and only state goes in Cosmos DB.** The git history records every rating change, but a profile change needs a deploy.
+- **Running totals updated in place.** Simpler to read, but at-least-once delivery double-counts after a restart.
+- **The simulator writes season stats itself.** One less service, but the stats then disagree with the stored events whenever anything is replayed or reprocessed.
+
+**Rationale**
+- Season state is a fact derived from events, so it belongs to the consumer that already reads every event. Rebuilding it from scratch is just replaying the fixtures' events.
+- The change feed and materialised views are core Cosmos DB patterns (AI-200 Domain 2).
+
+**Trade-offs**
+- **Season totals are a query (a sum over documents)**, or a second, cached projection, rather than a single read.
+- **The fixture order matters for suspensions**, so fixtures must be played in round order.
+- **The seed data and the database can drift**, so provisioning has to be explicit about which one wins.
+
+---
+
 ## ADR-006 — Agent orchestration framework
 
 **Status:** Proposed · needed before Stage 3
