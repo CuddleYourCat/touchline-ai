@@ -40,7 +40,27 @@ public enum MatchEventType
     Card,
 
     /// <summary>The end of a half.</summary>
-    PeriodEnd
+    PeriodEnd,
+
+    /// <summary>
+    /// The whole ball went over a line (ADR-022). It starts where it crossed, beyond the line;
+    /// its team and player are the last to touch it; <see cref="MatchEvent.Restart"/> says how
+    /// play restarts, which happens on the next event.
+    /// </summary>
+    BallOutOfPlay
+}
+
+/// <summary>How play restarts after the ball goes out (ADR-022).</summary>
+public enum RestartKind
+{
+    /// <summary>Over a touchline: a throw-in to the other team.</summary>
+    ThrowIn,
+
+    /// <summary>Over the goal line, last touched by the attacking team: a goal kick.</summary>
+    GoalKick,
+
+    /// <summary>Over the goal line, last touched by the defending team: a corner.</summary>
+    Corner
 }
 
 /// <summary>
@@ -125,6 +145,15 @@ public sealed record MatchEvent
     /// </summary>
     public long? FoulSequence { get; init; }
 
+    /// <summary>For a blocked shot: the defender who blocked it (ADR-022). Required on blocked shots, and only valid there.</summary>
+    public string? BlockedByPlayerId { get; init; }
+
+    /// <summary>
+    /// For the ball going out of play: how play restarts (ADR-022). Present only when
+    /// <see cref="Type"/> is <see cref="MatchEventType.BallOutOfPlay"/>.
+    /// </summary>
+    public RestartKind? Restart { get; init; }
+
     /// <summary>True when this event is a shot that went in.</summary>
     [JsonIgnore]
     public bool IsGoal => Shot is { Outcome: ShotOutcome.Goal };
@@ -135,8 +164,9 @@ public sealed record MatchEvent
     /// <see cref="Successful"/> flag matches whether it was on target, each second-player
     /// field (ADR-017) appears only on its own event type, only passes, carries and shots
     /// are marked as under pressure, the metadata event names no player and no end, only a
-    /// foul plays advantage, every card names an earlier foul, and the type, team and card
-    /// colour are defined values (JSON accepts any number for an enum).
+    /// foul plays advantage, every card names an earlier foul, the lines are respected
+    /// (ADR-022), and the type, team, card colour and restart are defined
+    /// values (JSON accepts any number for an enum).
     /// </summary>
     /// <exception cref="ArgumentException">The event contradicts itself.</exception>
     public void EnsureValid()
@@ -147,6 +177,8 @@ public sealed record MatchEvent
             ?? DetailMismatch(MatchEventType.Pass, Pass, "pass detail")
             ?? DetailMismatch(MatchEventType.Carry, Carry, "carry detail")
             ?? DetailMismatch(MatchEventType.MatchMetadata, Metadata, "match metadata")
+            ?? DetailMismatch(MatchEventType.BallOutOfPlay, Restart, "restart")
+            ?? LineProblem()
             ?? this switch
             {
                 { Shot: { } shot } when Successful != shot.OnTarget =>
@@ -179,6 +211,40 @@ public sealed record MatchEvent
         !Enum.IsDefined(Type) ? $"the event type {Type} isn't defined"
         : !Enum.IsDefined(Team) ? $"the team {Team} isn't defined"
         : Card is { } card && !Enum.IsDefined(card) ? $"the card colour {card} isn't defined"
+        : Restart is { } restart && !Enum.IsDefined(restart) ? $"the restart {restart} isn't defined"
+        : null;
+
+    // ADR-022, by the Laws: play happens in play, the ball goes out only when wholly over a
+    // line, a goal is wholly over the goal line, a clearance off the line isn't, and a
+    // restart matches the line crossed and who touched the ball last.
+    private string? LineProblem() => this switch
+    {
+        { Type: MatchEventType.BallOutOfPlay } when PitchDimensions.IsInPlay(Start) =>
+            "the ball went out of play, so it must start wholly beyond a line",
+        { Type: not MatchEventType.BallOutOfPlay } when !PitchDimensions.IsInPlay(Start) =>
+            $"a {Type} event starts out of play",
+        { Restart: RestartKind.ThrowIn } when Start.Y is >= -PitchDimensions.BallRadius and <= PitchDimensions.Width + PitchDimensions.BallRadius =>
+            "a throw-in needs the ball over a touchline",
+        { Restart: RestartKind.GoalKick or RestartKind.Corner } when GoalLineCrossed(Start) is null =>
+            $"a {Restart} needs the ball over a goal line",
+        { Restart: RestartKind.GoalKick } when GoalLineCrossed(Start) != Team =>
+            "a goal kick follows a last touch by the team attacking that goal",
+        { Restart: RestartKind.Corner } when GoalLineCrossed(Start) == Team =>
+            "a corner follows a last touch by the team defending that goal",
+        { IsGoal: true, End: null } => "a goal needs an end position, in the net",
+        { IsGoal: true, End: { } end } when PitchDimensions.OverTheGoalLineBy(end, Team) <= 0 =>
+            "a goal needs the whole ball over the goal line",
+        { Shot.ClearedOffLine: true, End: { } end } when PitchDimensions.OverTheGoalLineBy(end, Team) > 0 =>
+            "a ball cleared off the line can't have wholly crossed it",
+        { Shot.Outcome: ShotOutcome.Blocked, BlockedByPlayerId: null } => "a blocked shot names no blocker",
+        { BlockedByPlayerId: not null } when Shot is not { Outcome: ShotOutcome.Blocked } => $"a {Type} event names a blocker but isn't a blocked shot",
+        _ => null
+    };
+
+    // The team attacking the goal line the ball is wholly over, or null when it's over neither.
+    private static TeamSide? GoalLineCrossed(PitchPosition at) =>
+        at.X > PitchDimensions.Length + PitchDimensions.BallRadius ? TeamSide.Home
+        : at.X < -PitchDimensions.BallRadius ? TeamSide.Away
         : null;
 
     // A detail belongs to exactly one event type: required there, and forbidden everywhere else.

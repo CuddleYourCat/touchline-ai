@@ -9,12 +9,13 @@ namespace Touchline.Tests.Unit.Simulator;
 /// <summary>
 /// Checks that player traits change outcomes, not expectations (ADR-019). Goals are rare,
 /// so these comparisons need a long season: on 200 matches the noise in a group's goals
-/// per xG (about ±10%) is bigger than the effect being tested.
+/// per xG (about ±10%) is bigger than the effect being tested, and even on 1,000 the
+/// finishing comparison sat about 2 standard deviations from its threshold.
 /// </summary>
 [TestFixture]
 public class PlayerTraitTests
 {
-    private const int _matches = 1000;
+    private const int _matches = 2000;
 
     private List<MatchEvent> _events = null!;
     private Dictionary<string, Player> _players = null!;
@@ -22,9 +23,15 @@ public class PlayerTraitTests
     [OneTimeSetUp]
     public void PlayALongSeason()
     {
+        // Penalty tendencies are reset to the league average, so this one season also checks
+        // the average duel. Every other check here ignores penalties, so nothing else changes.
+        static TeamProfile AveragePenalties(TeamProfile team) => team with
+        {
+            Squad = [.. team.Squad.Select(p => p with { PenaltyAim = null, Dive = null })]
+        };
         var teams = TeamProfileCatalog.LoadEmbedded();
         _events = Enumerable.Range(5000, _matches)
-            .SelectMany(seed => new MatchSimulator(teams["north-bank-fc"], teams["thames-valley-united"], seed).Play())
+            .SelectMany(seed => new MatchSimulator(AveragePenalties(teams["north-bank-fc"]), AveragePenalties(teams["thames-valley-united"]), seed).Play())
             .Where(e => e.Type is MatchEventType.Shot or MatchEventType.Pass)
             .ToList();
         _players = teams.Values.SelectMany(t => t.Squad).ToDictionary(p => p.Id);
@@ -56,13 +63,49 @@ public class PlayerTraitTests
     }
 
     [Test]
-    public void Penalties_convert_at_close_to_their_xg_whatever_the_duels_decide()
+    public void Average_takers_against_average_keepers_convert_at_the_penalty_xg()
     {
+        // xG 0.76 describes an average penalty, so the duel is checked with every taker and
+        // keeper at the league-average tendencies, as this fixture's season is played. The
+        // real squads differ on purpose: both keepers happen to read the opposing taker.
         var penalties = _events.Where(e => e.Shot is { Situation: ShotSituation.Penalty }).ToList();
         var conversion = penalties.Count(p => p.IsGoal) / (double)penalties.Count;
-        TestContext.Out.WriteLine($"Penalties: {penalties.Count}, converted {conversion:P1}");
+        TestContext.Out.WriteLine($"Penalties with average tendencies: {penalties.Count}, converted {conversion:P1}");
 
         conversion.Should().BeInRange(0.70, 0.82, "an average penalty is worth 0.76");
+    }
+
+    [Test]
+    public void A_keeper_who_reads_the_taker_saves_far_more_than_one_who_guesses_wrong()
+    {
+        // A controlled duel: Reggie Ashworth always aims low left, and Marcus Holt either always
+        // guesses that way or always dives the other. Expected conversion is about 44% against
+        // 97%, a gap no sampling noise can close. The real squads' tendencies are milder.
+        var teams = TeamProfileCatalog.LoadEmbedded();
+        var lowLeft = new PenaltyAim(1, 0, 0, 0, 0, 0);
+        var northBank = teams["north-bank-fc"] with
+        {
+            Squad = [.. teams["north-bank-fc"].Squad.Select(p => p.Id == "nbfc-07" ? p with { PenaltyAim = lowLeft } : p)]
+        };
+        TeamProfile ThamesValleyWithHoltDiving(DiveBias dive) => teams["thames-valley-united"] with
+        {
+            Squad = [.. teams["thames-valley-united"].Squad.Select(p => p.Id == "tvu-01" ? p with { Dive = dive } : p)]
+        };
+        double Conversion(DiveBias dive)
+        {
+            var penalties = Enumerable.Range(11000, 800)
+                .SelectMany(seed => new MatchSimulator(northBank, ThamesValleyWithHoltDiving(dive), seed).Play())
+                .Where(e => e.Shot is { Situation: ShotSituation.Penalty } && e.PlayerId == "nbfc-07")
+                .ToList();
+            return penalties.Count(p => p.IsGoal) / (double)penalties.Count;
+        }
+
+        var read = Conversion(new DiveBias(1, 0, 0));
+        var fooled = Conversion(new DiveBias(0, 0, 1));
+        TestContext.Out.WriteLine($"Ashworth's penalties converted: keeper reads him {read:P0}, keeper guesses wrong {fooled:P0}");
+
+        read.Should().BeLessThan(0.62);
+        fooled.Should().BeGreaterThan(0.9);
     }
 
     [Test]

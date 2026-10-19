@@ -30,7 +30,7 @@ public class KeyMomentDetectorTests
     {
         var detail = TestEvents.Shot(xg, outcome, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
         var at = team == TeamSide.Home ? new PitchPosition(94, 32) : new PitchPosition(11, 32);
-        return Event(MatchEventType.Shot, team, at, sequence) with { Shot = detail, Successful = detail.OnTarget };
+        return Event(MatchEventType.Shot, team, at, sequence) with { Shot = detail, Successful = detail.OnTarget, BlockedByPlayerId = TestEvents.Blocker(outcome, team), End = TestEvents.EndFor(outcome, team) };
     }
 
     private static MatchEvent Foul(TeamSide foulingTeam, double x, double y) =>
@@ -263,5 +263,83 @@ public class KeyMomentDetectorTests
         var create = () => new KeyMomentDetector(threshold);
 
         create.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    // Added in the lines and key moments slice (ADR-022)
+
+    private static MatchEvent Penalty(ShotOutcome outcome, GoalMouthPosition goalMouth, bool woodwork = false) =>
+        Event(MatchEventType.Shot, TeamSide.Home, new PitchPosition(94, 34)) with
+        {
+            Shot = new ShotDetail(0.76, outcome, ShotSituation.Penalty, BodyPart.LeftFoot, false, 95, goalMouth, woodwork, DiveDirection.Left),
+            Successful = outcome is ShotOutcome.Goal or ShotOutcome.Saved
+        };
+
+    private static MatchEvent ClearedOffLine(double overBy) =>
+        Shot(ShotOutcome.Blocked, 0.4) with
+        {
+            Shot = new ShotDetail(0.4, ShotOutcome.Blocked, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(1, 0.5), false, null, clearedOffLine: true),
+            End = new PitchPosition(PitchDimensions.Length + PitchDimensions.BallRadius + overBy, 34)
+        };
+
+    [Test]
+    public void A_saved_penalty_is_its_own_moment_not_a_big_chance()
+    {
+        var moment = _detector.Detect(Penalty(ShotOutcome.Saved, new GoalMouthPosition(-2, 0.5)), KickOff);
+
+        moment!.Kind.Should().Be(KeyMomentKind.PenaltySaved);
+        moment.Reason.Should().Contain("Penalty saved").And.Contain("dived to the taker's left");
+    }
+
+    [Test]
+    public void A_missed_penalty_says_whether_it_hit_the_woodwork()
+    {
+        var wide = _detector.Detect(Penalty(ShotOutcome.OffTarget, new GoalMouthPosition(4.5, 0.5)), KickOff);
+        var post = _detector.Detect(Penalty(ShotOutcome.OffTarget, new GoalMouthPosition(3.66, 0.5), woodwork: true), KickOff);
+
+        wide!.Kind.Should().Be(KeyMomentKind.PenaltyMissed);
+        wide.Reason.Should().Contain("misses the target");
+        post!.Reason.Should().Contain("hits the woodwork");
+    }
+
+    [Test]
+    public void A_clearance_off_the_line_names_the_defender_and_the_shooter()
+    {
+        var moment = _detector.Detect(ClearedOffLine(overBy: -0.4), KickOff);
+
+        moment!.Kind.Should().Be(KeyMomentKind.ClearedOffLine);
+        moment.Reason.Should().Contain("Cleared off the line").And.Contain("Joel Mbeki (TVU)").And.Contain("Reggie Ashworth (NBK)");
+        moment.GoalLineMarginCm.Should().BeNull("40 cm short isn't a close call");
+    }
+
+    [Test]
+    public void A_goal_by_two_centimetres_is_a_goal_with_a_goal_line_call()
+    {
+        var goal = Shot(ShotOutcome.Goal, 0.3) with { End = new PitchPosition(PitchDimensions.Length + PitchDimensions.BallRadius + 0.015, 34) };
+
+        var moment = _detector.Detect(goal, KickOff);
+
+        moment!.Kind.Should().Be(KeyMomentKind.Goal, "a close call is a detail of the goal, not a second moment");
+        moment.GoalLineMarginCm.Should().Be(2, "1.5 cm rounds away from the line");
+        moment.Reason.Should().Contain("Goal-line technology confirms the whole ball was over, by 2 cm");
+    }
+
+    [Test]
+    public void A_clearance_by_three_centimetres_carries_a_negative_margin()
+    {
+        var moment = _detector.Detect(ClearedOffLine(overBy: -0.03), KickOff);
+
+        moment!.GoalLineMarginCm.Should().Be(-3);
+        moment.Reason.Should().Contain("hadn't wholly crossed, by 3 cm");
+    }
+
+    [Test]
+    public void A_goal_well_over_the_line_carries_no_goal_line_call()
+    {
+        var goal = Shot(ShotOutcome.Goal, 0.3) with { End = new PitchPosition(106.5, 34) };
+
+        var moment = _detector.Detect(goal, KickOff);
+
+        moment!.GoalLineMarginCm.Should().BeNull();
+        moment.Reason.Should().NotContain("Goal-line technology");
     }
 }

@@ -19,21 +19,28 @@ public sealed partial class MatchSimulator
 
             // xG is for an average player. The shooter's finishing and foot change the result only (ADR-019).
             var xg = Math.Clamp(ExpectedGoalsModel.Calculate(_ball, _team, situation, bodyPart) * xgFactor, 0.01, 0.95);
-            var (outcome, goalMouth, hitWoodwork, keeperDive) = situation == ShotSituation.Penalty
+            var (outcome, goalMouth, hitWoodwork, keeperDive, clearedOffLine) = situation == ShotSituation.Penalty
                 ? PenaltyDuel(_carrier)
                 : OpenShot(xg, bodyPart, weakFoot, openPlay);
-            var shot = new ShotDetail(xg, outcome, situation, bodyPart, weakFoot, ShotSpeed(situation, bodyPart, weakFoot), goalMouth, hitWoodwork, keeperDive);
+            var shot = new ShotDetail(xg, outcome, situation, bodyPart, weakFoot, ShotSpeed(situation, bodyPart, weakFoot), goalMouth, hitWoodwork, keeperDive, clearedOffLine);
             var assist = situation == ShotSituation.Penalty || _lastPasser == _carrier ? null : _lastPasser;
+            // A block is by an outfield player: a keeper stopping a shot is a save.
+            var blocker = outcome == ShotOutcome.Blocked ? Defenders.Pick(_random, Third.Defensive, except: Defenders.Goalkeeper) : null;
+            var end = ShotEnd(shot);
 
-            yield return Emit(MatchEventType.Shot, _team, _carrier.Id, _ball, ShotEnd(goalMouth), shot.OnTarget) with
+            yield return Emit(MatchEventType.Shot, _team, _carrier.Id, _ball, end, shot.OnTarget) with
             {
                 Shot = shot,
                 AssistPlayerId = assist?.Id,
+                BlockedByPlayerId = blocker?.Id,
                 UnderPressure = underPressure
             };
             Advance((ShotSeconds, ShotSeconds));
 
+            var attacking = _team;
             var defending = Other(_team);
+            var keeper = Defenders.Goalkeeper ?? Defenders.Pick(_random, Third.Defensive);
+            var cornerAllowed = _cornersInPossession < MaxCornersInPossession;
             switch (outcome)
             {
                 case ShotOutcome.Goal:
@@ -55,9 +62,29 @@ public sealed partial class MatchSimulator
                     Rebound();
                     break;
 
-                // A cap on corners in a row stops corner, header, save, corner chains running on.
-                case ShotOutcome.Saved when _cornersInPossession < MaxCornersInPossession && _random.NextDouble() < CornerAfterSave:
-                case ShotOutcome.Blocked when _cornersInPossession < MaxCornersInPossession && _random.NextDouble() < CornerAfterBlock:
+                // Wide or over: out of play off the shooter, so a goal kick (ADR-022).
+                case ShotOutcome.OffTarget:
+                    foreach (var e in BallOut(attacking, _carrier, end, RestartKind.GoalKick))
+                    {
+                        yield return e;
+                    }
+
+                    foreach (var e in GoalKick(defending))
+                    {
+                        yield return e;
+                    }
+
+                    break;
+
+                // Turned behind by the keeper or a defender: a corner. A cap on corners in a row
+                // stops corner, header, save, corner chains running on.
+                case ShotOutcome.Saved when cornerAllowed && _random.NextDouble() < CornerAfterSave:
+                case ShotOutcome.Blocked when cornerAllowed && _random.NextDouble() < (clearedOffLine ? ClearedOffLineCornerShare : CornerAfterBlock):
+                    foreach (var e in BallOut(defending, blocker ?? keeper, BehindTheGoalLine(), RestartKind.Corner))
+                    {
+                        yield return e;
+                    }
+
                     foreach (var e in Corner())
                     {
                         yield return e;
@@ -66,47 +93,51 @@ public sealed partial class MatchSimulator
                     break;
 
                 case ShotOutcome.Blocked:
-                    ChangePossession(defending, _ball, Defenders.Pick(_random, Third.Defensive), wonInOpenPlay: true);
+                    ChangePossession(defending, end, blocker!, wonInOpenPlay: true);
                     break;
 
                 default:
-                    // Off target: a goal kick. Saved and held: the keeper's ball.
-                    Advance(outcome == ShotOutcome.OffTarget
-                        ? (GoalKickStoppageSeconds, GoalKickStoppageSeconds)
-                        : (SaveStoppageSeconds, SaveStoppageSeconds));
+                    // Saved and held: the keeper's ball.
+                    Advance((SaveStoppageSeconds, SaveStoppageSeconds));
                     foreach (var e in ShowPendingCards())
                     {
                         yield return e;
                     }
 
-                    var keeper = Defenders.Goalkeeper ?? Defenders.Pick(_random, Third.Defensive);
                     ChangePossession(defending, SixYardBox(defending), keeper, wonInOpenPlay: false);
                     break;
             }
         }
 
         // An open-play or set-piece shot: whether it goes in, then where it crosses the line.
-        private (ShotOutcome Outcome, GoalMouthPosition? GoalMouth, bool HitWoodwork, DiveDirection? KeeperDive) OpenShot(
+        // A small share of shots that would have gone in are cleared off the line instead (ADR-022).
+        private (ShotOutcome Outcome, GoalMouthPosition? GoalMouth, bool HitWoodwork, DiveDirection? KeeperDive, bool ClearedOffLine) OpenShot(
             double xg, BodyPart bodyPart, bool weakFoot, bool openPlay)
         {
             var footFactor = FootFactor(_carrier, weakFootPossible: openPlay && bodyPart != BodyPart.Head, weakFoot, WeakFootShotFactor, StrongFootShotFactor);
-            var scoringChance = Math.Min(MaxScoringChance, xg * FinishingFactor(_carrier) * footFactor);
+            // xG already counts the chance of a clearance off the line, as real models do, so a
+            // goal-bound shot is drawn a little more often and some are then cleared: the
+            // share that go in stays the xG.
+            var scoringChance = Math.Min(MaxScoringChance, xg * FinishingFactor(_carrier) * footFactor / (1 - ClearedOffLineShareOfGoals));
 
             switch (ShotOutcomeFor(scoringChance))
             {
+                case ShotOutcome.Goal when _random.NextDouble() < ClearedOffLineShareOfGoals:
+                    return (ShotOutcome.Blocked, InsideFrame(bodyPart, saved: false), false, null, true);
+
                 case ShotOutcome.Goal:
                     var inOffTheFrame = _random.NextDouble() < PostAndInShareOfGoals;
-                    return (ShotOutcome.Goal, inOffTheFrame ? InOffTheWoodwork() : InsideFrame(bodyPart, saved: false), inOffTheFrame, null);
+                    return (ShotOutcome.Goal, inOffTheFrame ? InOffTheWoodwork() : InsideFrame(bodyPart, saved: false), inOffTheFrame, null, false);
 
                 case ShotOutcome.Saved:
-                    return (ShotOutcome.Saved, InsideFrame(bodyPart, saved: true), false, null);
+                    return (ShotOutcome.Saved, InsideFrame(bodyPart, saved: true), false, null, false);
 
                 case ShotOutcome.Blocked:
-                    return (ShotOutcome.Blocked, null, false, null);
+                    return (ShotOutcome.Blocked, null, false, null, false);
 
                 default:
                     var woodwork = _random.NextDouble() < WoodworkShareOfMisses;
-                    return (ShotOutcome.OffTarget, woodwork ? OnWoodwork() : Miss(bodyPart), woodwork, null);
+                    return (ShotOutcome.OffTarget, woodwork ? OnWoodwork() : Miss(bodyPart), woodwork, null, false);
             }
         }
 
@@ -127,7 +158,7 @@ public sealed partial class MatchSimulator
         // the goal, both from their tendencies, in the taker's frame. xG stays 0.76: the
         // tendencies decide the outcome. A miss is likelier aiming high, and less likely for a
         // good finisher. A save needs the right guess.
-        private (ShotOutcome Outcome, GoalMouthPosition? GoalMouth, bool HitWoodwork, DiveDirection? KeeperDive) PenaltyDuel(Player taker)
+        private (ShotOutcome Outcome, GoalMouthPosition? GoalMouth, bool HitWoodwork, DiveDirection? KeeperDive, bool ClearedOffLine) PenaltyDuel(Player taker)
         {
             var dive = Defenders.Goalkeeper?.Dive ?? DiveBias.LeagueAverage;
             var keeperDive = (DiveDirection)PickWeighted([dive.Left, dive.Stay, dive.Right]);
@@ -140,7 +171,7 @@ public sealed partial class MatchSimulator
             if (_random.NextDouble() < missChance)
             {
                 var woodwork = _random.NextDouble() < PenaltyWoodworkShareOfMisses;
-                return (ShotOutcome.OffTarget, woodwork ? PenaltyWoodwork(column, high) : PenaltyMiss(column, high), woodwork, keeperDive);
+                return (ShotOutcome.OffTarget, woodwork ? PenaltyWoodwork(column, high) : PenaltyMiss(column, high), woodwork, keeperDive, false);
             }
 
             // DiveDirection and the zone's column share an order: left, middle, right.
@@ -150,7 +181,7 @@ public sealed partial class MatchSimulator
                 : high ? PenaltySaveSideHigh : PenaltySaveSideLow;
             var outcome = _random.NextDouble() < saveChance ? ShotOutcome.Saved : ShotOutcome.Goal;
 
-            return (outcome, InZone(column, high), false, keeperDive);
+            return (outcome, InZone(column, high), false, keeperDive, false);
         }
 
         // After a shot comes back off the woodwork, either side can win the loose ball, which
@@ -175,20 +206,44 @@ public sealed partial class MatchSimulator
             ChangePossession(Other(_team), at, Defenders.Pick(_random, Third.Defensive), wonInOpenPlay: true);
         }
 
-        // Where a shot reached the goal line on the pitch, from its goal-mouth position. The
+        // Where a shot ended up (ADR-022), measured from the goal line by how far the whole ball
+        // is over it: in the net for a goal (nearly always well over, rarely by under 5 cm), a
+        // few metres beyond for a miss, on the line for the woodwork, just short of it for a
+        // save or a clearance off the line. A block stops just in front of the shooter. The
         // shooter's right is towards Y = 0 for the home team (attacking towards X = 105) and
-        // towards Y = 68 for the away team. A blocked shot stops just in front of the shooter.
-        private PitchPosition ShotEnd(GoalMouthPosition? goalMouth)
+        // towards Y = 68 for the away team.
+        private PitchPosition ShotEnd(ShotDetail shot)
         {
-            if (goalMouth is not { } at)
+            if (shot.GoalMouth is not { } at)
             {
                 return Move(_ball, Uniform(1, 3), Normal(0, 1));
             }
 
-            var goal = PitchDimensions.AttackingGoal(_team);
+            var overBy = shot switch
+            {
+                { Outcome: ShotOutcome.Goal } => _random.NextDouble() < GoalLineCloseCallShareOfGoals ? Uniform(0.005, 0.05) : Uniform(0.3, 2.0),
+                { ClearedOffLine: true } => _random.NextDouble() < CloseCallShareOfClearances ? -Uniform(0.005, 0.05) : -Uniform(0.1, 0.8),
+                { HitWoodwork: true } => -PitchDimensions.BallRadius,
+                { Outcome: ShotOutcome.Saved } => -Uniform(0.3, 1.2),
+                _ => Uniform(1, 4)
+            };
+
             var rightward = _team == TeamSide.Home ? -1 : 1;
-            return new PitchPosition(goal.X, Math.Clamp(goal.Y + rightward * at.Across, 0, PitchDimensions.Width));
+            return AtGoalLine(overBy, Math.Clamp(PitchDimensions.Width / 2 + rightward * at.Across, -PitchDimensions.Margin, PitchDimensions.Width + PitchDimensions.Margin));
         }
+
+        // A point whose whole ball is `overBy` metres beyond the goal line the team in
+        // possession attacks (negative: short of it), at the given width.
+        private PitchPosition AtGoalLine(double overBy, double y)
+        {
+            var beyond = PitchDimensions.BallRadius + overBy;
+            return new PitchPosition(_team == TeamSide.Home ? PitchDimensions.Length + beyond : -beyond, y);
+        }
+
+        // Where a save or block turned behind for a corner crosses the goal line: wholly over,
+        // a little wide of the posts.
+        private PitchPosition BehindTheGoalLine() =>
+            AtGoalLine(Uniform(0.2, 2), PitchDimensions.Width / 2 + Sign() * Uniform(4, 15));
 
         // Goal-mouth positions (ADR-020), in metres from the centre of the goal, from the
         // shooter's point of view. The ranges keep each kind clear of the others' boundaries

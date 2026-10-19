@@ -46,7 +46,7 @@ internal static class EngineTuning
     public const double BookedPlayerFoulFactor = 0.2;
 
     // Cards per foul.
-    public const double YellowPerFoul = 0.19;
+    public const double YellowPerFoul = 0.21;
     public const double StraightRedPerFoul = 0.002;
 
     // The most players a team can have sent off. Further sending-off offences are downgraded.
@@ -73,8 +73,8 @@ internal static class EngineTuning
 
     // Body part (ADR-019): headers come from corners, and in open play only after a cross,
     // a completed high pass into the box (ADR-020).
-    public const double CornerHeaderShare = 0.85;
-    public const double CrossHeaderShare = 0.55;
+    public const double CornerHeaderShare = 0.65;
+    public const double CrossHeaderShare = 0.45;
 
     // Pass height (ADR-020), as (ground, low) shares, with the rest high. A pass into the box
     // from a wide attacking position is a cross, and mostly high. xPass includes the height,
@@ -113,6 +113,25 @@ internal static class EngineTuning
     public const double PostShareOfWoodwork = 0.65;
     public const double PostAndInShareOfGoals = 0.05;
     public const double ReboundToAttackers = 0.40;
+
+    // The lines (ADR-022). Goals: one in a hundred is over by under 5 cm, and a few that were
+    // going in are cleared off the line instead, a quarter of those by under 5 cm.
+    public const double GoalLineCloseCallShareOfGoals = 0.01;
+    public const double ClearedOffLineShareOfGoals = 0.06;
+    public const double CloseCallShareOfClearances = 0.25;
+    public const double ClearedOffLineCornerShare = 0.5;
+
+    // The ball out of play (ADR-022): a share of misplaced passes run out (a long ball in
+    // attack sometimes over the goal line for a goal kick, otherwise over the touchline), some
+    // won tackles knock it out for a throw-in to the attackers, and some crosses cut out in
+    // the box go behind for a corner.
+    public const double FailedPassOutShare = 0.23;
+    public const double LongBallOverGoalLineShare = 0.30;
+    public const double TackleOutShare = 0.12;
+    public const double CrossOutForCornerShare = 0.35;
+    public const double ThrowInCompletion = 0.88;
+    public static readonly (double Min, double Max) ThrowInSpeedKmh = (25, 45);
+    public static readonly (int Min, int Max) ThrowInStoppageSeconds = (8, 15);
 
     // Penalties (ADR-020): the taker misses (more often aiming high, less often for a good
     // finisher), or the keeper saves only if they guessed the right column.

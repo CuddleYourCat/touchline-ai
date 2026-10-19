@@ -24,7 +24,7 @@ public class MatchStateTests
     private static MatchEvent ShotEvent(long sequence, ShotOutcome outcome, double xg, TeamSide team = TeamSide.Home)
     {
         var shot = TestEvents.Shot(xg, outcome, ShotSituation.OpenPlay, BodyPart.RightFoot, weakFoot: false, speedKmh: 90);
-        return Event(sequence, MatchEventType.Shot, team) with { Shot = shot, Successful = shot.OnTarget };
+        return Event(sequence, MatchEventType.Shot, team) with { Shot = shot, Successful = shot.OnTarget, BlockedByPlayerId = TestEvents.Blocker(outcome, team), End = TestEvents.EndFor(outcome, team) };
     }
 
     [Test]
@@ -440,5 +440,79 @@ public class MatchStateTests
         saveOffTheWoodwork.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("hitWoodwork");
         goalOutside.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("goalMouth");
         penaltyWithoutDive.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("keeperDive");
+    }
+
+    // Added in the lines and key moments slice (ADR-022)
+
+    private static MatchEvent Out(RestartKind restart, double x, double y, TeamSide lastTouch = TeamSide.Home) =>
+        Event(1, MatchEventType.BallOutOfPlay, lastTouch) with { Restart = restart, Start = new PitchPosition(x, y) };
+
+    [Test]
+    public void The_ball_out_of_play_starts_wholly_beyond_a_line_and_nothing_else_does()
+    {
+        var stillOnTheLine = Out(RestartKind.ThrowIn, 50, 68.05);
+        var passFromTheStands = Event(1, MatchEventType.Pass) with { Start = new PitchPosition(50, 70) };
+        var noRestart = Out(RestartKind.ThrowIn, 50, 69) with { Restart = null };
+
+        stillOnTheLine.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*wholly beyond a line*");
+        passFromTheStands.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*starts out of play*");
+        noRestart.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*no restart*");
+    }
+
+    [Test]
+    public void A_restart_must_match_the_line_crossed_and_who_touched_it_last()
+    {
+        // The home team attacks the goal line at X = 105.
+        var throwInOverTheGoalLine = Out(RestartKind.ThrowIn, 106, 30);
+        var goalKickOffADefender = Out(RestartKind.GoalKick, 106, 30, lastTouch: TeamSide.Away);
+        var cornerOffAnAttacker = Out(RestartKind.Corner, 106, 30, lastTouch: TeamSide.Home);
+
+        throwInOverTheGoalLine.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*over a touchline*");
+        goalKickOffADefender.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*goal kick*");
+        cornerOffAnAttacker.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*corner*");
+
+        Out(RestartKind.ThrowIn, 50, -1).Invoking(e => e.EnsureValid()).Should().NotThrow();
+        Out(RestartKind.GoalKick, 106, 30, lastTouch: TeamSide.Home).Invoking(e => e.EnsureValid()).Should().NotThrow();
+        Out(RestartKind.Corner, 106, 30, lastTouch: TeamSide.Away).Invoking(e => e.EnsureValid()).Should().NotThrow();
+        Out(RestartKind.Corner, -1, 30, lastTouch: TeamSide.Home).Invoking(e => e.EnsureValid()).Should().NotThrow("the home team defends X = 0");
+    }
+
+    [Test]
+    public void A_goal_ends_with_the_whole_ball_over_the_line()
+    {
+        var onTheLine = ShotEvent(1, ShotOutcome.Goal, 0.3) with { End = new PitchPosition(105.1, 34) };
+        var inTheNet = ShotEvent(1, ShotOutcome.Goal, 0.3) with { End = new PitchPosition(106.2, 34) };
+
+        onTheLine.Invoking(e => e.EnsureValid()).Should().Throw<ArgumentException>().WithMessage("*whole ball over the goal line*");
+        inTheNet.Invoking(e => e.EnsureValid()).Should().NotThrow();
+        (inTheNet with { End = null }).Invoking(e => e.EnsureValid())
+            .Should().Throw<ArgumentException>().WithMessage("*needs an end position*", "a goal's end is how its line call is checked");
+    }
+
+    [Test]
+    public void A_clearance_off_the_line_names_its_defender_and_never_crossed()
+    {
+        var detail = new ShotDetail(0.4, ShotOutcome.Blocked, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(1, 0.5), false, null, clearedOffLine: true);
+        var cleared = ShotEvent(1, ShotOutcome.Blocked, 0.4) with { Shot = detail, End = new PitchPosition(105.08, 34) };
+
+        cleared.Invoking(e => e.EnsureValid()).Should().NotThrow();
+        (cleared with { End = new PitchPosition(105.2, 34) }).Invoking(e => e.EnsureValid())
+            .Should().Throw<ArgumentException>().WithMessage("*can't have wholly crossed*");
+        (cleared with { BlockedByPlayerId = null }).Invoking(e => e.EnsureValid())
+            .Should().Throw<ArgumentException>().WithMessage("*names no blocker*");
+        (ShotEvent(1, ShotOutcome.Saved, 0.4) with { BlockedByPlayerId = "tvu-05" }).Invoking(e => e.EnsureValid())
+            .Should().Throw<ArgumentException>().WithMessage("*isn't a blocked shot*");
+    }
+
+    [Test]
+    public void Only_a_blocked_shot_can_be_cleared_off_the_line_and_it_must_be_inside_the_frame()
+    {
+        var savedAndCleared = () => new ShotDetail(0.4, ShotOutcome.Saved, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(1, 0.5), false, null, clearedOffLine: true);
+        var clearedWide = () => new ShotDetail(0.4, ShotOutcome.Blocked, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, new GoalMouthPosition(5, 0.5), false, null, clearedOffLine: true);
+        var clearedNowhere = () => new ShotDetail(0.4, ShotOutcome.Blocked, ShotSituation.OpenPlay, BodyPart.RightFoot, false, 90, null, false, null, clearedOffLine: true);
+
+        savedAndCleared.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("clearedOffLine");
+        clearedWide.Should().Throw<ArgumentException>().WithMessage("*inside the frame*");
+        clearedNowhere.Should().Throw<ArgumentException>().WithMessage("*where it was stopped*");
     }
 }

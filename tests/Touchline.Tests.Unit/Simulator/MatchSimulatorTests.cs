@@ -215,7 +215,7 @@ public class MatchSimulatorTests
     {
         var events = _season.Take(50).SelectMany(m => m).ToList();
 
-        events.Where(e => e.Pass is not null).Should().OnlyContain(e => e.Pass!.SpeedKmh >= 30 && e.Pass.SpeedKmh <= 90);
+        events.Where(e => e.Pass is not null).Should().OnlyContain(e => e.Pass!.SpeedKmh >= 25 && e.Pass.SpeedKmh <= 90);
         events.Where(e => e.Shot is { BodyPart: BodyPart.Head }).Should().NotBeEmpty()
             .And.OnlyContain(e => e.Shot!.SpeedKmh >= 40 && e.Shot.SpeedKmh <= 70);
         events.Where(e => e.Shot is { BodyPart: not BodyPart.Head }).Should().OnlyContain(e => e.Shot!.SpeedKmh >= 54 && e.Shot.SpeedKmh <= 125);

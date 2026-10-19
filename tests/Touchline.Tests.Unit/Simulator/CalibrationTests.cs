@@ -57,13 +57,20 @@ public class CalibrationTests
         // ADR-020
         _averages.WoodworkHits.Should().BeInRange(0.5, 1.3, "shots hitting the post or bar per match");
         _averages.Advantages.Should().BeInRange(2, 6, "advantages played per match");
+
+        // ADR-022
+        _averages.ThrowIns.Should().BeInRange(35, 50, "throw-ins per match");
+        _averages.GoalKicks.Should().BeInRange(12, 20, "goal kicks per match");
+        _averages.Corners.Should().BeInRange(8, 12, "corners per match");
+        _averages.ClearedOffLine.Should().BeInRange(0.1, 0.4, "shots cleared off the line per match");
     }
 
     private sealed record MatchAverages(
         double Goals, double Shots, double OnTargetShare, double ExpectedGoals, double Passes,
         double PassCompletion, double Fouls, double YellowCards, double RedCards, double Penalties, double Events,
         double WeakFootShareOfFootedShots, double HeaderShare, double MeanExpectedCompletion,
-        double WoodworkHits, double Advantages)
+        double WoodworkHits, double Advantages,
+        double ThrowIns, double GoalKicks, double Corners, double ClearedOffLine)
     {
         public static MatchAverages From(IReadOnlyList<List<MatchEvent>> games)
         {
@@ -88,7 +95,11 @@ public class CalibrationTests
                 HeaderShare: (shots.Count - footed.Count) / (double)shots.Count,
                 MeanExpectedCompletion: passes.Average(p => p.Pass!.ExpectedCompletion),
                 WoodworkHits: PerMatch(e => e.Shot is { HitWoodwork: true }),
-                Advantages: PerMatch(e => e.AdvantagePlayed));
+                Advantages: PerMatch(e => e.AdvantagePlayed),
+                ThrowIns: PerMatch(e => e.Restart == RestartKind.ThrowIn),
+                GoalKicks: PerMatch(e => e.Restart == RestartKind.GoalKick),
+                Corners: PerMatch(e => e.Restart == RestartKind.Corner),
+                ClearedOffLine: PerMatch(e => e.Shot is { ClearedOffLine: true }));
         }
     }
 }

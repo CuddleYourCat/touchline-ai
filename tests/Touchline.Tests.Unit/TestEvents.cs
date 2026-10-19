@@ -42,6 +42,14 @@ internal static class TestEvents
         return new ShotDetail(xg, outcome, situation, bodyPart, weakFoot, speedKmh, goalMouth, hitWoodwork: false, dive);
     }
 
+    /// <summary>For a goal, an end in the back of the net (ADR-022 requires one), otherwise null.</summary>
+    public static PitchPosition? EndFor(ShotOutcome outcome, TeamSide shooter) =>
+        outcome != ShotOutcome.Goal ? null : shooter == TeamSide.Home ? new PitchPosition(106, 34) : new PitchPosition(-1, 34);
+
+    /// <summary>An opposing defender for a blocked shot (ADR-022 requires one), otherwise null.</summary>
+    public static string? Blocker(ShotOutcome outcome, TeamSide shooter) =>
+        outcome != ShotOutcome.Blocked ? null : shooter == TeamSide.Home ? "tvu-05" : "nbfc-04";
+
     // Adds the detail an event type must carry (ADR-019, ADR-020), so a test event is valid
     // unless a test deliberately breaks it. Shots and card colours still come from the test,
     // and a card names the event before it as its foul.

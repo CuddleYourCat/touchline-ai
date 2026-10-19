@@ -257,12 +257,20 @@ public sealed partial class MatchSimulator
             var completed = _random.NextDouble() < PassCompletion(_carrier, expectedCompletion, footFactor);
             var speed = Math.Round(Uniform(isLong ? LongPassSpeedKmh : ShortPassSpeedKmh), 1);
 
-            yield return Emit(MatchEventType.Pass, _team, _carrier.Id, _ball, target, completed) with
+            // A pass that goes astray can run out of play (ADR-022): a long ball through to the
+            // keeper's line for a goal kick, anything else over the nearer touchline.
+            (PitchPosition At, RestartKind Restart)? outOfPlay = completed || _random.NextDouble() >= FailedPassOutShare ? null
+                : isLong && PitchZone.Locate(target, _team).Third == Third.Attacking && _random.NextDouble() < LongBallOverGoalLineShare
+                    ? (AtGoalLine(Uniform(0.5, 3), target.Y), RestartKind.GoalKick)
+                    : (OverTheTouchline(target), RestartKind.ThrowIn);
+
+            var pass = Emit(MatchEventType.Pass, _team, _carrier.Id, _ball, outOfPlay?.At ?? target, completed) with
             {
                 RecipientPlayerId = recipient.Id,
                 UnderPressure = underPressure,
                 Pass = new PassDetail(expectedCompletion, speed, weakFoot, height)
             };
+            yield return pass;
             Advance(PassSeconds);
 
             if (completed)
@@ -271,6 +279,123 @@ public sealed partial class MatchSimulator
                 _carrier = recipient;
                 _ball = target;
                 _crossArrived = height == PassHeight.High && intoBox;
+                yield break;
+            }
+
+            if (outOfPlay is var (crossed, restart))
+            {
+                foreach (var e in OutOffAPass(crossed, restart))
+                {
+                    yield return e;
+                }
+
+                yield break;
+            }
+
+            var interceptor = Defenders.Pick(_random, PitchZone.Locate(target, Other(_team)).Third);
+            yield return Emit(MatchEventType.Interception, Other(_team), interceptor.Id, target);
+            Advance(DuelSeconds);
+
+            // A cross cut out in the box is often headed behind for a corner.
+            if (height == PassHeight.High && intoBox && _cornersInPossession < MaxCornersInPossession && _random.NextDouble() < CrossOutForCornerShare)
+            {
+                foreach (var e in BallOut(Other(_team), interceptor, AtGoalLine(Uniform(0.2, 2), target.Y), RestartKind.Corner))
+                {
+                    yield return e;
+                }
+
+                foreach (var e in Corner())
+                {
+                    yield return e;
+                }
+
+                yield break;
+            }
+
+            ChangePossession(Other(_team), target, interceptor, wonInOpenPlay: true);
+        }
+
+        // The passer's team put it out: a goal kick or a throw-in to the opponents.
+        private IEnumerable<MatchEvent> OutOffAPass(PitchPosition crossed, RestartKind restart)
+        {
+            var passingTeam = _team;
+            foreach (var e in BallOut(passingTeam, _carrier, crossed, restart))
+            {
+                yield return e;
+            }
+
+            var defending = Other(passingTeam);
+            var restartPlay = restart == RestartKind.GoalKick ? GoalKick(defending) : ThrowIn(defending, crossed);
+            foreach (var e in restartPlay)
+            {
+                yield return e;
+            }
+        }
+
+        // A goal kick (ADR-022): the defending team's keeper restarts at once from the six-yard
+        // box, short or long, as an ordinary pass. An iterator, like every restart, so nothing
+        // happens until it's enumerated, after the ball has gone out.
+        private IEnumerable<MatchEvent> GoalKick(TeamSide team)
+        {
+            var lineup = _lineups[team];
+            ChangePossession(team, SixYardBox(team), lineup.Goalkeeper ?? lineup.Pick(_random, Third.Defensive), wonInOpenPlay: false);
+            foreach (var e in Pass(underPressure: false))
+            {
+                yield return e;
+            }
+        }
+
+        // The nearer touchline to a point, wholly over it, at the same distance along the pitch.
+        private PitchPosition OverTheTouchline(PitchPosition near)
+        {
+            var beyond = PitchDimensions.BallRadius + Uniform(0.2, 2);
+            var y = near.Y < PitchDimensions.Width / 2 ? -beyond : PitchDimensions.Width + beyond;
+            return new PitchPosition(Math.Clamp(near.X, 1, PitchDimensions.Length - 1), y);
+        }
+
+        // The ball goes out (ADR-022): the event where it crossed, the stoppage, and any cards
+        // the referee owes, because a dead ball is a stoppage. The restart is the caller's.
+        private IEnumerable<MatchEvent> BallOut(TeamSide lastTouch, Player lastPlayer, PitchPosition crossed, RestartKind restart)
+        {
+            yield return Emit(MatchEventType.BallOutOfPlay, lastTouch, lastPlayer.Id, crossed) with { Restart = restart };
+            Advance(restart switch
+            {
+                RestartKind.ThrowIn => ThrowInStoppageSeconds,
+                RestartKind.GoalKick => (GoalKickStoppageSeconds, GoalKickStoppageSeconds),
+                _ => (CornerStoppageSeconds, CornerStoppageSeconds)
+            });
+
+            foreach (var e in ShowPendingCards())
+            {
+                yield return e;
+            }
+        }
+
+        // A throw-in from where the ball crossed the touchline: a short, low ball by hand,
+        // recorded as a pass, as data feeds do.
+        private IEnumerable<MatchEvent> ThrowIn(TeamSide team, PitchPosition crossed)
+        {
+            var spot = new PitchPosition(crossed.X, crossed.Y < 0 ? 0 : PitchDimensions.Width);
+            ChangePossession(team, spot, _lineups[team].Pick(_random, PitchZone.Locate(spot, team).Third), wonInOpenPlay: false);
+
+            var infield = spot.Y == 0 ? 1 : -1;
+            var target = Move(spot, Uniform(-4, 14), infield * Uniform(4, 14));
+            var recipient = Attackers.Pick(_random, PitchZone.Locate(target, _team).Third, except: _carrier);
+            // xPass is the average thrower's; the thrower's own passing changes the result, as on every pass.
+            var completed = _random.NextDouble() < PassCompletion(_carrier, ThrowInCompletion, footFactor: 1);
+
+            yield return Emit(MatchEventType.Pass, _team, _carrier.Id, spot, target, completed) with
+            {
+                RecipientPlayerId = recipient.Id,
+                Pass = new PassDetail(ThrowInCompletion, Math.Round(Uniform(ThrowInSpeedKmh), 1), weakFoot: false, PassHeight.Low)
+            };
+            Advance(PassSeconds);
+
+            if (completed)
+            {
+                _lastPasser = _carrier;
+                _carrier = recipient;
+                _ball = target;
                 yield break;
             }
 
@@ -335,21 +460,38 @@ public sealed partial class MatchSimulator
             yield return Emit(MatchEventType.Tackle, Other(_team), tackler.Id, _ball, successful: won);
             Advance(DuelSeconds);
 
-            if (won)
+            if (!won)
             {
-                ChangePossession(Other(_team), _ball, tackler, wonInOpenPlay: true);
+                yield break;
             }
+
+            // A tackle that wins the ball can knock it out off the tackler: the attacking team
+            // keeps it with a throw-in (ADR-022).
+            if (_random.NextDouble() < TackleOutShare)
+            {
+                var attacking = _team;
+                var crossed = OverTheTouchline(_ball);
+                foreach (var e in BallOut(Other(attacking), tackler, crossed, RestartKind.ThrowIn))
+                {
+                    yield return e;
+                }
+
+                foreach (var e in ThrowIn(attacking, crossed))
+                {
+                    yield return e;
+                }
+
+                yield break;
+            }
+
+            ChangePossession(Other(_team), _ball, tackler, wonInOpenPlay: true);
         }
 
+        // The corner kick itself. The ball has already gone out (BallOut), which took the
+        // stoppage and showed any cards owed.
         private IEnumerable<MatchEvent> Corner()
         {
             _cornersInPossession++;
-            Advance((CornerStoppageSeconds, CornerStoppageSeconds));
-            foreach (var e in ShowPendingCards())
-            {
-                yield return e;
-            }
-
             var goal = PitchDimensions.AttackingGoal(_team);
             var flag = new PitchPosition(goal.X, _random.Next(2) == 0 ? 0 : PitchDimensions.Width);
             var taker = Attackers.SetPieceTaker();

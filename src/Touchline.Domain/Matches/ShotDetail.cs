@@ -74,6 +74,11 @@ public sealed record ShotDetail
     /// <param name="goalMouth">Where the shot crossed (or would have crossed) the goal line, or null for a blocked shot (ADR-020).</param>
     /// <param name="hitWoodwork">True when the shot hit a post or the bar, whether it went in or stayed out.</param>
     /// <param name="keeperDive">For a penalty, which way the goalkeeper went. Penalties only.</param>
+    /// <param name="clearedOffLine">
+    /// True when a defender stopped it on or near the goal line (ADR-022). Blocked shots only, and
+    /// then the goal mouth is where it was stopped. It defaults to false, the right reading when
+    /// it's absent, unlike a speed or a position.
+    /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// xG isn't between 0 and 1, the speed isn't a plausible ball speed, or an enum value isn't defined.
     /// </exception>
@@ -89,7 +94,8 @@ public sealed record ShotDetail
         double speedKmh,
         GoalMouthPosition? goalMouth,
         bool hitWoodwork,
-        DiveDirection? keeperDive)
+        DiveDirection? keeperDive,
+        bool clearedOffLine = false)
     {
         if (weakFoot && bodyPart == BodyPart.Head)
         {
@@ -104,7 +110,7 @@ public sealed record ShotDetail
         SpeedKmh = DetailRules.SpeedKmh(speedKmh, nameof(speedKmh));
 
         // Each problem names the parameter at fault, so a caller logging ParamName finds the right field.
-        if ((GoalMouthProblem(outcome, goalMouth, hitWoodwork) ?? DiveProblem(situation, keeperDive)) is var (problem, parameter))
+        if ((GoalMouthProblem(outcome, goalMouth, hitWoodwork, clearedOffLine) ?? DiveProblem(situation, keeperDive)) is var (problem, parameter))
         {
             throw new ArgumentException($"The shot is invalid: {problem}.", parameter);
         }
@@ -112,7 +118,14 @@ public sealed record ShotDetail
         GoalMouth = goalMouth;
         HitWoodwork = hitWoodwork;
         KeeperDive = keeperDive;
+        ClearedOffLine = clearedOffLine;
     }
+
+    /// <summary>
+    /// True when a defender stopped the shot on or near the goal line (ADR-022). It's still a
+    /// blocked shot, off target in data-feed terms, and the event names the defender.
+    /// </summary>
+    public bool ClearedOffLine { get; }
 
     /// <summary>Where the shot crossed (or would have crossed) the goal line, from the shooter's point of view. Null when blocked.</summary>
     public GoalMouthPosition? GoalMouth { get; }
@@ -126,10 +139,15 @@ public sealed record ShotDetail
     /// <summary>For a penalty, which way the goalkeeper went, from the taker's point of view.</summary>
     public DiveDirection? KeeperDive { get; }
 
-    // The goal mouth must agree with the outcome: a block never reaches the line, a goal or a
-    // save is inside the frame, and a miss is off the frame unless it hit the woodwork.
-    private static (string Problem, string Parameter)? GoalMouthProblem(ShotOutcome outcome, GoalMouthPosition? goalMouth, bool hitWoodwork) => (outcome, goalMouth, hitWoodwork) switch
+    // The goal mouth must agree with the outcome: a block never reaches the line unless it's
+    // cleared off it, a goal, a save or a clearance off the line is inside the frame, and a miss
+    // is off the frame unless it hit the woodwork.
+    private static (string Problem, string Parameter)? GoalMouthProblem(ShotOutcome outcome, GoalMouthPosition? goalMouth, bool hitWoodwork, bool clearedOffLine) => (outcome, goalMouth, hitWoodwork) switch
     {
+        (not ShotOutcome.Blocked, _, _) when clearedOffLine => ($"a {outcome} shot can't have been cleared off the line", nameof(clearedOffLine)),
+        (ShotOutcome.Blocked, null, false) when clearedOffLine => ("a clearance off the line needs the goal-mouth position where it was stopped", nameof(goalMouth)),
+        (ShotOutcome.Blocked, { } at, false) when clearedOffLine && !GoalFrame.IsInside(at) => ("a clearance off the line must be inside the frame", nameof(goalMouth)),
+        (ShotOutcome.Blocked, not null, false) when clearedOffLine => null,
         (ShotOutcome.Blocked, not null, _) => ("a blocked shot never reached the goal line, so it has no goal-mouth position", nameof(goalMouth)),
         (ShotOutcome.Blocked, null, true) or (ShotOutcome.Saved, _, true) => ($"a {outcome} shot can't have hit the woodwork", nameof(hitWoodwork)),
         (not ShotOutcome.Blocked, null, _) => ($"a {outcome} shot needs a goal-mouth position", nameof(goalMouth)),

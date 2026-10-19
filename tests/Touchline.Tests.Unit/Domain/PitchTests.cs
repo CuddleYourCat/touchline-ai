@@ -7,11 +7,11 @@ namespace Touchline.Tests.Unit.Domain;
 [TestFixture]
 public class PitchTests
 {
-    [TestCase(-0.1, 34)]
-    [TestCase(105.1, 34)]
-    [TestCase(50, -0.1)]
-    [TestCase(50, 68.1)]
-    public void A_position_off_the_pitch_is_rejected(double x, double y)
+    [TestCase(-5.1, 34)]
+    [TestCase(110.1, 34)]
+    [TestCase(50, -5.1)]
+    [TestCase(50, 73.1)]
+    public void A_position_beyond_the_margin_is_rejected(double x, double y)
     {
         var create = () => new PitchPosition(x, y);
 
@@ -85,5 +85,42 @@ public class PitchTests
 
         PitchZone.Locate(nearTopTouchline, TeamSide.Home).Channel.Should().Be(Channel.Left);
         PitchZone.Locate(nearTopTouchline, TeamSide.Away).Channel.Should().Be(Channel.Right);
+    }
+
+    // Added in the lines and key moments slice (ADR-022)
+
+    [TestCase(105.11, 34, true, TestName = "A ball touching the goal line from beyond is in play")]
+    [TestCase(105.12, 34, false, TestName = "A ball wholly over the goal line is out")]
+    [TestCase(-0.11, 34, true, TestName = "A ball touching the home goal line is in play")]
+    [TestCase(50, 68.11, true, TestName = "A ball touching the touchline is in play")]
+    [TestCase(50, -0.12, false, TestName = "A ball wholly over the touchline is out")]
+    [TestCase(107.5, 34, false, TestName = "A ball in the back of the net is out")]
+    public void In_play_means_any_part_of_the_ball_is_on_or_inside_the_lines(double x, double y, bool inPlay)
+    {
+        PitchDimensions.IsInPlay(new PitchPosition(x, y)).Should().Be(inPlay);
+    }
+
+    [TestCase(105.13, TeamSide.Home, 0.02)]
+    [TestCase(105.11, TeamSide.Home, 0)]
+    [TestCase(105.0, TeamSide.Home, -0.11)]
+    [TestCase(-0.14, TeamSide.Away, 0.03)]
+    public void Over_the_goal_line_is_measured_from_the_ball_s_trailing_edge(double x, TeamSide attacking, double expected)
+    {
+        PitchDimensions.OverTheGoalLineBy(new PitchPosition(x, 34), attacking).Should().BeApproximately(expected, 1e-9);
+    }
+
+    [Test]
+    public void Positions_up_to_five_metres_beyond_the_lines_are_valid()
+    {
+        var create = () => (new PitchPosition(-5, -5), new PitchPosition(110, 73));
+
+        create.Should().NotThrow("the net and the run-off must be recordable");
+    }
+
+    [Test]
+    public void The_penalty_area_stops_at_the_goal_line()
+    {
+        PitchDimensions.IsInPenaltyArea(new PitchPosition(105, 34), TeamSide.Away).Should().BeTrue("the line is part of the area");
+        PitchDimensions.IsInPenaltyArea(new PitchPosition(106, 34), TeamSide.Away).Should().BeFalse("the net isn't");
     }
 }

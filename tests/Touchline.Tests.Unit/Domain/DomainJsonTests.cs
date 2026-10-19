@@ -19,7 +19,7 @@ public class DomainJsonTests
         Team = TeamSide.Home,
         PlayerId = "nbfc-07",
         Start = new PitchPosition(94.2, 29.5),
-        End = new PitchPosition(105, 33.1),
+        End = new PitchPosition(105.8, 33.1),
         Successful = true,
         UnderPressure = true,
         Shot = TestEvents.Shot(0.41, ShotOutcome.Goal, ShotSituation.Counter, BodyPart.LeftFoot, weakFoot: true, speedKmh: 88.4)

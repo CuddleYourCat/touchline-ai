@@ -10,18 +10,20 @@ namespace Touchline.Domain.Pitch;
 public readonly record struct PitchPosition
 {
     /// <summary>
-    /// Creates a position, rejecting any point off the pitch.
+    /// Creates a position on the pitch or within <see cref="PitchDimensions.Margin"/> of it
+    /// (ADR-022), so a ball in the net or over the touchline can be recorded. Whether it's in
+    /// play is <see cref="PitchDimensions.IsInPlay"/>'s decision, not this type's.
     /// </summary>
-    /// <param name="x">Metres along the length, 0 to 105.</param>
-    /// <param name="y">Metres across the width, 0 to 68.</param>
-    /// <exception cref="ArgumentOutOfRangeException">The point is off the pitch or not a number.</exception>
+    /// <param name="x">Metres along the length: 0 to 105 on the pitch, −5 to 110 in all.</param>
+    /// <param name="y">Metres across the width: 0 to 68 on the pitch, −5 to 73 in all.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The point is beyond the margin or not a number.</exception>
     // [JsonConstructor]: without it, System.Text.Json builds a struct through its implicit
     // parameterless constructor and every deserialized position becomes (0, 0).
     [JsonConstructor]
     public PitchPosition(double x, double y)
     {
-        X = OnPitch(x, PitchDimensions.Length, nameof(x));
-        Y = OnPitch(y, PitchDimensions.Width, nameof(y));
+        X = WithinMargin(x, PitchDimensions.Length, nameof(x));
+        Y = WithinMargin(y, PitchDimensions.Width, nameof(y));
     }
 
     /// <summary>Metres along the length of the pitch.</summary>
@@ -53,14 +55,9 @@ public readonly record struct PitchPosition
     /// <returns>The formatted position.</returns>
     public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"({X:0.#}, {Y:0.#})");
 
-    private static double OnPitch(double value, double max, string name)
-    {
-        // Comparisons with NaN are always false, so range checks alone would let it through.
-        if (!double.IsFinite(value) || value < 0 || value > max)
-        {
-            throw new ArgumentOutOfRangeException(name, value, $"Must be a number between 0 and {max} metres.");
-        }
-
-        return value;
-    }
+    private static double WithinMargin(double value, double max, string name) =>
+        Ranges.IsBetween(value, -PitchDimensions.Margin, max + PitchDimensions.Margin)
+            ? value
+            : throw new ArgumentOutOfRangeException(
+                name, value, $"Must be a number between {-PitchDimensions.Margin} and {max + PitchDimensions.Margin} metres.");
 }

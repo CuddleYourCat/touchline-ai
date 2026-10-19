@@ -533,6 +533,76 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 
 ---
 
+## ADR-022 — Lines, the ball out of play, and key moments redefined
+
+**Status:** Accepted · 1st half, before slice 04
+
+**Decision**
+
+*Positions beyond the lines*
+- **`PitchPosition` allows a 5 m margin** beyond every line: x from −5 to 110, and y from −5 to 73. That covers the net's depth and the run-off around the pitch. Validation still catches typos and unit errors.
+- **`PitchDimensions.IsInPlay(position)` applies the Laws**: the ball is out only when **all of it** is over the line, so its centre must be more than the ball's radius (0.11 m) beyond.
+- **`PitchDimensions.OverTheGoalLineBy(position, attacking)`** gives the metres by which the whole ball is over the goal line. It's positive for a goal, and negative for a ball that didn't fully cross.
+- Every event **starts in play**, except `BallOutOfPlay`. A shot's or pass's `End` may be out: in the net, wide, or over the touchline.
+
+*The ball going out of play*
+- **A new `BallOutOfPlay` event**, raised the moment the ball goes out. It records:
+  - **`Start`**, where it crossed, beyond the line;
+  - the player who touched it last (its `Team` is theirs);
+  - the **`Restart`**: `ThrowIn`, `GoalKick` or `Corner`.
+- The restart happens on the next event, at the right spot: on the touchline, in the six-yard box or at the corner flag. It's a **notable** moment, not a key one.
+- **The engine sends the ball out for real**: overhit and misplaced passes and clearances go out for throw-ins, misses for goal kicks, and saves and blocks out for corners.
+- The calibration aims for about **35–50 throw-ins, 12–20 goal kicks and 8–12 corners** a match. The corners need more sources than today's saves and blocks.
+
+*Clearances off the line*
+- **A clearance off the line is still a `Blocked` shot** (off target, in data-feed terms), with **`ClearedOffLine = true`**. It also records the goal-mouth position where it was stopped, which is inside the frame and at or just short of the line.
+- **Every blocked shot names its blocker** in a new second-player field, **`BlockedByPlayerId`** (ADR-017's pattern, valid on blocked shots only).
+- Target: about 0.1–0.4 clearances off the line a match.
+
+*Goals cross the line*
+- A goal's `End` is **inside the net**, beyond the line, so `OverTheGoalLineBy` is positive.
+- Most goals are well over. About 1 in 100 is over by under 5 cm, which is a **close call**.
+- A clearance off the line can be a close call too: not fully over, by under 5 cm.
+
+*Key moments, redefined*
+- **New key-moment kinds**, alongside Goal, BigChance, PenaltyAwarded and RedCard:
+  - **`PenaltySaved`**: the keeper stopped it;
+  - **`PenaltyMissed`**: the taker missed, including off the woodwork;
+  - **`ClearedOffLine`**: the defender's name and the goal it stopped.
+  - A missed or saved penalty is no longer reported as a BigChance. The more specific moment wins.
+- **A close goal-line call is a detail on the moment, not a separate kind.** A `Goal` or `ClearedOffLine` moment carries **`GoalLineMarginCm`** when the call was within 5 cm, and its reason says so ("goal-line technology confirms the whole ball was over, by 2 cm"). A single shot never raises two key moments.
+- **Woodwork and the ball out of play stay in the notable tier** (backlog: template commentary, no model call).
+- **Disallowed goals go to the backlog as a stretch goal.** They need offside, offside needs every player's position, and the engine only tracks the ball. A random "VAR check" would hand the agents an invented reason to explain as fact.
+
+**Alternatives considered**
+- **A separate out-of-play position type.** Strict, but every `End` becomes one of two types, and every consumer must handle both.
+- **Keeping the lines as the limit**, with ends recorded as crossing points. The smallest change, but "in the net", "over by 2 cm" and "out for a throw" can't be expressed.
+- **The restart recorded on the next event** instead of a `BallOutOfPlay` event. A smaller schema, but where and why the ball went out is lost.
+- **A `ClearedOffLine` shot outcome.** Explicit, but every outcome switch grows a branch, and on-target statistics have to choose a side.
+- **`GoalLineCall` as a key-moment kind.** That's two moments for one shot (a goal and a call), or a goal reported as something other than a goal.
+
+**Rationale**
+- The Laws define in and out by the *whole ball*, so the model needs space beyond the lines to say it truthfully.
+- The rarest moments (a penalty saved, a ball cleared off the line, a goal by 2 cm) are the ones fans remember. They deserve the agent treatment, and their cost is negligible at well under one a match.
+- Like ADR-019 and ADR-020, it changes the schema before Event Hubs fixes it. `BallOutOfPlay` and the new moment kinds are additive, and still rely on the tolerant readers that slice 04 will decide.
+
+**Trade-offs**
+- **The match has less play, and slightly fewer events (about 1,590, down from 1,775).** I'd expected more. The out-of-play events and restarts are new, but each restart also takes real stoppage time (a throw-in 8–15 s, a goal kick 22 s, a corner 25 s), so fewer passes and fouls fit into 90 minutes. That's realistic: the ball is in play for only about an hour in a real match.
+- **The pitch's own rules move into `IsInPlay`**, so "on the pitch" is no longer just "a valid position". Every check that meant "in play" must call it.
+- **The engine gains restart logic** for throw-ins and goal kicks, and corners from new sources, so the seeded matches and the calibration change again.
+
+*Settled during the build*
+- **Every restart is taken at once, as the next event**: a throw-in (a low pass from the touchline), a goal kick (the keeper's pass from the six-yard box) or a corner (from the flag). The ball going out is a stoppage, so any cards owed after advantage are shown then.
+- **A clearance off the line doesn't change xG.** Like the weak foot (ADR-019), the engine draws a goal-bound shot 1 ÷ (1 − 0.06) more often, then clears 6% of them, so the share that goes in is still the xG.
+- **Retuned:**
+  - `CornerHeaderShare` is now 0.65 (it was 0.85), and `CrossHeaderShare` 0.45 (it was 0.55), because corners roughly tripled to about 9 a match;
+  - `FailedPassOutShare` is 0.23;
+  - `YellowPerFoul` rises from 0.19 to 0.21, to keep about 4 yellows a match with less playing time.
+- **The penalty checks were redesigned.** With league-average tendencies the duel converts at about 77%, matching its 0.76 xG. The real squads convert less, because both keepers happen to read the opposing taker. So the mechanism is tested with a controlled duel: against a keeper who always reads the taker, conversion falls to about 44% (measured 45%), and against one who always guesses wrong, nothing is saved.
+- **The goal-line margin rounds away from the line, after rounding to the micrometre.** That way floating-point error can't turn 3 cm into 4.
+
+---
+
 ## ADR-006 — Agent orchestration framework
 
 **Status:** Proposed · needed before Stage 3

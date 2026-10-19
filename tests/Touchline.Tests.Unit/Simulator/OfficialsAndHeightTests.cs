@@ -113,22 +113,15 @@ public class OfficialsAndHeightTests
             "the referee waits until the ball is dead");
     }
 
-    // The ball is dead after a foul that stopped play, another card, a goal, a miss that went
-    // out, a save the keeper held, or a save or block that went out for a corner. A block that
-    // stays in play, or a shot back off the woodwork, isn't a stoppage.
+    // The ball is dead after a foul that stopped play, another card, the ball going out of
+    // play (ADR-022), a goal, or a save the keeper held. A block that stays in play, or a shot
+    // back off the woodwork, isn't a stoppage, and neither is anything else.
     private static bool IsStoppage(List<MatchEvent> match, int index)
     {
-        var previous = match[index];
-        var nextPlay = match.Skip(index + 1).First(e => e.Type != MatchEventType.Card);
-        var corner = nextPlay.Type == MatchEventType.Pass && nextPlay.Start.X is 0 or PitchDimensions.Length;
-
-        return previous switch
+        return match[index] switch
         {
-            { Type: MatchEventType.Foul, AdvantagePlayed: false } or { Type: MatchEventType.Card } => true,
-            { Shot: { Outcome: ShotOutcome.Goal } } => true,
-            { Shot: { Outcome: ShotOutcome.OffTarget, HitWoodwork: false } } => true,
-            { Shot: { Outcome: ShotOutcome.Saved } } => true,
-            { Shot: { Outcome: ShotOutcome.Blocked } } => corner,
+            { Type: MatchEventType.Foul, AdvantagePlayed: false } or { Type: MatchEventType.Card } or { Type: MatchEventType.BallOutOfPlay } => true,
+            { Shot.Outcome: ShotOutcome.Goal or ShotOutcome.Saved } => true,
             _ => false
         };
     }
@@ -211,7 +204,8 @@ public class OfficialsAndHeightTests
     [Test]
     public void Short_passes_stay_mostly_on_the_ground_and_long_balls_go_up()
     {
-        var passes = _events.Where(e => e.Pass is not null && !(e.Start.X is 0 or PitchDimensions.Length)).ToList();
+        // Corners and throw-ins (from the touchline) are set pieces with their own heights.
+        var passes = _events.Where(e => e.Pass is not null && !(e.Start.X is 0 or PitchDimensions.Length) && !(e.Start.Y is 0 or PitchDimensions.Width)).ToList();
         var shortPasses = passes.Where(p => p.Start.DistanceTo(p.End!.Value) < 15).ToList();
         var longPasses = passes.Where(p => p.Start.DistanceTo(p.End!.Value) > 25).ToList();
 
@@ -267,9 +261,11 @@ public class OfficialsAndHeightTests
 
     // Added after code review
 
-    [TestCase(GoalZone.HighLeft)]
-    [TestCase(GoalZone.LowRight)]
-    public void Every_penalty_lands_in_the_zone_aimed_at_whether_scored_saved_missed_or_off_the_woodwork(GoalZone aimed)
+    // High penalties miss about 12% of the time, so that case must include misses. Low ones
+    // miss about 3%, and 70 of them can easily have none, so the low case doesn't insist.
+    [TestCase(GoalZone.HighLeft, true)]
+    [TestCase(GoalZone.LowRight, false)]
+    public void Every_penalty_lands_in_the_zone_aimed_at_whether_scored_saved_missed_or_off_the_woodwork(GoalZone aimed, bool mustIncludeMisses)
     {
         // Reggie Ashworth takes North Bank's penalties. Give him a single zone, and every one of
         // his penalties must land in it, so the history a scout reads is true (ADR-021).
@@ -286,7 +282,12 @@ public class OfficialsAndHeightTests
             .ToList();
         TestContext.Out.WriteLine($"{penalties.Count} penalties, {penalties.Count(p => p.Shot!.Outcome == ShotOutcome.OffTarget)} missed, {penalties.Count(p => p.Shot!.HitWoodwork)} off the woodwork");
 
-        penalties.Should().Contain(p => p.Shot!.Outcome == ShotOutcome.OffTarget, "the test must cover misses too");
+        if (mustIncludeMisses)
+        {
+            penalties.Should().Contain(p => p.Shot!.Outcome == ShotOutcome.OffTarget, "the test must cover misses too");
+        }
+
+        penalties.Should().NotBeEmpty();
         penalties.Should().OnlyContain(p => GoalFrame.ZoneOf(p.Shot!.GoalMouth!.Value) == aimed);
     }
 
