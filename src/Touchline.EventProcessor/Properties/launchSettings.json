@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "Touchline.EventProcessor": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7180",
+      "launchBrowser": false
+    }
+  }
+}

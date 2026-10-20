@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Event Processor: an Azure Functions isolated-worker app with an Event Hubs trigger (ADR-015, ADR-023). -->
+  <PropertyGroup>
+    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.EventHubs" />
+    <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
+    <PackageReference Include="Aspire.Azure.Messaging.ServiceBus" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="host.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets the unit tests drive the processor with in-memory fakes. -->
+    <InternalsVisibleTo Include="Touchline.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
+    <ProjectReference Include="..\Touchline.ServiceDefaults\Touchline.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

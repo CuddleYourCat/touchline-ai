@@ -5,6 +5,19 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Aspire integrations: hosting (AppHost) and clients (services), kept on the AppHost SDK's version. -->
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.Azure.EventHubs" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Functions" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.Azure.ServiceBus" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Azure.Messaging.EventHubs" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Azure.Messaging.ServiceBus" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.6.1" />
+    <!-- The Event Processor: Functions isolated worker (ADR-015). -->
+    <PackageVersion Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
+    <PackageVersion Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.1.0" />
+    <PackageVersion Include="Microsoft.Azure.Functions.Worker.Extensions.EventHubs" Version="6.5.0" />
     <PackageVersion Include="FluentAssertions" Version="7.2.0" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />

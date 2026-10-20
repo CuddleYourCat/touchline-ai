@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Aspire.Azure.Messaging.EventHubs" />
   </ItemGroup>
 
   <ItemGroup>

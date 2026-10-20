@@ -515,4 +515,29 @@ public class MatchStateTests
         clearedWide.Should().Throw<ArgumentException>().WithMessage("*inside the frame*");
         clearedNowhere.Should().Throw<ArgumentException>().WithMessage("*where it was stopped*");
     }
+
+    // Added in the event pipeline slice (ADR-023)
+
+    [Test]
+    public void A_skipped_event_moves_the_sequence_on_without_changing_the_totals()
+    {
+        var afterGoal = MatchState.KickOff(_matchId).Apply(ShotEvent(1, ShotOutcome.Goal, 0.4));
+
+        var skipped = afterGoal.Skip(2);
+        var afterNext = skipped.Apply(ShotEvent(3, ShotOutcome.Saved, 0.1));
+
+        skipped.Home.Should().Be(afterGoal.Home);
+        skipped.LastSequence.Should().Be(2);
+        afterNext.LastSequence.Should().Be(3, "the events after a skipped one still apply in order");
+        afterNext.Home.Shots.Should().Be(2);
+    }
+
+    [TestCase(1, TestName = "Skipping an event already applied is rejected")]
+    [TestCase(4, TestName = "Skipping past a gap is rejected")]
+    public void An_event_can_only_be_skipped_in_order(long sequence)
+    {
+        var state = MatchState.KickOff(_matchId).Apply(ShotEvent(1, ShotOutcome.Goal, 0.4));
+
+        state.Invoking(s => s.Skip(sequence)).Should().Throw<InvalidOperationException>().WithMessage("*Expected event 2*");
+    }
 }

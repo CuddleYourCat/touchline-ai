@@ -603,6 +603,73 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 
 ---
 
+## ADR-023 — The event pipeline: envelope, tolerant readers, idempotent storage, paced publishing
+
+**Status:** Accepted · 1st half, slice 04
+
+**Decision**
+
+*The message*
+- Each Event Hubs message is **one `MatchEvent`** in `DomainJson`. Its **envelope** is carried as application properties:
+  - `schemaVersion`, starting at `1`;
+  - `type`;
+  - `matchId`;
+  - `sequence`.
+- The **partition key is the match ID** (ADR-004), so a match's events stay in order on one partition.
+- The producer fills an `EventDataBatch` and sends it when it's full or when the pacing says so. A full batch never drops an event, because a `TryAdd` that returns false triggers the send.
+
+*Tolerant readers*
+- **Consumers read the envelope first.** An event whose `type` they don't recognise, or whose `schemaVersion` has a newer **major** version, is **logged, counted** (an OpenTelemetry counter, `touchline.events.skipped`, tagged with the reason) **and skipped**. The checkpoint moves past it, so one unknown event never stalls a partition.
+- **Unknown JSON fields are ignored**, as `System.Text.Json` already does.
+- **An event that fails `EnsureValid` is treated the same way**: logged with its reason, counted and skipped. It's never retried forever.
+- Adding an event type or an optional field is then a **minor** version change and backward compatible. A breaking change bumps the major version.
+- **A new value in an existing enum field is a major change** (settled at code review). Older readers can't parse a body that contains a restart, body part or outcome they don't know, so without the major bump they'd skip it as invalid, and it would look like a bug rather than a version mismatch.
+- **A gap in a match's sequence is recovered from, not waited on** (settled at code review). Within a partition, events arrive in order, so a gap means events were lost, usually a batch that failed every retry before the trigger checkpointed past it. Waiting for them would freeze the match for good. Instead:
+  - the missing sequences are skipped, counted on `touchline.events.lost` and logged as an error;
+  - the match carries on with incomplete totals.
+- **A match processed without its metadata is counted** on `touchline.matches.missing_metadata`, because its kind (and so whether it counts towards the season) is then unknown.
+
+*Storage in Cosmos DB (the emulator first, ADR-016)*
+- **`events`**, partitioned by `/matchId`. The document ID is the event's sequence, written with an upsert. A redelivered batch (Event Hubs is at-least-once) overwrites rather than duplicates.
+- **`matches`**, partitioned by `/matchId`. The live `MatchState`, plus the metadata, upserted **once per batch**, not per event. It's one point read for the Match Centre.
+- The season projection (ADR-021) is slice 05's job. This slice keeps the `Kind` with each match so that projection can filter on it.
+
+*Key moments*
+- **The Event Processor runs `KeyMomentDetector`** on each event against the state before it. It publishes each key moment to the Service Bus topic **`key-moments`**, which has two subscriptions: `commentary` and `highlights`.
+- The message ID is `{matchId}:{sequence}`, so Service Bus duplicate detection can drop a republished moment once the namespace supports it (the Standard tier, slice 05).
+
+*Publishing pace*
+- **The simulator worker waits the real gap between events on the match clock, divided by a configurable speed.**
+  - The default is **10×**, so a match takes about 9 minutes.
+  - `1×` gives a true live feel, and tests use a very high speed.
+  - Events with no gap between them go in the same batch.
+- **Matches start from configuration.** The worker plays the matches listed under `Simulator:Matches` (seed, kind, season, round, referee, speed) when it starts, then idles. A Match Centre trigger comes later, with the fan UI.
+
+*Telemetry*
+- **One trace per batch.** It runs from the producer's send, through the Event Hubs trigger, to the Cosmos DB writes and the Service Bus publish. W3C trace context is carried in the message's `Diagnostic-Id` and `traceparent` properties, which the Azure SDKs set and read.
+- Each match also gets a `match.id` span attribute, so all its traces can be found together.
+
+**Alternatives considered**
+- **Parking unknown or invalid events** in a separate container before skipping them. Nothing would be lost, but it means more code and storage now. It's worth revisiting if skips ever happen in practice.
+- **Event Hubs Schema Registry.** It's the strongest contract, but it needs the Standard tier and isn't in the emulator.
+- **Storing events only**, and rebuilding state on read. The simplest write path, but every score read would scan about 1,600 documents.
+- **One container with a document type.** Fewer resources, but every query has to filter by type, and their indexing needs differ.
+- **Publishing as fast as possible**, or always in real time. The first never lets a match unfold for the agents; the second is too slow to develop against.
+- **A Match Centre endpoint that starts matches.** Closer to the product, but it needs an authenticated API and a queue before there's a fan UI to call it.
+
+**Rationale**
+- **The envelope keeps a reader safe** however the schema evolves (ADR-019 to ADR-022), at no cost on the Basic tier.
+- **Upserts keyed by the sequence** make at-least-once delivery harmless.
+- **Paced publishing** gives the agents and the Match Centre a real match to follow.
+- **These are the exam's Domain 2 and 3 patterns**: partition keys, batching, checkpoints, tolerant consumers, idempotent writes and trace propagation.
+
+**Trade-offs**
+- **A skipped event is gone from that consumer's view.** Only the log and the metric record it.
+- **State is upserted per batch, so the Match Centre can lag a batch behind.** That's well under a second at 10×.
+- **Three emulators** (Event Hubs, Service Bus, Cosmos DB) all run in Docker. The Event Hubs emulator also needs an Azurite storage container for its checkpoints.
+
+---
+
 ## ADR-006 — Agent orchestration framework
 
 **Status:** Proposed · needed before Stage 3

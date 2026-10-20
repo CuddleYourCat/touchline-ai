@@ -63,7 +63,9 @@ public static class Extensions
         builder.Services.AddOpenTelemetry()
             .WithMetrics(metrics =>
             {
-                metrics.AddAspNetCoreInstrumentation()
+                // The app's own meter is named after it, like its activity source below.
+                metrics.AddMeter(builder.Environment.ApplicationName)
+                    .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation();
             })

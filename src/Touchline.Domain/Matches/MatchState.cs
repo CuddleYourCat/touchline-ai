@@ -82,6 +82,19 @@ public sealed record MatchState(string MatchId, MatchTime Time, TeamStats Home, 
             : this with { Away = updated, Time = matchEvent.Time, LastSequence = matchEvent.Sequence };
     }
 
+    /// <summary>
+    /// Records that the next event was received but not applied, because a tolerant reader
+    /// skipped it (ADR-023): an unknown type, a newer schema, or an invalid event. The totals
+    /// don't change, but the sequence moves on, so the events after it still apply in order.
+    /// </summary>
+    /// <param name="sequence">The skipped event's sequence. It must be the next one expected.</param>
+    /// <returns>The new state.</returns>
+    /// <exception cref="InvalidOperationException">The sequence isn't the next one expected.</exception>
+    public MatchState Skip(long sequence) =>
+        sequence == LastSequence + 1
+            ? this with { LastSequence = sequence }
+            : throw new InvalidOperationException($"Expected event {LastSequence + 1} but skipped {sequence}. Events must be skipped in order too.");
+
     private static TeamStats Tally(TeamStats stats, MatchEvent matchEvent) => matchEvent switch
     {
         { Type: MatchEventType.Pass } => stats with
