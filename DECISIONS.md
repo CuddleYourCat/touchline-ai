@@ -670,6 +670,105 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 
 ---
 
+## ADR-024 — The event pipeline in Azure: tiers, identities and the simulator job
+
+**Status:** Accepted · 1st half, slice 05
+
+**Decision**
+
+*Resources, in `infra/main.bicep` (ADR-012)*
+- **Event Hubs, Basic tier, 1 throughput unit.** One hub, `match-events`, with **2 partitions** and the `$Default` consumer group. Two matches can then be processed in parallel. The partition count can't be changed later on Basic.
+- **Service Bus, Standard tier.** This corrects ADR-011, which budgeted for Basic: Basic has queues only, and ADR-004 and ADR-023 need a topic. The `key-moments` topic has **duplicate detection** on (a 10-minute window, matching the `{matchId}:{sequence}` message ID), with the `commentary` and `highlights` subscriptions.
+- **Cosmos DB for NoSQL, serverless.** Database `touchline`, with the `events` and `matches` containers partitioned by `/matchId`, as on the emulator.
+- **The Event Processor on Functions Flex Consumption** (ADR-015), .NET 10 isolated worker. Its own storage account holds the deployment package, the host's leases and the Event Hubs checkpoints.
+- **The simulator as a Container Apps job**, `job-simulator`, in the existing environment. It's manually triggered, runs one execution at a time, and doesn't retry. Each execution plays the configured matches, then exits.
+
+*Identity: Entra ID only*
+- **Local (key) authentication is off** on Event Hubs, Service Bus and Cosmos DB, and shared-key access is off on the processor's storage account. No connection string or account key exists to leak.
+- **One user-assigned identity per workload**, with each role scoped to the entity rather than the namespace:
+
+| Identity | Role | Scope |
+|---|---|---|
+| `id-touchline-simulator` | Azure Event Hubs Data Sender | `match-events` |
+| | AcrPull | the registry |
+| `id-touchline-processor` | Azure Event Hubs Data Receiver | `match-events` |
+| | Azure Service Bus Data Sender | `key-moments` |
+| | Cosmos DB Built-in Data Contributor | the `touchline` database |
+| | Storage Blob Data Owner | the processor's storage account |
+| your account (`principalId`) | Cosmos DB Built-in Data Contributor | the account, for Data Explorer |
+
+- **Cosmos DB data roles are not Azure RBAC.** They're the account's own `sqlRoleAssignments`, so they're declared as Cosmos DB child resources.
+- **Locally, nothing changes.** Aspire still runs the emulators (ADR-016), and the same code switches targets through configuration.
+
+*Deployment (ADR-013, ADR-015)*
+- **CI deploys the function code** after the Match Centre, and **builds the simulator image** with ACR Tasks and points the job at it.
+- `id-touchline-ci` gets **two more roles, each on one resource**: Website Contributor on the function app (to deploy its package) and Container Apps Jobs Contributor on `job-simulator` (to update its image).
+- Infrastructure changes still go through `deploy.ps1`.
+
+*Starting a match*
+- **The seed is passed per run.** The job's configured seed is only a default. Each start overrides it with an environment variable (`Simulator__Matches__0__Seed`).
+- **A repeated seed is a redelivery test.** The match ID comes from the seed, so the processor treats a rerun as duplicates and nothing changes.
+
+*Proving it*
+- **A manual runbook in the README**: start the job at high speed, then check:
+  - the KQL in Application Insights for events processed, skipped and lost, and the key moments published;
+  - the trace from the job's send to the Cosmos DB writes;
+  - the match document in Data Explorer.
+- The ADR-021 season projection is **slice 06**.
+
+**Alternatives considered**
+- **Service Bus Basic with two queues.** Pennies a month, but the processor would fan out to each queue itself, with no duplicate detection or subscription filters.
+- **Service Bus Standard deployed only for the demo days.** Cheaper, but more moving parts, and it could be missing when judges try it.
+- **Cosmos DB free tier.** 1,000 RU/s for nothing, but only one free-tier account is allowed per subscription, and the ai-doc-intelligence account may hold it.
+- **An always-on simulator container app.** Simple, but it holds a replica and fills the database with exhibition matches.
+- **The simulator on your machine against Azure.** Nothing to host, but the demo would depend on the laptop.
+- **One shared identity (`id-touchline-ai`) for every workload.** Fewer resources, but the Match Centre could write to Cosmos DB and the simulator could read it.
+- **Keys kept as a fallback.** Easier with tools that want a connection string, but the keys exist and can be listed.
+- **A random seed when none is given.** No arguments needed, but reproducing a match means finding its seed in the logs.
+- **An automated CI smoke test.** It proves the pipeline on every merge, but CI would need data-plane read rights and starting a job, and every push would cost traffic.
+
+**Rationale**
+- **The broker does the fan-out**, and duplicate detection backs the idempotent design. Topics, subscriptions and filters are core Domain 3 material.
+- **Serverless Cosmos DB costs fractions of a penny a match** (about 1,600 upserts, roughly 10,000 RU), and it doesn't depend on the subscription's free-tier slot.
+- **A job costs nothing between runs**, reuses the image pipeline, and gives the demo a "press go" moment. Container Apps jobs are Domain 1 material.
+- **Per-workload identities with entity-scoped roles, and no keys**, are the least-privilege setup the exam's Domain 4 tests. This is managed identity's first real test: the emulators never checked it (ADR-016).
+
+**Trade-offs**
+- **About £21 a month in hourly charges**: ACR about £4, Event Hubs Basic about £9 and Service Bus Standard about £8. That leaves about £9 of the £30 budget (ADR-011) for model calls and logs. October and November are both part months before the 15 November teardown, which helps.
+- **Event Hubs Basic has 1-day retention and one consumer group.** A second reader of the raw stream would need Standard. Stage 3's agents read Service Bus, so this isn't needed now.
+- **No keys means no quick connection-string debugging.** Every tool has to sign in with Entra ID, and Cosmos DB Data Explorer needs the data role assignment.
+- **Six new resources and six new role assignments** to keep in step with the AppHost by hand (ADR-012).
+- **Each run needs a fresh seed**, or it looks as if nothing happened.
+- **CI can now act as the pipeline's identities** (settled at code review). Deploying the function's code (Website Contributor) or an image or execution override for the job (Container Apps Jobs Contributor) means choosing what runs as `id-touchline-processor` or `id-touchline-simulator`. So a compromised workflow on `main` could reach those identities' data:
+  - writing the Cosmos DB database;
+  - sending to `key-moments`;
+  - sending to `match-events`.
+
+  This widens ADR-013's blast radius, which was building images and updating one container app. Two things limit it: the federated credential still only trusts `main`, and those identities' own roles stay scoped to one entity each. Accepted, because it's the price of CI deploying code at all. The alternative is deploying by hand.
+
+**Settled during the build**
+- **Telemetry wasn't reaching Azure at all.** The service defaults only exported over OTLP, which Aspire sets up locally. They now also use the **Azure Monitor exporter** (`Azure.Monitor.OpenTelemetry.Exporter`) whenever `APPLICATIONINSIGHTS_CONNECTION_STRING` is set. It's still OpenTelemetry, with no Application Insights SDK. The Match Centre benefits too. The exporter needs OpenTelemetry 1.18, so the five OpenTelemetry packages moved from 1.17.0 to 1.18.0.
+- **The processor adds `UseFunctionsWorkerDefaults()`** (`Microsoft.Azure.Functions.Worker.OpenTelemetry`), so the worker's spans join the host's invocation trace.
+- **CI's job role is Container Apps Jobs Contributor, not Container Apps Contributor.** The docs confirm that Container Apps Contributor only covers `containerApps/*`. Like its app counterpart, the jobs role can list the job's secrets (the Application Insights connection string), which is the same accepted trade-off as ADR-013.
+- **The simulator worker idled forever after its matches**, so a job execution would never finish. `Simulator:ExitWhenDone` (on only in the job) stops the host afterwards. A failed match also stops it, with exit code 1, so the execution shows as failed rather than hanging until its 30-minute timeout.
+- **An execution override replaces the whole job template; it doesn't merge with it.** So `infra/start-match.ps1` reads the job's template, sets the seed (and optionally the speed), and starts the job with the result.
+- **The function app's name reaches CI as a repository variable**, `PROCESSOR_APP_NAME`, from the deploy outputs. That's the same pattern as `ACR_NAME`.
+- **Website Contributor can read the function app's settings**, which include the Application Insights connection string. Same trade-off as above.
+
+**Settled at code review**
+- **Only the host's own shutdown counts as a clean stop.** The job's failure path used to exempt every `OperationCanceledException`, and an SDK timeout is one, so a half-published match could exit 0. It now checks `stoppingToken.IsCancellationRequested` instead.
+- **`start-match.ps1` refuses speeds below 4.** A match runs to about 100 minutes of clock, and the replica timeout is 30 minutes.
+- **The subscriptions don't dead-letter expired messages until Stage 3.** Nothing reads them yet, so unread moments simply expire after a day rather than filling the dead-letter queues with stale "failures". Stage 3 turns it back on with its consumers.
+- **Telemetry volume against the 0.1 GB daily cap (ADR-011).**
+  - A match is roughly 5–8 MB, most of it one span per Cosmos DB upsert.
+  - The Functions host's per-invocation "Executing/Executed" logs (`Function` category) drop to Warning. That removes about 1,800 records a match, and the invocation spans still show every run.
+  - The README adds a `Usage` query to check today's ingestion.
+  - Sampling is the next lever if the demo days get close to the cap.
+- **The runbook's trace query joins on `operation_Id`.** Only the batch span carries `match.id`, so filtering on it hid the Cosmos DB and Service Bus calls.
+- **A test now covers the Azure Monitor exporter's registration**, both with and without the connection string.
+
+---
+
 ## ADR-006 — Agent orchestration framework
 
 **Status:** Proposed · needed before Stage 3

@@ -1,3 +1,4 @@
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,8 +47,9 @@ public static class Extensions
     }
 
     /// <summary>
-    /// Configures OpenTelemetry logging, metrics and tracing, and exports them over OTLP when
-    /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> is set (Aspire sets it locally).
+    /// Configures OpenTelemetry logging, metrics and tracing. They're exported over OTLP when
+    /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> is set (Aspire sets it locally), and to Application Insights
+    /// through the Azure Monitor exporter when <c>APPLICATIONINSIGHTS_CONNECTION_STRING</c> is set (in Azure).
     /// </summary>
     /// <typeparam name="TBuilder">The host builder type.</typeparam>
     /// <param name="builder">The host builder to configure.</param>
@@ -93,6 +95,14 @@ public static class Extensions
         if (useOtlpExporter)
         {
             builder.Services.AddOpenTelemetry().UseOtlpExporter();
+        }
+
+        // Still OpenTelemetry, with Azure Monitor as the destination: no Application Insights SDK.
+        var useAzureMonitorExporter = !string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]);
+
+        if (useAzureMonitorExporter)
+        {
+            builder.Services.AddOpenTelemetry().UseAzureMonitorExporter();
         }
 
         return builder;

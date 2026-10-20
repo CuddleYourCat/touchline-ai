@@ -3,6 +3,7 @@ using System.Text.Json;
 using Azure.Messaging.EventHubs;
 using Azure.Messaging.EventHubs.Producer;
 using FluentAssertions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -120,13 +121,58 @@ public class PublishingTests
         var sender = new RecordingSender();
         var time = new InstantTimeProvider();
         var plan = new MatchPlan { Seed = 42, Speed = 10 };
-        var publisher = new MatchPublisher(Options.Create(new SimulatorOptions()), sender, time, NullLogger<MatchPublisher>.Instance);
+        var publisher = new MatchPublisher(Options.Create(new SimulatorOptions()), sender, time, new RecordingLifetime(), NullLogger<MatchPublisher>.Instance);
 
         await publisher.PlayAsync(plan, CancellationToken.None);
 
         var expected = Match();
         sender.Events.Should().Equal(expected);
         time.TotalDelay.Should().Be(MatchPacer.Pace(expected, 10).Aggregate(TimeSpan.Zero, (sum, b) => sum + b.DelayBefore));
+    }
+
+    [Test]
+    public async Task As_a_job_the_publisher_plays_every_match_then_stops_the_host()
+    {
+        var sender = new RecordingSender();
+        var lifetime = new RecordingLifetime();
+        var options = new SimulatorOptions { ExitWhenDone = true, Matches = [new MatchPlan { Seed = 1 }, new MatchPlan { Seed = 2 }] };
+
+        await RunToCompletion(new MatchPublisher(Options.Create(options), sender, new InstantTimeProvider(), lifetime, NullLogger<MatchPublisher>.Instance));
+
+        sender.Events.Select(e => e.MatchId).Distinct().Should().HaveCount(2, "both matches are played before the job ends");
+        lifetime.StopRequested.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task Locally_the_publisher_idles_after_its_matches()
+    {
+        var lifetime = new RecordingLifetime();
+        var options = new SimulatorOptions { Matches = [new MatchPlan { Seed = 1 }] };
+
+        await RunToCompletion(new MatchPublisher(Options.Create(options), new RecordingSender(), new InstantTimeProvider(), lifetime, NullLogger<MatchPublisher>.Instance));
+
+        lifetime.StopRequested.Should().BeFalse("under Aspire the worker stays up until the AppHost stops it");
+    }
+
+    [TestCase(typeof(InvalidOperationException))]
+    [TestCase(typeof(TaskCanceledException))]
+    public async Task A_job_whose_match_fails_still_stops_and_is_marked_as_failed(Type failure)
+    {
+        var lifetime = new RecordingLifetime();
+        var options = new SimulatorOptions { ExitWhenDone = true, Matches = [new MatchPlan { Seed = 1 }] };
+        var exitCode = Environment.ExitCode;
+        try
+        {
+            await RunToCompletion(new MatchPublisher(Options.Create(options), new FailingSender(failure), new InstantTimeProvider(), lifetime, NullLogger<MatchPublisher>.Instance));
+
+            lifetime.StopRequested.Should().BeTrue("a failed execution must end, not hang until its replica timeout");
+            // A timeout from the SDK is an OperationCanceledException too, but it's still a failure.
+            Environment.ExitCode.Should().Be(1, "so Container Apps records the execution as failed");
+        }
+        finally
+        {
+            Environment.ExitCode = exitCode;
+        }
     }
 
     [Test]
@@ -158,6 +204,31 @@ public class PublishingTests
             .And.Contain(f => f.Contains("Matches:2", StringComparison.Ordinal) && f.Contains("season", StringComparison.Ordinal))
             .And.Contain(f => f.Contains("Matches:3", StringComparison.Ordinal) && f.Contains("Speed", StringComparison.Ordinal));
         new SimulatorOptionsValidator().Validate(null, new SimulatorOptions { Matches = [new MatchPlan { Seed = 42 }] }).Succeeded.Should().BeTrue();
+    }
+
+    private static async Task RunToCompletion(MatchPublisher publisher)
+    {
+        await publisher.StartAsync(CancellationToken.None);
+        await publisher.ExecuteTask!;
+    }
+
+    private sealed class FailingSender(Type failure) : IMatchEventSender
+    {
+        public Task SendAsync(IReadOnlyList<MatchEvent> events, CancellationToken cancellationToken) =>
+            throw (Exception)Activator.CreateInstance(failure, "Event Hubs is unavailable.")!;
+    }
+
+    private sealed class RecordingLifetime : IHostApplicationLifetime
+    {
+        public bool StopRequested { get; private set; }
+
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication() => StopRequested = true;
     }
 
     private sealed class RecordingSender : IMatchEventSender

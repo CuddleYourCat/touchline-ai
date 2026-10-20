@@ -68,13 +68,20 @@ jobs:
           echo "$output"
           if echo "$output" | grep -qiE "warning|error"; then exit 1; fi
 
-      - name: Parse deploy script
+      - name: Parse infrastructure scripts
         shell: pwsh
         run: |
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/infra/deploy.ps1", [ref]$null, [ref]$errors) | Out-Null
-          if ($errors) { $errors | ForEach-Object { Write-Error "$($_.Extent.StartLineNumber): $($_.Message)" }; exit 1 }
-          Write-Host "deploy.ps1 parses cleanly"
+          $failed = $false
+          foreach ($script in Get-ChildItem infra -Filter *.ps1) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) {
+              $errors | ForEach-Object { Write-Error "$($script.Name):$($_.Extent.StartLineNumber): $($_.Message)" -ErrorAction Continue }
+              $failed = $true
+            }
+            else { Write-Host "$($script.Name) parses cleanly" }
+          }
+          if ($failed) { exit 1 }
 
   deploy:
     name: Deploy Match Centre
@@ -151,3 +158,66 @@ jobs:
                 --revision "$revision" --output none
             fi
           done
+
+  deploy-pipeline:
+    name: Deploy event pipeline
+    # Beside the Match Centre deploy, after the same checks (ADR-024).
+    needs: [build-test, validate-infra]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-pipeline
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write # the same OIDC sign-in as the Match Centre deploy (ADR-013)
+    env:
+      SIMULATOR_IMAGE: ${{ vars.ACR_NAME }}.azurecr.io/simulator:${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Sign in to Azure (OIDC, no secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build the simulator image with ACR Tasks
+        run: >
+          az acr build
+          --registry "${{ vars.ACR_NAME }}"
+          --image "simulator:${{ github.sha }}"
+          --file src/Touchline.Simulator/Dockerfile
+          .
+
+      # Changes the job's image only. The next execution uses it; one already
+      # running finishes on the old image.
+      - name: Point the simulator job at the new image
+        run: >
+          az containerapp job update
+          --name job-simulator
+          --resource-group "${{ vars.RESOURCE_GROUP }}"
+          --image "$SIMULATOR_IMAGE"
+          --output none
+
+      - name: Publish the Event Processor
+        run: |
+          dotnet publish src/Touchline.EventProcessor/Touchline.EventProcessor.csproj \
+            --configuration Release --output publish/processor
+          (cd publish/processor && zip -qr ../processor.zip .)
+
+      # Flex Consumption takes a zip (one deploy) and stores it in the app's
+      # deployment container, which the app reads with its own identity.
+      - name: Deploy the Event Processor
+        run: >
+          az functionapp deployment source config-zip
+          --resource-group "${{ vars.RESOURCE_GROUP }}"
+          --name "${{ vars.PROCESSOR_APP_NAME }}"
+          --src publish/processor.zip

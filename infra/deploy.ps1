@@ -16,9 +16,10 @@
 
     Before every whatif or deploy, the script reads the live state that the
     template would otherwise reset: the running Match Centre image, its ingress
-    traffic rules (including revision labels such as "judging", ADR-009) and
-    the budget's start date. Redeploying the infrastructure therefore never
-    rolls the app back to the placeholder or drops a revision label.
+    traffic rules (including revision labels such as "judging", ADR-009), the
+    simulator job's image and the budget's start date. Redeploying the
+    infrastructure therefore never rolls an app or the job back to the
+    placeholder or drops a revision label.
 
 .PARAMETER Action
     whatif    Preview changes without applying them. Run it before every deploy
@@ -78,6 +79,7 @@ $TemplateFile = Join-Path $PSScriptRoot 'main.bicep'
 
 # Must match the fixed names in main.bicep.
 $MatchCentreAppName = 'ca-matchcentre'
+$SimulatorJobName = 'job-simulator'
 $BudgetName = 'budget-touchline-ai'
 $BudgetApiVersion = '2023-11-01'
 
@@ -146,6 +148,13 @@ function Get-TemplateParameterFile {
         $values.matchCentreTraffic = @($app.traffic)
     }
 
+    # CI moves the job to each new simulator image (ADR-024), so keep whichever is live.
+    $simulatorImage = Get-LiveResource -Id "$groupId/providers/Microsoft.App/jobs/$SimulatorJobName" `
+        -Query "properties.template.containers[0].image"
+    if ($simulatorImage) {
+        $values.simulatorImage = $simulatorImage
+    }
+
     $budgetStart = Get-LiveResource -Id "$groupId/providers/Microsoft.Consumption/budgets/$BudgetName" `
         -Query "properties.timePeriod.startDate" -ApiVersion $BudgetApiVersion
     if ($budgetStart) {
@@ -155,6 +164,7 @@ function Get-TemplateParameterFile {
 
     Write-Host "  Deploying as: $($Deployer.Kind)" -ForegroundColor DarkGray
     Write-Host "  Match Centre image: $(if ($values.Contains('matchCentreImage')) { $values.matchCentreImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
+    Write-Host "  Simulator image: $(if ($values.Contains('simulatorImage')) { $values.simulatorImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     if ($values.Contains('matchCentreTraffic')) {
         Write-Host "  Keeping $(@($values.matchCentreTraffic).Count) live traffic rule(s)" -ForegroundColor DarkGray
     }

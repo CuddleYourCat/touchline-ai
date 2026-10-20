@@ -10,7 +10,7 @@ Built for **Inside the Game: Developer Hackathon** (October 2026).
 
 ## Status
 
-Kick-off: solution skeleton with Aspire, OpenTelemetry defaults and CI, plus the Azure environment (Container Apps, Foundry, Key Vault, monitoring) deployed from Bicep. See [DECISIONS.md](DECISIONS.md) for the architecture decisions.
+1st half: the simulator publishes matches through Event Hubs to a Functions processor, which stores events and state in Cosmos DB and publishes key moments to a Service Bus topic. It runs on emulators locally and keyless in Azure. See [DECISIONS.md](DECISIONS.md) for the architecture decisions.
 
 ## Run it locally
 
@@ -31,7 +31,64 @@ pwsh ./infra/deploy.ps1 -Action whatif
 pwsh ./infra/deploy.ps1 -Action deploy
 ```
 
-`whatif` previews the changes. `deploy` creates the resource group if needed, applies the template and prints the endpoints. `teardown` deletes everything and purges the soft-deleted Key Vault and Foundry account. No keys are used anywhere: services authenticate with a managed identity, and Foundry has local (key) authentication disabled.
+`whatif` previews the changes. `deploy` creates the resource group if needed, applies the template and prints the endpoints. `teardown` deletes everything and purges the soft-deleted Key Vault and Foundry account. No keys are used anywhere: services authenticate with a managed identity, and Foundry, Event Hubs, Service Bus and Cosmos DB all have local (key) authentication disabled (ADR-024).
+
+Every push to `main` then deploys the code: the Match Centre as a new revision (ADR-013), and the event pipeline (ADR-024), which means the simulator image for the `job-simulator` Container Apps job and the Event Processor's package for the function app. The pipeline deploy reads one more repository variable, the function app's name from the deploy outputs:
+
+```bash
+gh variable set PROCESSOR_APP_NAME --body <processorAppName output>
+```
+
+## Run a match in Azure
+
+The simulator runs as a manually started job. Each execution plays one match, then exits. The match ID comes from the seed, so use a new seed for a new match. Repeating a seed is a redelivery test: the processor treats every event as a duplicate and nothing changes.
+
+```bash
+pwsh ./infra/start-match.ps1 -Seed 101 -Speed 60
+```
+
+At 60× a match takes about a minute and a half; the default 10× takes about 9 minutes. Then check it in **Application Insights → Logs** (counters are exported through OpenTelemetry's Azure Monitor exporter):
+
+```kql
+// The pipeline's counters: processed, skipped (by reason), duplicates, lost, key moments published.
+customMetrics
+| where timestamp > ago(1h) and name startswith "touchline."
+| extend reason = tostring(customDimensions["reason"])
+| summarize total = sum(valueSum) by name, reason
+| order by name asc
+```
+
+```kql
+// Every call made for the match. Only the "process match events" span carries match.id, so find
+// its traces first, then count everything in them: the Cosmos DB reads and upserts and the Service Bus sends.
+let matchTraces = dependencies
+    | where timestamp > ago(1h) and name == "process match events"
+    | where tostring(customDimensions["match.id"]) == "nbk-tvu-101"
+    | distinct operation_Id;
+dependencies
+| where timestamp > ago(1h) and operation_Id in (matchTraces)
+| summarize calls = count(), failed = countif(success == false) by type, name
+```
+
+```kql
+// Anything that went wrong, from the job or the function app.
+traces
+| where timestamp > ago(1h) and severityLevel >= 2
+| project timestamp, cloud_RoleName, message
+| order by timestamp desc
+```
+
+A clean run shows about 1,600 events processed, nothing skipped or lost, and a handful of key moments published. Finally, in the Cosmos DB account's **Data Explorer**, the `matches` container holds the match document: its `state.lastSequence` is the last event's sequence.
+
+The Log Analytics workspace caps ingestion at **0.1 GB a day** (ADR-011), and a match is roughly 5–8 MB of telemetry, most of it one span per Cosmos DB upsert. Past the cap, nothing more arrives until the daily reset, and every query above comes back empty. Check how close today is, in **Log Analytics → Logs**:
+
+```kql
+// Today's ingestion against the 100 MB cap, by table.
+Usage
+| where TimeGenerated > startofday(now()) and IsBillable
+| summarize megabytes = round(sum(Quantity), 1) by DataType
+| order by megabytes desc
+```
 
 ## Architecture
 

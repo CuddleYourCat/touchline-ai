@@ -13,6 +13,12 @@ public sealed class SimulatorOptions
 
     /// <summary>The matches to play, one after another.</summary>
     public List<MatchPlan> Matches { get; set; } = [];
+
+    /// <summary>
+    /// Whether to stop the host once every match is played. On for the Container Apps job, so
+    /// an execution ends with its matches (ADR-024). Off locally, where the worker idles.
+    /// </summary>
+    public bool ExitWhenDone { get; set; }
 }
 
 /// <summary>One match for the worker to play and publish.</summary>
