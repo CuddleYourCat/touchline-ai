@@ -662,6 +662,9 @@ resource simulatorJob 'Microsoft.App/jobs@2024-03-01' = {
             { name: 'Aspire__Azure__Messaging__EventHubs__EventHubProducerClient__FullyQualifiedNamespace', value: eventHubsHost }
             { name: 'Aspire__Azure__Messaging__EventHubs__EventHubProducerClient__EventHubName', value: matchEventsHubName }
             { name: 'Simulator__ExitWhenDone', value: 'true' }
+            // Its role name in Application Insights, the same as its Aspire resource name. Without it
+            // OpenTelemetry falls back to "unknown_service:dotnet".
+            { name: 'OTEL_SERVICE_NAME', value: 'simulator' }
           ]
         }
       ]

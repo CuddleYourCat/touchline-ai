@@ -796,6 +796,18 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 - The new spans add one per Cosmos DB operation, plus the Event Hubs sends with a span per event (about 1,600 a match), the Service Bus sends and the token requests. A match is now estimated at about 10 MB.
 - **This needs measuring** (settled at code review). The next run's `Usage` query gives the real figure. If a match is over about 15 MB (six demo runs against the cap), the first thing to cut is the per-event Event Hubs spans. They're the bulk, and the processor's spans already identify each batch.
 
+**Settled after the second Azure run: sampling and service names**
+- **What the run showed:** Cosmos DB and Service Bus spans arrived, every call succeeded, and one batch's two key moments went in a single send. But of seed 171's 1,667 events, only 323 Event Hubs sends and 425 per-event spans arrived. The simulator also reported as `unknown_service:dotnet`.
+- **The cause: the Azure Monitor exporter samples by default.** It uses a `RateLimitedSampler` at 5 new traces a second.
+  - Each simulator send and each per-event span starts its own trace, about 748 over the 130-second run. That's the limit, and the rest were dropped.
+  - The processor wasn't capped, because its spans continue the Functions host's trace, and the sampler keeps the parent's decision.
+  - Metrics are never sampled, so the counters were exact throughout.
+- **Decision: keep every trace.** The service defaults set `TracesPerSecond = null` and `SamplingRatio = 1.0`, so the demo's traces are complete and the runbook's span counts are exact.
+  - *Alternatives:* raise the rate limit (say 25 a second, which covers a match at 60× but still drops silently when replays run faster), or keep the default (the cheapest, but producer-side counts are only a sample).
+  - *Trade-off:* the simulator adds about 3,000 spans a match, so a match is likely above the 10 MB estimate. It's measured with the README's ingestion query, and the per-event Event Hubs spans remain the first cut if it's over 15 MB.
+- **The job sets `OTEL_SERVICE_NAME=simulator`**, the same as its Aspire resource name. Only the job sets it: the Event Processor already reports under the function app's name, and naming its worker separately would split one invocation across two roles.
+- **Still to check:** whether each processor batch links back to the simulator's sends. The Event Hubs trigger takes a batch, so expect span links rather than one parent trace. That would correct ADR-023's "one trace from the producer's send".
+
 ---
 
 ## ADR-006 — Agent orchestration framework

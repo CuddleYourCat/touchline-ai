@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using OpenTelemetry.Trace;
 
 namespace Touchline.Tests.Unit.ServiceDefaults;
@@ -69,6 +71,21 @@ public class TelemetryExportTests
         using var message = new ActivitySource("Azure.Messaging.EventHubs.Message");
         producer.HasListeners().Should().BeTrue("the simulator's sends are the first link in each match's trace");
         message.HasListeners().Should().BeTrue("each event's span carries the trace context into the message");
+    }
+
+    [Test]
+    public void Every_trace_is_kept_rather_than_rate_limited()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] = _connectionString;
+        builder.ConfigureOpenTelemetry();
+
+        // Options are read, not used: no tracer provider starts, so nothing is exported.
+        using var services = builder.Services.BuildServiceProvider();
+        var options = services.GetRequiredService<IOptionsMonitor<AzureMonitorExporterOptions>>().CurrentValue;
+
+        options.TracesPerSecond.Should().BeNull("the default limit of 5 new traces a second dropped most of the simulator's sends");
+        options.SamplingRatio.Should().Be(1.0F);
     }
 
     // The service registrations are inspected, not run, so nothing is ever exported.

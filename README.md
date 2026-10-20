@@ -88,15 +88,17 @@ traces
 
 A clean run shows about 1,600 events processed, nothing skipped or lost, and a handful of key moments published. Finally, in the Cosmos DB account's **Data Explorer**, the `matches` container holds the match document: its `state.lastSequence` is the last event's sequence.
 
-The Log Analytics workspace caps ingestion at **0.1 GB a day** (ADR-011), and a match is roughly 10 MB of telemetry, most of it one span per Cosmos DB operation and one per event sent to Event Hubs. That's an estimate, so measure it with the query below after the first run. Over about 15 MB a match, ADR-024 says what to cut. Past the cap, nothing more arrives until the daily reset, and every query above comes back empty. Check how close today is, in **Log Analytics → Logs**:
+The Log Analytics workspace caps ingestion at **0.1 GB a day** (ADR-011), and a match is roughly 10 MB of telemetry, most of it one span per Cosmos DB operation and one per event sent to Event Hubs. That's an estimate, so measure it after the first run. Every trace is kept, with no sampling (ADR-024), so the counts in the queries above are exact. Over about 15 MB a match, ADR-024 says what to cut. Past the cap, nothing more arrives until the daily reset, and every query above comes back empty. Check how close today is, in the same **Application Insights → Logs**:
 
 ```kql
-// Today's ingestion against the 100 MB cap, by table.
-Usage
-| where TimeGenerated > startofday(now()) and IsBillable
-| summarize megabytes = round(sum(Quantity), 1) by DataType
+// Today's telemetry by table, in MB, against the 100 MB cap.
+union withsource = table *
+| where timestamp > startofday(now())
+| summarize megabytes = round(sum(_BilledSize) / 1048576.0, 1) by table
 | order by megabytes desc
 ```
+
+Each service reports under its own role name (`cloud_RoleName`): `simulator` for the job, and the function app's name for the Event Processor.
 
 ## Architecture
 

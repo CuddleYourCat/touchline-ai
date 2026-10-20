@@ -117,7 +117,14 @@ public static class Extensions
 
         if (useAzureMonitorExporter)
         {
-            builder.Services.AddOpenTelemetry().UseAzureMonitorExporter();
+            builder.Services.AddOpenTelemetry().UseAzureMonitorExporter(options =>
+            {
+                // Keep every trace (ADR-024). The exporter's default rate limit, 5 new traces a second,
+                // dropped most of the simulator's sends, because each starts its own trace. Volume is
+                // watched against the daily cap instead.
+                options.TracesPerSecond = null;
+                options.SamplingRatio = 1.0F;
+            });
         }
 
         return builder;
