@@ -60,7 +60,7 @@ customMetrics
 
 ```kql
 // Every call made for the match. Only the "process match events" span carries match.id, so find
-// its traces first, then count everything in them: the Cosmos DB reads and upserts and the Service Bus sends.
+// its traces first, then count everything in them.
 let matchTraces = dependencies
     | where timestamp > ago(1h) and name == "process match events"
     | where tostring(customDimensions["match.id"]) == "nbk-tvu-101"
@@ -69,6 +69,14 @@ dependencies
 | where timestamp > ago(1h) and operation_Id in (matchTraces)
 | summarize calls = count(), failed = countif(success == false) by type, name
 ```
+
+In that query, expect:
+- **The Cosmos DB SDK's operation spans:** `Operation.read_item` once per batch, and `Operation.upsert_item` for each event plus the match's state (once per batch).
+- **The first `read_item` of each match is a 404**, because its document doesn't exist yet, so `failed` can show 1 there on a clean run.
+- **One `ServiceBusSender.Send` per batch that found key moments.** A batch's moments go in one call, with a span per message beside it, so two moments in one batch make a single Send.
+- **A few plain HTTP calls**, for the Cosmos DB SDK's metadata (`pkranges`, `addresses`) and for the identity token.
+
+In Azure the Cosmos DB SDK talks to the database over TCP (Direct mode), so its reads and writes are **only** visible through the SDK's own spans. Those spans, and the Service Bus and Event Hubs ones, are still behind the Azure SDKs' experimental `Azure.Experimental.EnableActivitySource` switch. The service defaults turn it on. Without it, the query shows only the metadata calls.
 
 ```kql
 // Anything that went wrong, from the job or the function app.
@@ -80,7 +88,7 @@ traces
 
 A clean run shows about 1,600 events processed, nothing skipped or lost, and a handful of key moments published. Finally, in the Cosmos DB account's **Data Explorer**, the `matches` container holds the match document: its `state.lastSequence` is the last event's sequence.
 
-The Log Analytics workspace caps ingestion at **0.1 GB a day** (ADR-011), and a match is roughly 5–8 MB of telemetry, most of it one span per Cosmos DB upsert. Past the cap, nothing more arrives until the daily reset, and every query above comes back empty. Check how close today is, in **Log Analytics → Logs**:
+The Log Analytics workspace caps ingestion at **0.1 GB a day** (ADR-011), and a match is roughly 10 MB of telemetry, most of it one span per Cosmos DB operation and one per event sent to Event Hubs. That's an estimate, so measure it with the query below after the first run. Over about 15 MB a match, ADR-024 says what to cut. Past the cap, nothing more arrives until the daily reset, and every query above comes back empty. Check how close today is, in **Log Analytics → Logs**:
 
 ```kql
 // Today's ingestion against the 100 MB cap, by table.

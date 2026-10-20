@@ -17,4 +17,9 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets the unit tests read the Azure SDK switch name without making it public API. -->
+    <InternalsVisibleTo Include="Touchline.Tests.Unit" />
+  </ItemGroup>
+
 </Project>

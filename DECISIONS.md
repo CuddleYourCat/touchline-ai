@@ -760,12 +760,41 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 - **`start-match.ps1` refuses speeds below 4.** A match runs to about 100 minutes of clock, and the replica timeout is 30 minutes.
 - **The subscriptions don't dead-letter expired messages until Stage 3.** Nothing reads them yet, so unread moments simply expire after a day rather than filling the dead-letter queues with stale "failures". Stage 3 turns it back on with its consumers.
 - **Telemetry volume against the 0.1 GB daily cap (ADR-011).**
-  - A match is roughly 5–8 MB, most of it one span per Cosmos DB upsert.
+  - A match was estimated at 5–8 MB (revised to about 10 MB below, once the SDK spans were switched on).
   - The Functions host's per-invocation "Executing/Executed" logs (`Function` category) drop to Warning. That removes about 1,800 records a match, and the invocation spans still show every run.
   - The README adds a `Usage` query to check today's ingestion.
   - Sampling is the next lever if the demo days get close to the cap.
 - **The runbook's trace query joins on `operation_Id`.** Only the batch span carries `match.id`, so filtering on it hid the Cosmos DB and Service Bus calls.
 - **A test now covers the Azure Monitor exporter's registration**, both with and without the connection string.
+
+**Settled after the first Azure run**
+
+*What the run showed*
+- The pipeline worked: 1,521 events processed, 5 key moments, and a rerun of the same seed came through as 1,521 duplicates.
+- But the trace query showed no Cosmos DB writes and no Service Bus sends. There were only the Cosmos DB SDK's HTTP metadata calls.
+
+*The cause*
+- **The Azure SDKs' OpenTelemetry spans are still behind an experimental switch,** `Azure.Experimental.EnableActivitySource`, and nothing turned it on.
+- A probe host showed both sides:
+  - **Cosmos DB:** tracing was enabled and its source was listened to, yet `read_item` only produced an `Azure.Cosmos.Operation` span with the switch on.
+  - **Service Bus:** Aspire's integration only adds its `Azure.Messaging.ServiceBus.*` sources if the switch is already on when it registers.
+- **It was easy to miss locally.** The emulator runs in Gateway mode, so its reads and writes showed up as plain HTTP spans. In Azure the SDK uses Direct mode (TCP), so without the SDK's own spans the data operations were invisible.
+
+*The fix*
+- **The service defaults set the switch first,** before any Azure client registers. That's the order every `Program.cs` already uses.
+- **The tests:**
+  - one checks the switch is set;
+  - one checks that Aspire's Service Bus client is then listened to (it fails if the switch is removed);
+  - one checks that the Event Hubs sources are listened to.
+- **An architecture test enforces the order** (settled at code review). Every `Program.cs` that registers an Azure client must call `AddServiceDefaults` first, so a new service can't quietly lose its SDK spans. Setting the switch from a module initializer wouldn't help, because the service defaults' assembly may not be loaded yet when a client registers.
+
+*What it corrects*
+- **ADR-023 claimed one trace from the producer's send to the Cosmos DB writes.** Event Hubs differs from Service Bus here: Aspire listens to its sources whether or not the switch is on. What the switch decides is whether the SDK creates the spans at all, which is the Azure.Core gate the Cosmos DB probe showed. Without them, no trace context is written into the messages.
+- **That last step isn't verified locally** (settled at code review). A model-factory batch isn't instrumented, so only a real hub shows it. The next Azure run confirms it: Event Hubs send spans from `job-simulator`, with the processor's batches as their children.
+
+*Telemetry volume*
+- The new spans add one per Cosmos DB operation, plus the Event Hubs sends with a span per event (about 1,600 a match), the Service Bus sends and the token requests. A match is now estimated at about 10 MB.
+- **This needs measuring** (settled at code review). The next run's `Usage` query gives the real figure. If a match is over about 15 MB (six demo runs against the cap), the first thing to cut is the per-event Event Hubs spans. They're the bulk, and the processor's spans already identify each batch.
 
 ---
 

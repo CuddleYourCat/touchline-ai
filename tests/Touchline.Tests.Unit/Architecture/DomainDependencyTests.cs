@@ -14,7 +14,7 @@ public class DomainDependencyTests
     [Test]
     public void Domain_project_declares_no_Azure_or_AI_package()
     {
-        var project = XDocument.Load(Path.Combine(FindRepositoryRoot(), "src", "Touchline.Domain", "Touchline.Domain.csproj"));
+        var project = XDocument.Load(Path.Combine(RepositoryFiles.Root(), "src", "Touchline.Domain", "Touchline.Domain.csproj"));
 
         var packages = project.Descendants("PackageReference")
             .Select(reference => (string?)reference.Attribute("Include") ?? string.Empty);
@@ -25,7 +25,7 @@ public class DomainDependencyTests
     [Test]
     public void Domain_project_references_no_other_project()
     {
-        var project = XDocument.Load(Path.Combine(FindRepositoryRoot(), "src", "Touchline.Domain", "Touchline.Domain.csproj"));
+        var project = XDocument.Load(Path.Combine(RepositoryFiles.Root(), "src", "Touchline.Domain", "Touchline.Domain.csproj"));
 
         project.Descendants("ProjectReference").Should().BeEmpty(
             "a project reference would bring that project's dependencies into the domain with it");
@@ -44,17 +44,4 @@ public class DomainDependencyTests
 
     private static bool IsForbidden(string name) =>
         _forbiddenPrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal));
-
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Touchline.slnx")))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName
-            ?? throw new InvalidOperationException("Touchline.slnx was not found above the test output directory.");
-    }
 }

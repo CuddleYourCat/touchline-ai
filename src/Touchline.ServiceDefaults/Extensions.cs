@@ -20,6 +20,12 @@ public static class Extensions
     private const string _alivenessEndpointPath = "/alive";
 
     /// <summary>
+    /// The <see cref="AppContext"/> switch that turns on the Azure SDKs' <c>ActivitySource</c> support, which
+    /// OpenTelemetry needs to see their operations. <see cref="ConfigureOpenTelemetry{TBuilder}"/> sets it.
+    /// </summary>
+    internal const string AzureSdkActivitySourceSwitch = "Azure.Experimental.EnableActivitySource";
+
+    /// <summary>
     /// Adds OpenTelemetry, default health checks, service discovery and a standard
     /// resilience handler on every <see cref="System.Net.Http.HttpClient"/>.
     /// </summary>
@@ -51,11 +57,20 @@ public static class Extensions
     /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> is set (Aspire sets it locally), and to Application Insights
     /// through the Azure Monitor exporter when <c>APPLICATIONINSIGHTS_CONNECTION_STRING</c> is set (in Azure).
     /// </summary>
+    /// <remarks>
+    /// Also turns on the Azure SDKs' OpenTelemetry spans (Cosmos DB, Service Bus, Event Hubs), which are still
+    /// behind an experimental switch. Call this before registering any Azure client: Aspire's Service Bus and
+    /// Event Hubs integrations only add their sources if the switch is already on.
+    /// </remarks>
     /// <typeparam name="TBuilder">The host builder type.</typeparam>
     /// <param name="builder">The host builder to configure.</param>
     /// <returns>The same builder, for chaining.</returns>
     public static TBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
+        // Without it the SDKs create no spans at all: no Cosmos DB operations (which in Direct mode don't
+        // go over HTTP either), no Service Bus or Event Hubs sends, and no trace context in the messages.
+        AppContext.SetSwitch(AzureSdkActivitySourceSwitch, true);
+
         builder.Logging.AddOpenTelemetry(logging =>
         {
             logging.IncludeFormattedMessage = true;
