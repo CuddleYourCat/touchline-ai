@@ -808,6 +808,23 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 - **The job sets `OTEL_SERVICE_NAME=simulator`**, the same as its Aspire resource name. Only the job sets it: the Event Processor already reports under the function app's name, and naming its worker separately would split one invocation across two roles.
 - **Still to check:** whether each processor batch links back to the simulator's sends. The Event Hubs trigger takes a batch, so expect span links rather than one parent trace. That would correct ADR-023's "one trace from the producer's send".
 
+**Settled after the third Azure run: the size of a match**
+- **Measured:** a full match with every trace kept (1,627 events, 1,445 batches, at 60×) came to **about 17 MB**:
+
+  | Table | MB |
+  |---|---|
+  | dependencies | 11.4 |
+  | traces | 3.3 |
+  | requests | 1.8 |
+  | customMetrics | 0.4 |
+
+  That's over the 15 MB threshold above, so about five matches a day against the 100 MB cap. The simulator's spans arrived complete: 1,627 per-event `Message` spans and 1,622 sends, under the role `simulator`.
+- **The cheaper cut was logs, not spans.** Nearly all of `traces` was the Event Hubs SDK's own Information logs: two lines per send (3,244 rows, 3.2 MB) recording what the spans already show. `Azure.Identity` token logs added a little more.
+- **Decision: the service defaults raise the `Azure` log categories to Warning.** SDK warnings and errors still arrive, and a more specific category in configuration can lower it again for a debugging session.
+  - That brings a match to about 13.5 MB, about seven a day. The per-event Event Hubs spans stay, so demo traces remain complete.
+  - Tests check that Event Hubs and Identity Information logs are dropped, that their warnings are kept, and that the services' own Information logs (kick-off, full time) still arrive.
+- **The README's ingestion query names its tables.** `union *` also reads tables without `_BilledSize`, which shows as an error in the portal.
+
 ---
 
 ## ADR-006 — Agent orchestration framework

@@ -25,6 +25,9 @@ public static class Extensions
     /// </summary>
     internal const string AzureSdkActivitySourceSwitch = "Azure.Experimental.EnableActivitySource";
 
+    /// <summary>The log category prefix every Azure SDK client library logs under, such as <c>Azure.Messaging.EventHubs</c>.</summary>
+    internal const string AzureSdkLogCategory = "Azure";
+
     /// <summary>
     /// Adds OpenTelemetry, default health checks, service discovery and a standard
     /// resilience handler on every <see cref="System.Net.Http.HttpClient"/>.
@@ -76,6 +79,11 @@ public static class Extensions
             logging.IncludeFormattedMessage = true;
             logging.IncludeScopes = true;
         });
+
+        // The Azure SDKs log every send and token request at Information, which duplicates their spans:
+        // about 3 MB a match from Event Hubs alone, against a 100 MB daily cap (ADR-024). Warnings and
+        // errors still come through, and a more specific category in configuration can lower it again.
+        builder.Logging.AddFilter(AzureSdkLogCategory, LogLevel.Warning);
 
         builder.Services.AddOpenTelemetry()
             .WithMetrics(metrics =>

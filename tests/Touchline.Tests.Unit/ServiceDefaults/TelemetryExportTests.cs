@@ -3,6 +3,7 @@ using Azure.Monitor.OpenTelemetry.Exporter;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenTelemetry.Trace;
 
@@ -86,6 +87,31 @@ public class TelemetryExportTests
 
         options.TracesPerSecond.Should().BeNull("the default limit of 5 new traces a second dropped most of the simulator's sends");
         options.SamplingRatio.Should().Be(1.0F);
+    }
+
+    [TestCase("Azure.Messaging.EventHubs")]
+    [TestCase("Azure.Identity")]
+    public void Azure_SDK_logs_below_Warning_are_dropped(string category)
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        builder.ConfigureOpenTelemetry();
+        using var services = builder.Services.BuildServiceProvider();
+
+        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger(category);
+
+        logger.IsEnabled(LogLevel.Information).Should().BeFalse("each send's start and finish already appear as a span");
+        logger.IsEnabled(LogLevel.Warning).Should().BeTrue("SDK warnings and errors must still reach Application Insights");
+    }
+
+    [Test]
+    public void The_services_own_information_logs_are_kept()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        builder.ConfigureOpenTelemetry();
+        using var services = builder.Services.BuildServiceProvider();
+
+        services.GetRequiredService<ILoggerFactory>().CreateLogger("Touchline.Simulator.Publishing.MatchPublisher")
+            .IsEnabled(LogLevel.Information).Should().BeTrue("kick-off and full-time are how the runbook finds a match");
     }
 
     // The service registrations are inspected, not run, so nothing is ever exported.
