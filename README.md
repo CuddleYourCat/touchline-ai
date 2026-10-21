@@ -88,7 +88,7 @@ traces
 
 A clean run shows about 1,600 events processed, nothing skipped or lost, and a handful of key moments published. Finally, in the Cosmos DB account's **Data Explorer**, the `matches` container holds the match document: its `state.lastSequence` is the last event's sequence.
 
-The Log Analytics workspace caps ingestion at **0.1 GB a day** (ADR-011), and a match measures about **13.5 MB** (ADR-024): most of it one span per Cosmos DB operation, per batch, and per event sent to Event Hubs. So about seven matches fit in a day. Every trace is kept, with no sampling, so the counts in the queries above are exact. Past the cap, nothing more arrives until the daily reset, and every query above comes back empty. Check how close today is, in the same **Application Insights → Logs**:
+The Log Analytics workspace caps ingestion at **0.1 GB a day** (ADR-011), and a fixture measures about **14–15 MB** (ADR-025): most of it one span per Cosmos DB operation, per batch, and per event sent to Event Hubs. The season projection adds only about 0.2 MB of that. So six or seven matches fit in a day. Every trace is kept, with no sampling, so the counts in the queries above are exact. Past the cap, nothing more arrives until the daily reset, and every query above comes back empty. Check how close today is, in the same **Application Insights → Logs**:
 
 ```kql
 // Today's telemetry by table, in MB, against the 100 MB cap. The tables are named because
@@ -122,9 +122,7 @@ Play the rounds in order, with a new seed each time. A fixture's match ID includ
 
 Before a fixture, the simulator checks the season:
 - **A round that's already been played is refused.** To run one again, play it as a replay (`Kind: Replay`), which never counts.
-- **Round R waits for round R−1 to be projected.** It polls for up to 2 minutes, then fails with a clear message rather than kicking off without the bans. Starting the next round straight after the last job is fine.
-
-The match size above predates the projection, so re-measure it with the ingestion query after the first fixture.
+- **Round R waits for round R−1 to be projected.** It polls for up to 12 minutes (a whole match at the default 10×, plus its processing), then fails with a clear message rather than kicking off without the bans. So rounds can be started back to back: each waits its turn.
 
 **Checking it**, in the Cosmos DB account's **Data Explorer**, on the `player-seasons` container:
 

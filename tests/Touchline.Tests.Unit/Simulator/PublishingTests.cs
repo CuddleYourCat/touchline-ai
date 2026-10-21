@@ -236,6 +236,18 @@ public class PublishingTests
     }
 
     [Test]
+    public void The_wait_covers_a_whole_match_at_the_default_speed_and_still_fits_the_job_s_timeout()
+    {
+        var match = MatchPacer.Pace(Match(), new MatchPlan().Speed).Aggregate(TimeSpan.Zero, (sum, b) => sum + b.DelayBefore);
+
+        // Started back to back, round 2 waits while round 1 plays and is processed (a couple of minutes).
+        MatchPublisher.ProjectionWait.Should().BeGreaterThan(match + TimeSpan.FromMinutes(2));
+
+        // Then it plays its own match, all inside the job's 30-minute replica timeout (main.bicep).
+        (MatchPublisher.ProjectionWait + match).Should().BeLessThan(TimeSpan.FromMinutes(30));
+    }
+
+    [Test]
     public async Task The_first_round_needs_nothing_before_it()
     {
         var season = new FakeSeason();

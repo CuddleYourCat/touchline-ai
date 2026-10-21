@@ -898,13 +898,20 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 
 **Settled at code review**
 - **A round is played once.** Season documents record the rounds each player started (`rounds`). Before a fixture, the simulator reads the season partition once, and refuses a round that's already been played. `Rebuild` also counts each round once (the first fixture by match ID), as a defence: before, a rerun under a new seed counted twice.
-- **A fixture waits for the previous round's projection.** Projection lags the last event by a batch or two and a change feed poll. So if round R−1 isn't in yet, the simulator polls every 5 seconds for up to 2 minutes (`MatchPublisher.ProjectionWait`), then fails clearly ("play the rounds in order") rather than kicking off with stale bans.
+- **A fixture waits for the previous round's projection.** Projection lags the last event by a batch or two and a change feed poll. So if round R−1 isn't in yet, the simulator polls every 5 seconds for up to 12 minutes (`MatchPublisher.ProjectionWait`; 2 at first, raised after the Azure run, see below), then fails clearly ("play the rounds in order") rather than kicking off with stale bans.
 - **A sent-off keeper doesn't face the penalty.** If the starting goalkeeper has had a red card earlier in the match (often for the very foul), the penalty's `keeperId` is null and no keeper is credited, since whoever went in goal isn't known without substitutions.
 - **An empty `Simulator:Matches` fails validation.** It cost a round trip in this slice's smoke test, where a misplaced section played nothing and still looked like success.
 - **The Cosmos DB names live in the domain** (`CosmosNames`), and both services' adapters use them, so a rename can't leave the simulator reading a container the projection no longer writes. The AppHost and Bicep still spell them out.
 - **The simulator's season read goes through the stream API and `DomainJson`,** like every other Cosmos DB read here, not the SDK's Newtonsoft default.
 - **The projector rebuilds players' seasons four at a time,** like the store's writes, instead of 44 round trips in series.
 - **The telemetry figure needs re-measuring.** The 13.5 MB a match (ADR-024) predates `ProjectSeason`. The first Azure fixture's ingestion query gives the new figure.
+
+**Settled after the Azure run**
+- **It works in Azure, keyless:** two fixtures (rounds 1 and 2) were projected through the change feed with the processor's managed identity, giving 22 `player-seasons` documents with `rounds: [1, 2]`.
+- **Round 2 really did wait:** it started while round 1 was still in play, polled 18 times, and kicked off five seconds after round 1's projection landed.
+- **A fixture measures about 14–15 MB.** The projection itself is about 0.2 MB of that: 147 trigger runs and 132 Cosmos DB calls for both fixtures. The rest is the match, and these fixtures simply had more batches (about 1,490) than the earlier 1,445. That's six or seven matches a day against the cap.
+- **No idle cost.** The change feed's lease and feed polling doesn't appear in the telemetry at all.
+- **`ProjectionWait` goes from 2 minutes to 12.** At 60×, round 2 waited about 90 of its 120 seconds. At the default 10×, a match takes about 9 minutes, so round 2 would have given up long before round 1 finished. Twelve minutes covers a whole match plus processing, well inside the job's 30-minute timeout, so rounds can be started back to back. A test checks the wait outlasts a match at the default speed.
 
 
 ---
