@@ -827,6 +827,88 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 
 ---
 
+## ADR-025 — The season projection: player stats, suspensions and penalty history from the change feed
+
+**Status:** Accepted · 1st half, slice 06 (builds ADR-021's season half)
+
+**Decision**
+
+*The league's rules*
+- **Five yellow cards in a season means a one-match ban. Any red card means a one-match ban.**
+- **Bans count by round number.** A player's availability for round R comes only from fixtures in rounds before R, so a ban earned in round 3 is served in round 4, whatever order the jobs actually run in.
+- **Only `Fixture` matches count** (ADR-020). Replays and exhibitions never touch the season.
+- With two clubs, every round is the same pairing, so a ban bites in the very next match.
+
+*The trigger: a second function, on the change feed*
+- **`ProjectSeason`** is a Cosmos DB-triggered function in the Event Processor app, on the **`matches`** container, with a **`leases`** container for its change feed checkpoints.
+- **It acts only on a finished fixture.** The `matches` document changes every batch, about 1,400 times a match. But the change feed delivers only the latest version of each changed document per poll (every 5 seconds by default), so those changes coalesce into a few dozen deliveries. The function ignores any that isn't a `Fixture` at full time.
+- **`MatchState` learns when a match is over.** Full time is the second half's `PeriodEnd`, and `MatchState` doesn't record it yet. A domain change, with tests.
+- **The connection is identity-based,** like the Event Hubs trigger's. The processor's existing data role on the `touchline` database covers the new containers, including `leases`.
+
+*The documents*
+- **`player-matches`, partitioned by `/playerId`.**
+  - One document per player per fixture, ID `{matchId}:{playerId}`, written with an upsert, so a redelivered or re-projected fixture overwrites (ADR-021).
+  - It holds the player's match: appearance, goals, assists, shots and xG, passes completed and attempted, fouls, and cards.
+  - It also holds each penalty the player took, with the goal-mouth position, the outcome and the keeper's dive.
+  - It's built from that match's stored events (one single-partition query on `events`).
+- **`player-seasons`, partitioned by `/season`.**
+  - One document per player per season: the totals, the yellow-card count, and the rounds they're banned for.
+  - It's **rebuilt, never incremented**: after a fixture, each player in it gets their season recomputed by summing all their `player-matches` documents for that season, which is a single-partition query. So a redelivered fixture changes nothing.
+- **A taker's last five penalties** is a single-partition query on `player-matches`, newest first. A keeper's dives are read from the same penalty records.
+
+*Kick-off*
+- **Before a fixture, the simulator worker reads the season's `player-seasons` partition** and passes the players banned for that round to the engine. The engine stays pure: `MatchOptions` gains the unavailable players, and `Lineup` picks the eleven from the rest of the squad.
+- **`id-touchline-simulator` gets Cosmos DB Built-in Data Reader** on the `player-seasons` container only. That's its first database access, read-only and scoped to one container.
+
+*Not in this slice*
+- **The profiles move to Cosmos DB in a later slice** (ADR-021's profile half). Profiles stay embedded JSON until then.
+- **No Match Centre API yet.** It's proven by tests and Data Explorer. A read endpoint comes with the fan UI, when the screens decide its shape.
+
+**Alternatives considered**
+- **Realistic rules** (10 yellows is 2 more matches, two yellows is 1, a straight red is 3). Richer for commentary, but more rules to test and explain.
+- **Reds only.** The smallest version, but it loses the five-yellow tension.
+- **Projecting inside `MatchEventProcessor` at full time.** No new trigger, but season logic would sit on the hot ingest path, and a failure would retry the whole batch.
+- **Summing at read time**, with no season documents. Nothing can drift, but every read, including the kick-off check, becomes a query over the season.
+- **A separate `penalties` container.** "Last five" would be a direct query, at the cost of a third container to keep in step.
+- **Strict round order**, where the simulator refuses anything but the next round. Out-of-order runs become impossible, but a failed round blocks the season.
+- **Passing bans in through `start-match.ps1`.** The simulator would need no database access, but whoever starts the job would decide who plays.
+
+**Rationale**
+- **The change feed is the natural fit for a materialised view** (ADR-021). The ingest path stays as it is, and a projection failure only retries the projection. The change feed, leases and Cosmos DB triggers are core AI-200 Domain 2 material.
+- **Rebuilding rather than incrementing** makes at-least-once delivery harmless here too.
+- **Partitioning by player and by season** makes every read this slice needs a single-partition query: a player's season, their penalties, and a round's bans.
+
+**Trade-offs**
+- **The trigger still runs many times a match for one useful change**: about one delivery per poll (5 seconds) while a match is being processed. That's about 30 a match at 60× and about 110 at 10×, each reading one document and returning. It's cheap, but visible in the telemetry (corrected at code review: an earlier draft said 1,400).
+- **The change feed only delivers a document's latest version.** That's exactly what's wanted here (the finished state), but the projection can never react to intermediate states, and a version overwritten between polls is never seen at all.
+- **A round can't be replayed as a fixture.** The simulator refuses a fixture for a round already played (re-running one is what a replay is for, ADR-020), so bans for later rounds never shift under matches already played.
+- **Two more containers, a leases container, a new trigger and a new role assignment** to keep in step between the AppHost and Bicep (ADR-012).
+
+**Settled during the build**
+- **A fixture's match ID now includes its season and round:** `nbk-tvu-2026-27-r3-42`. Before, a fixture's ID came from the seed alone, the same as an exhibition's. So a fixture played with an already used seed found its `matches` document full, treated every event as a duplicate, and was never projected; worse, it kept the exhibition's metadata. Exhibitions keep `nbk-tvu-42`.
+- **"Every fifth yellow" bans, not just the fifth:** the 5th, 10th and 15th yellow cards each earn one ban. A red and a fifth yellow in the same fixture are served in consecutive rounds.
+- **A player's last five penalties live on their season document** (`recentPenaltiesTaken`), along with a keeper's last five faced (`recentPenaltiesFaced`), newest first. That makes "last five" one point read instead of a query. The full history stays in `player-matches`.
+- **The penalty's keeper is the other side's first-named starter.** Team sheets list the goalkeeper first, and there are no substitutions yet.
+- **Only starters get documents.** Without substitutions, every appearance is a start. The bench comes with the substitutions slice.
+- **The trigger binds the change feed batch as a JSON string,** read with `DomainJson`, like every other stored document. The Functions worker's own serialiser would know nothing of the domain's converters.
+- **The `leases` container is created by Bicep and the AppHost, partitioned by `/id`.** The trigger can't create it, because data roles can't create containers.
+- **The simulator's reader role is scoped to `/dbs/touchline/colls/player-seasons`.** It can't read events, matches or player documents.
+- **`start-match.ps1` gains `-Season` and `-Round`** (both or neither), which make the match a fixture.
+- **A team needs eleven available players.** With 17 in a squad, bans can never get there, but the engine checks rather than fielding fewer.
+
+**Settled at code review**
+- **A round is played once.** Season documents record the rounds each player started (`rounds`). Before a fixture, the simulator reads the season partition once, and refuses a round that's already been played. `Rebuild` also counts each round once (the first fixture by match ID), as a defence: before, a rerun under a new seed counted twice.
+- **A fixture waits for the previous round's projection.** Projection lags the last event by a batch or two and a change feed poll. So if round R−1 isn't in yet, the simulator polls every 5 seconds for up to 2 minutes (`MatchPublisher.ProjectionWait`), then fails clearly ("play the rounds in order") rather than kicking off with stale bans.
+- **A sent-off keeper doesn't face the penalty.** If the starting goalkeeper has had a red card earlier in the match (often for the very foul), the penalty's `keeperId` is null and no keeper is credited, since whoever went in goal isn't known without substitutions.
+- **An empty `Simulator:Matches` fails validation.** It cost a round trip in this slice's smoke test, where a misplaced section played nothing and still looked like success.
+- **The Cosmos DB names live in the domain** (`CosmosNames`), and both services' adapters use them, so a rename can't leave the simulator reading a container the projection no longer writes. The AppHost and Bicep still spell them out.
+- **The simulator's season read goes through the stream API and `DomainJson`,** like every other Cosmos DB read here, not the SDK's Newtonsoft default.
+- **The projector rebuilds players' seasons four at a time,** like the store's writes, instead of 44 round trips in series.
+- **The telemetry figure needs re-measuring.** The 13.5 MB a match (ADR-024) predates `ProjectSeason`. The first Azure fixture's ingestion query gives the new figure.
+
+
+---
+
 ## ADR-006 — Agent orchestration framework
 
 **Status:** Proposed · needed before Stage 3

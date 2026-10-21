@@ -46,17 +46,17 @@ public sealed partial class MatchSimulator
         ArgumentNullException.ThrowIfNull(away);
         options ??= new MatchOptions();
 
-        _home = home;
-        _away = away;
+        _home = Available(home, options.Unavailable);
+        _away = Available(away, options.Unavailable);
         _seed = seed;
         _referee = options.Referee ?? RefereeCatalog.ForSeed(seed);
-        MatchId = MatchIdFor(home, away, seed, options);
+        MatchId = MatchIdFor(_home, _away, seed, options);
 
         // Built here rather than when play starts, so invalid options fail at once.
         _metadata = new MatchMetadata(
-            Sheet(home),
-            Sheet(away),
-            home.Venue,
+            Sheet(_home),
+            Sheet(_away),
+            _home.Venue,
             options.KickOffUtc ?? DefaultKickOffUtc,
             seed,
             new RefereeSheet(_referee.Id, _referee.Name),
@@ -78,6 +78,15 @@ public sealed partial class MatchSimulator
     /// </returns>
     public IEnumerable<MatchEvent> Play() => new Run(_home, _away, _seed, MatchId, _referee, _metadata).Events();
 
+    // A squad without its unavailable players. The engine picks the eleven from whoever is left.
+    private static TeamProfile Available(TeamProfile team, IReadOnlySet<string> unavailable)
+    {
+        var squad = team.Squad.Where(p => !unavailable.Contains(p.Id)).ToList();
+        return squad.Count >= 11
+            ? team with { Squad = squad }
+            : throw new ArgumentException($"{team.Name} has only {squad.Count} players available, and a team needs 11.", nameof(unavailable));
+    }
+
     private static TeamSheet Sheet(TeamProfile team) =>
         new(team.Id, team.Name, team.ShortName, Lineup.StartingEleven(team).Select(p => p.Id).ToList());
 
@@ -92,9 +101,15 @@ public sealed partial class MatchSimulator
                 : chosen;
         }
 
-        return options is { Kind: MatchKind.Replay, ReplayOf: { } original }
-            ? string.Create(CultureInfo.InvariantCulture, $"{original}-replay-{seed}")
-            : string.Create(CultureInfo.InvariantCulture, $"{home.ShortName}-{away.ShortName}-{seed}").ToLowerInvariant();
+        // A fixture's ID names its season and round, so an exhibition with the same seed can never
+        // overwrite it (or make it look like a redelivery) in the matches container (ADR-025).
+        return options switch
+        {
+            { Kind: MatchKind.Replay, ReplayOf: { } original } => string.Create(CultureInfo.InvariantCulture, $"{original}-replay-{seed}"),
+            { Kind: MatchKind.Fixture, Season: { } season, Round: { } round } =>
+                string.Create(CultureInfo.InvariantCulture, $"{home.ShortName}-{away.ShortName}-{season}-r{round}-{seed}").ToLowerInvariant(),
+            _ => string.Create(CultureInfo.InvariantCulture, $"{home.ShortName}-{away.ShortName}-{seed}").ToLowerInvariant()
+        };
     }
 
     /// <summary>The mutable state of one playing of the match. Never shared.</summary>

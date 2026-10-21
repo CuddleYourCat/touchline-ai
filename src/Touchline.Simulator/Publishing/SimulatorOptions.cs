@@ -54,9 +54,10 @@ public sealed class MatchPlan
     /// <summary>
     /// Builds the simulator for this plan, from the embedded team and referee profiles.
     /// </summary>
+    /// <param name="unavailable">Players suspended for this round (ADR-025), or null for none.</param>
     /// <returns>A simulator ready to play.</returns>
     /// <exception cref="ArgumentException">A team or referee ID isn't in the catalog, or the plan describes an invalid match.</exception>
-    public MatchSimulator CreateSimulator()
+    public MatchSimulator CreateSimulator(IReadOnlySet<string>? unavailable = null)
     {
         var teams = TeamProfileCatalog.LoadEmbedded();
         TeamProfile Team(string id) => teams.TryGetValue(id, out var team)
@@ -73,7 +74,8 @@ public sealed class MatchPlan
             Season = Season,
             Round = Round,
             ReplayOf = ReplayOf,
-            Referee = referee
+            Referee = referee,
+            Unavailable = unavailable ?? new HashSet<string>()
         });
     }
 }

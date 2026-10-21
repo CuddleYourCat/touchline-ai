@@ -121,7 +121,7 @@ public class PublishingTests
         var sender = new RecordingSender();
         var time = new InstantTimeProvider();
         var plan = new MatchPlan { Seed = 42, Speed = 10 };
-        var publisher = new MatchPublisher(Options.Create(new SimulatorOptions()), sender, time, new RecordingLifetime(), NullLogger<MatchPublisher>.Instance);
+        var publisher = new MatchPublisher(Options.Create(new SimulatorOptions()), sender, time, new FakeSeason(), new RecordingLifetime(), NullLogger<MatchPublisher>.Instance);
 
         await publisher.PlayAsync(plan, CancellationToken.None);
 
@@ -137,7 +137,7 @@ public class PublishingTests
         var lifetime = new RecordingLifetime();
         var options = new SimulatorOptions { ExitWhenDone = true, Matches = [new MatchPlan { Seed = 1 }, new MatchPlan { Seed = 2 }] };
 
-        await RunToCompletion(new MatchPublisher(Options.Create(options), sender, new InstantTimeProvider(), lifetime, NullLogger<MatchPublisher>.Instance));
+        await RunToCompletion(new MatchPublisher(Options.Create(options), sender, new InstantTimeProvider(), new FakeSeason(), lifetime, NullLogger<MatchPublisher>.Instance));
 
         sender.Events.Select(e => e.MatchId).Distinct().Should().HaveCount(2, "both matches are played before the job ends");
         lifetime.StopRequested.Should().BeTrue();
@@ -149,7 +149,7 @@ public class PublishingTests
         var lifetime = new RecordingLifetime();
         var options = new SimulatorOptions { Matches = [new MatchPlan { Seed = 1 }] };
 
-        await RunToCompletion(new MatchPublisher(Options.Create(options), new RecordingSender(), new InstantTimeProvider(), lifetime, NullLogger<MatchPublisher>.Instance));
+        await RunToCompletion(new MatchPublisher(Options.Create(options), new RecordingSender(), new InstantTimeProvider(), new FakeSeason(), lifetime, NullLogger<MatchPublisher>.Instance));
 
         lifetime.StopRequested.Should().BeFalse("under Aspire the worker stays up until the AppHost stops it");
     }
@@ -163,7 +163,7 @@ public class PublishingTests
         var exitCode = Environment.ExitCode;
         try
         {
-            await RunToCompletion(new MatchPublisher(Options.Create(options), new FailingSender(failure), new InstantTimeProvider(), lifetime, NullLogger<MatchPublisher>.Instance));
+            await RunToCompletion(new MatchPublisher(Options.Create(options), new FailingSender(failure), new InstantTimeProvider(), new FakeSeason(), lifetime, NullLogger<MatchPublisher>.Instance));
 
             lifetime.StopRequested.Should().BeTrue("a failed execution must end, not hang until its replica timeout");
             // A timeout from the SDK is an OperationCanceledException too, but it's still a failure.
@@ -173,6 +173,85 @@ public class PublishingTests
         {
             Environment.ExitCode = exitCode;
         }
+    }
+
+    [Test]
+    public async Task Before_a_fixture_the_publisher_reads_the_season_and_leaves_that_round_s_banned_players_out()
+    {
+        var banned = Match()[0].Metadata!.Away.StartingEleven[5];
+        var season = new FakeSeason(Status(latestRound: 3, (banned, [4])));
+        var sender = new RecordingSender();
+
+        await Publisher(season, sender).PlayAsync(Fixture(round: 4), CancellationToken.None);
+
+        season.Asked.Should().Equal("2026-27");
+        sender.Events.Should().NotContain(e => e.PlayerId == banned);
+    }
+
+    [Test]
+    public async Task An_exhibition_never_reads_the_season()
+    {
+        var season = new FakeSeason();
+
+        await Publisher(season).PlayAsync(new MatchPlan { Seed = 42 }, CancellationToken.None);
+
+        season.Asked.Should().BeEmpty("only a fixture counts towards a season, so only a fixture has bans");
+    }
+
+    [Test]
+    public async Task A_round_already_played_is_refused()
+    {
+        var season = new FakeSeason(Status(latestRound: 4));
+
+        var play = () => Publisher(season).PlayAsync(Fixture(round: 4), CancellationToken.None);
+
+        await play.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already been played*replay*",
+            "a second fixture for the same round would count it twice");
+    }
+
+    [Test]
+    public async Task A_fixture_waits_for_the_previous_round_to_be_projected()
+    {
+        // The first read is from before round 3's projection has landed; the second is after.
+        var season = new FakeSeason(Status(latestRound: 2), Status(latestRound: 3));
+        var sender = new RecordingSender();
+
+        await Publisher(season, sender).PlayAsync(Fixture(round: 4), CancellationToken.None);
+
+        season.Asked.Should().HaveCount(2);
+        sender.Events.Should().NotBeEmpty();
+    }
+
+    [Test]
+    public async Task A_fixture_gives_up_when_the_previous_round_never_arrives()
+    {
+        var season = new FakeSeason(Status(latestRound: 2));
+        var sender = new RecordingSender();
+
+        var play = () => Publisher(season, sender).PlayAsync(Fixture(round: 4), CancellationToken.None);
+
+        await play.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Round 3*hasn't been projected*");
+        sender.Events.Should().BeEmpty("without round 3's bans, round 4 can't know who is suspended");
+        season.Asked.Should().HaveCount((int)(MatchPublisher.ProjectionWait / TimeSpan.FromSeconds(5)) + 1);
+    }
+
+    [Test]
+    public async Task The_first_round_needs_nothing_before_it()
+    {
+        var season = new FakeSeason();
+
+        await Publisher(season).PlayAsync(Fixture(round: 1), CancellationToken.None);
+
+        season.Asked.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void A_worker_with_no_matches_configured_is_rejected()
+    {
+        var result = new SimulatorOptionsValidator().Validate(null, new SimulatorOptions());
+
+        result.Failed.Should().BeTrue("an empty list plays nothing and would still look like success");
+        result.Failures.Should().ContainSingle(f => f.Contains("Simulator:Matches is empty", StringComparison.Ordinal));
     }
 
     [Test]
@@ -210,6 +289,28 @@ public class PublishingTests
     {
         await publisher.StartAsync(CancellationToken.None);
         await publisher.ExecuteTask!;
+    }
+
+    private static MatchPublisher Publisher(FakeSeason season, RecordingSender? sender = null) =>
+        new(Options.Create(new SimulatorOptions()), sender ?? new RecordingSender(), new InstantTimeProvider(), season, new RecordingLifetime(), NullLogger<MatchPublisher>.Instance);
+
+    private static MatchPlan Fixture(int round) => new() { Seed = 42, Kind = MatchKind.Fixture, Season = "2026-27", Round = round };
+
+    // A season whose starters have played up to a round, plus any players with bans.
+    private static SeasonStatus Status(int latestRound, params (string PlayerId, int[] Banned)[] bans) =>
+        new([new SeasonStanding("nbfc-01", [.. Enumerable.Range(1, latestRound)], []),
+            .. bans.Select(b => new SeasonStanding(b.PlayerId, [.. Enumerable.Range(1, latestRound)], b.Banned))]);
+
+    // The season as each read finds it, in turn; the last one repeats. And which seasons were read.
+    private sealed class FakeSeason(params SeasonStatus[] reads) : ISeasonReader
+    {
+        public List<string> Asked { get; } = [];
+
+        public Task<SeasonStatus> ReadAsync(string season, CancellationToken cancellationToken)
+        {
+            Asked.Add(season);
+            return Task.FromResult(reads.Length == 0 ? SeasonStatus.Empty : reads[Math.Min(Asked.Count, reads.Length) - 1]);
+        }
     }
 
     private sealed class FailingSender(Type failure) : IMatchEventSender

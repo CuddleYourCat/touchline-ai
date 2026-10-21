@@ -24,6 +24,15 @@
     timeout is 30 minutes (main.bicep), and a match plus added time runs to
     about 100 minutes of clock, so anything slower is killed part-way.
 
+.PARAMETER Season
+    Optional, with -Round. Plays the match as a fixture in this season, for
+    example 2026-27, so it counts towards the season (ADR-025). Without them
+    the match is an exhibition, which never does.
+
+.PARAMETER Round
+    Optional, with -Season. The fixture's round, from 1. Players banned for
+    this round are left out, and the match ID includes the season and round.
+
 .PARAMETER ResourceGroup
     The resource group that holds the job (ADR-011).
 
@@ -32,6 +41,9 @@
 
 .EXAMPLE
     ./infra/start-match.ps1 -Seed 102 -Speed 60
+
+.EXAMPLE
+    ./infra/start-match.ps1 -Seed 103 -Speed 60 -Season 2026-27 -Round 1
 #>
 [CmdletBinding()]
 param(
@@ -40,6 +52,12 @@ param(
 
     [ValidateRange(4, 1000)]
     [double]$Speed,
+
+    [ValidatePattern('^\d{4}-\d{2}$')]
+    [string]$Season,
+
+    [ValidateRange(1, 1000)]
+    [int]$Round,
 
     [string]$ResourceGroup = 'rg-touchline-ai'
 )
@@ -50,6 +68,10 @@ $ErrorActionPreference = 'Stop'
 # Must match the name in main.bicep.
 $JobName = 'job-simulator'
 
+if ($PSBoundParameters.ContainsKey('Season') -ne $PSBoundParameters.ContainsKey('Round')) {
+    throw "A fixture needs both -Season and -Round."
+}
+
 $json = az containerapp job show --name $JobName --resource-group $ResourceGroup --query properties.template -o json
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
     throw "Could not read the '$JobName' job. Is it deployed, and are you signed in?"
@@ -59,6 +81,11 @@ $template = $json | ConvertFrom-Json
 $overrides = [ordered]@{ 'Simulator__Matches__0__Seed' = "$Seed" }
 if ($PSBoundParameters.ContainsKey('Speed')) {
     $overrides['Simulator__Matches__0__Speed'] = $Speed.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+}
+if ($PSBoundParameters.ContainsKey('Season')) {
+    $overrides['Simulator__Matches__0__Kind'] = 'Fixture'
+    $overrides['Simulator__Matches__0__Season'] = $Season
+    $overrides['Simulator__Matches__0__Round'] = "$Round"
 }
 
 $container = $template.containers[0]

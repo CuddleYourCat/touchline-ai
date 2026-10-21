@@ -16,6 +16,12 @@ var database = cosmos.AddCosmosDatabase("touchline");
 database.AddContainer("events", "/matchId");
 database.AddContainer("matches", "/matchId");
 
+// The season projection (ADR-025), and the change feed's leases (its checkpoints), which the
+// Functions trigger requires to be partitioned by /id.
+database.AddContainer("player-matches", "/playerId");
+database.AddContainer("player-seasons", "/season");
+database.AddContainer("leases", "/id");
+
 // The Functions host's own storage (AzureWebJobsStorage), which also holds the Event Hubs
 // trigger's checkpoints.
 var storage = builder.AddAzureStorage("storage").RunAsEmulator();
@@ -28,7 +34,9 @@ var eventProcessor = builder.AddAzureFunctionsProject<Projects.Touchline_EventPr
 
 builder.AddProject<Projects.Touchline_Simulator>("simulator")
     .WithReference(matchEvents)
+    .WithReference(cosmos)
     .WaitFor(eventHubs)
+    .WaitFor(cosmos)
     .WaitFor(eventProcessor);
 
 builder.AddProject<Projects.Touchline_MatchCentre>("matchcentre")

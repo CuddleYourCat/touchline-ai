@@ -105,6 +105,10 @@ var roles = {
 
 // Cosmos DB's data-plane roles are its own, not Azure RBAC (ADR-024).
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
+var cosmosDataReaderRoleId = '00000000-0000-0000-0000-000000000001'
+
+// The one container the simulator may read: the season's bans (ADR-025).
+var playerSeasonsContainerName = 'player-seasons'
 
 // ============================================================
 // Resource group tags
@@ -483,16 +487,26 @@ resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024
   }
 }
 
-// The same containers as the AppHost's emulator (ADR-023).
+// The same containers as the AppHost's emulator: the match store (ADR-023), the season
+// projection (ADR-025), and the change feed's leases, which the Functions trigger requires to be
+// partitioned by /id. The trigger can't create it: data roles can't create containers.
+var cosmosContainerDefinitions = [
+  { name: 'events', partitionKey: '/matchId' }
+  { name: 'matches', partitionKey: '/matchId' }
+  { name: 'player-matches', partitionKey: '/playerId' }
+  { name: playerSeasonsContainerName, partitionKey: '/season' }
+  { name: 'leases', partitionKey: '/id' }
+]
+
 resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = [
-  for containerName in ['events', 'matches']: {
+  for container in cosmosContainerDefinitions: {
     parent: cosmosDatabase
-    name: containerName
+    name: container.name
     properties: {
       resource: {
-        id: containerName
+        id: container.name
         partitionKey: {
-          paths: ['/matchId']
+          paths: [container.partitionKey]
           kind: 'Hash'
           version: 2
         }
@@ -574,6 +588,10 @@ resource processorApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'eventhubs__fullyQualifiedNamespace', value: eventHubsHost }
         { name: 'eventhubs__credential', value: 'managedidentity' }
         { name: 'eventhubs__clientId', value: processorIdentity.properties.clientId }
+        // The change feed trigger's "cosmos" connection (ProjectSeason.ConnectionName, ADR-025).
+        { name: 'cosmos__accountEndpoint', value: cosmos.properties.documentEndpoint }
+        { name: 'cosmos__credential', value: 'managedidentity' }
+        { name: 'cosmos__clientId', value: processorIdentity.properties.clientId }
         // Aspire's clients, keyless: DefaultAzureCredential picks the identity named by AZURE_CLIENT_ID.
         { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
         { name: 'Aspire__Azure__Messaging__ServiceBus__FullyQualifiedNamespace', value: serviceBusHost }
@@ -661,6 +679,8 @@ resource simulatorJob 'Microsoft.App/jobs@2024-03-01' = {
             { name: 'AZURE_CLIENT_ID', value: simulatorIdentity.properties.clientId }
             { name: 'Aspire__Azure__Messaging__EventHubs__EventHubProducerClient__FullyQualifiedNamespace', value: eventHubsHost }
             { name: 'Aspire__Azure__Messaging__EventHubs__EventHubProducerClient__EventHubName', value: matchEventsHubName }
+            // Read-only, for the season's bans before a fixture (ADR-025).
+            { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
             { name: 'Simulator__ExitWhenDone', value: 'true' }
             // Its role name in Application Insights, the same as its Aspire resource name. Without it
             // OpenTelemetry falls back to "unknown_service:dotnet".
@@ -803,6 +823,19 @@ resource cosmosContributorForProcessor 'Microsoft.DocumentDB/databaseAccounts/sq
     roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
     principalId: processorIdentity.properties.principalId
     scope: '${cosmos.id}/dbs/${cosmosDatabase.name}'
+  }
+}
+
+// Simulator identity: read the season's bans before a fixture (ADR-025). Read-only, and on one
+// container, so it can't see the events or the match store, let alone write to them.
+resource cosmosReaderForSimulator 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmos.id, simulatorIdentity.id, cosmosDataReaderRoleId)
+  dependsOn: [cosmosContainers]
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataReaderRoleId}'
+    principalId: simulatorIdentity.properties.principalId
+    scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/${playerSeasonsContainerName}'
   }
 }
 

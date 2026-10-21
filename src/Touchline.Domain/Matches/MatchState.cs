@@ -49,6 +49,12 @@ public sealed record MatchState(string MatchId, MatchTime Time, TeamStats Home, 
     public static MatchState KickOff(string matchId) =>
         new(matchId, MatchTime.At(MatchPeriod.FirstHalf, 0), TeamStats.Empty, TeamStats.Empty, 0);
 
+    /// <summary>
+    /// True once the second half has ended. The season projection (ADR-025) only acts on a
+    /// finished fixture, and this is how it knows.
+    /// </summary>
+    public bool FullTime { get; init; }
+
     /// <summary>The score as shown on screen, for example <c>1–0</c>.</summary>
     public string Score => $"{Home.Goals}–{Away.Goals}";
 
@@ -76,10 +82,11 @@ public sealed record MatchState(string MatchId, MatchTime Time, TeamStats Home, 
 
         var team = matchEvent.Team == TeamSide.Home ? Home : Away;
         var updated = Tally(team, matchEvent);
+        var fullTime = FullTime || matchEvent is { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.SecondHalf };
 
         return matchEvent.Team == TeamSide.Home
-            ? this with { Home = updated, Time = matchEvent.Time, LastSequence = matchEvent.Sequence }
-            : this with { Away = updated, Time = matchEvent.Time, LastSequence = matchEvent.Sequence };
+            ? this with { Home = updated, Time = matchEvent.Time, LastSequence = matchEvent.Sequence, FullTime = fullTime }
+            : this with { Away = updated, Time = matchEvent.Time, LastSequence = matchEvent.Sequence, FullTime = fullTime };
     }
 
     /// <summary>

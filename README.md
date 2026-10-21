@@ -101,6 +101,47 @@ union withsource = table dependencies, traces, requests, customMetrics, performa
 
 Each service reports under its own role name (`cloud_RoleName`): `simulator` for the job, and the function app's name for the Event Processor.
 
+## Play a season
+
+A match only counts towards the season when it's a **fixture** (ADR-020). Give it a season and a round:
+
+```bash
+pwsh ./infra/start-match.ps1 -Seed 201 -Speed 60 -Season 2026-27 -Round 1
+```
+
+**At full time,** the Event Processor's `ProjectSeason` function picks the finished fixture up from the `matches` container's change feed (ADR-025). For each of the 22 starters it writes:
+- **a `player-matches` document** (`{matchId}:{playerId}`) with their goals, assists, shots, xG, passes, fouls, cards and penalties;
+- **a rebuilt `player-seasons` document**, with their totals, their bans and their last five penalties.
+
+**The rules:**
+- every fifth yellow card, and any red card, bans the player for the next round;
+- bans count by round number, so a ban earned in round 1 is served in round 2;
+- before a fixture, the simulator leaves banned players out of the squad.
+
+Play the rounds in order, with a new seed each time. A fixture's match ID includes its season and round (`nbk-tvu-2026-27-r1-201`), so it never collides with an exhibition.
+
+Before a fixture, the simulator checks the season:
+- **A round that's already been played is refused.** To run one again, play it as a replay (`Kind: Replay`), which never counts.
+- **Round R waits for round R−1 to be projected.** It polls for up to 2 minutes, then fails with a clear message rather than kicking off without the bans. Starting the next round straight after the last job is fine.
+
+The match size above predates the projection, so re-measure it with the ingestion query after the first fixture.
+
+**Checking it**, in the Cosmos DB account's **Data Explorer**, on the `player-seasons` container:
+
+```sql
+SELECT c.playerId, c.appearances, c.goals, c.yellowCards, c.redCards, c.bannedRounds
+FROM c WHERE c.season = "2026-27" ORDER BY c.goals DESC
+```
+
+And in **Application Insights → Logs**:
+
+```kql
+// The projection, and who sat out because of it.
+traces
+| where timestamp > ago(1h) and (message startswith "Projected" or message startswith "Suspended for")
+| project timestamp, cloud_RoleName, message
+```
+
 ## Architecture
 
 | Layer | Azure service |

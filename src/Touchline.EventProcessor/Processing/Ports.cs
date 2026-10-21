@@ -1,5 +1,6 @@
 using Touchline.Domain.Matches;
 using Touchline.Domain.Moments;
+using Touchline.Domain.Season;
 
 namespace Touchline.EventProcessor.Processing;
 
@@ -52,6 +53,46 @@ public interface IMatchStore
     /// <param name="cancellationToken">Stops the write.</param>
     /// <returns>A task that completes once it's stored.</returns>
     Task UpsertMatchAsync(MatchRecord match, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads every stored event of a match, for the season projection (ADR-025).
+    /// </summary>
+    /// <param name="matchId">The match.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>The events, in sequence order.</returns>
+    Task<IReadOnlyList<MatchEvent>> GetEventsAsync(string matchId, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Where the season projection's documents live (ADR-025): <c>player-matches</c>, partitioned by
+/// player, and <c>player-seasons</c>, partitioned by season.
+/// </summary>
+public interface ISeasonStore
+{
+    /// <summary>
+    /// Stores each player's part in a fixture, replacing any earlier projection of it.
+    /// </summary>
+    /// <param name="matches">The fixture's player documents.</param>
+    /// <param name="cancellationToken">Stops the writes.</param>
+    /// <returns>A task that completes once they're all stored.</returns>
+    Task UpsertPlayerMatchesAsync(IReadOnlyList<PlayerMatch> matches, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads every fixture a player has played in a season: one partition.
+    /// </summary>
+    /// <param name="season">The season.</param>
+    /// <param name="playerId">The player.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>The player's fixtures, in any order.</returns>
+    Task<IReadOnlyList<PlayerMatch>> GetPlayerMatchesAsync(string season, string playerId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Stores a player's rebuilt season, replacing the previous one.
+    /// </summary>
+    /// <param name="season">The season document.</param>
+    /// <param name="cancellationToken">Stops the write.</param>
+    /// <returns>A task that completes once it's stored.</returns>
+    Task UpsertPlayerSeasonAsync(PlayerSeason season, CancellationToken cancellationToken);
 }
 
 /// <summary>Where key moments go: the Service Bus key-moments topic (ADR-004, ADR-023).</summary>

@@ -20,6 +20,7 @@ public sealed class PipelineTelemetry : IDisposable
     private readonly Counter<long> _keyMoments;
     private readonly Counter<long> _lost;
     private readonly Counter<long> _missingMetadata;
+    private readonly Counter<long> _fixturesProjected;
 
     /// <summary>
     /// Creates the meter and its counters.
@@ -36,6 +37,7 @@ public sealed class PipelineTelemetry : IDisposable
         _keyMoments = _meter.CreateCounter<long>("touchline.key_moments.published", "{moment}", "Key moments published to the key-moments topic.");
         _lost = _meter.CreateCounter<long>("touchline.events.lost", "{event}", "Events never received, found as a gap in a match's sequence. Alert on any.");
         _missingMetadata = _meter.CreateCounter<long>("touchline.matches.missing_metadata", "{match}", "Matches whose first event (the metadata) was skipped or lost.");
+        _fixturesProjected = _meter.CreateCounter<long>("touchline.season.fixtures_projected", "{fixture}", "Finished fixtures projected into player and season documents (ADR-025).");
     }
 
     /// <summary>The activity source for the processor's spans.</summary>
@@ -62,6 +64,9 @@ public sealed class PipelineTelemetry : IDisposable
 
     /// <summary>Counts a match processed without its metadata.</summary>
     public void MissingMetadata() => _missingMetadata.Add(1);
+
+    /// <summary>Counts a finished fixture projected into the season.</summary>
+    public void FixtureProjected() => _fixturesProjected.Add(1);
 
     /// <inheritdoc />
     public void Dispose() => _meter.Dispose();

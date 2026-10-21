@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Azure.Cosmos;
 using Touchline.Domain;
 using Touchline.Domain.Matches;
+using Touchline.Domain.Storage;
 
 namespace Touchline.EventProcessor.Processing;
 
@@ -20,13 +21,13 @@ namespace Touchline.EventProcessor.Processing;
 public sealed class CosmosMatchStore(CosmosClient client) : IMatchStore
 {
     /// <summary>The database name.</summary>
-    public const string DatabaseName = "touchline";
+    public const string DatabaseName = CosmosNames.Database;
 
     /// <summary>The container holding every event, one document per event.</summary>
-    public const string EventsContainerName = "events";
+    public const string EventsContainerName = CosmosNames.Events;
 
     /// <summary>The container holding each match's metadata and live state.</summary>
-    public const string MatchesContainerName = "matches";
+    public const string MatchesContainerName = CosmosNames.Matches;
 
     // Enough to overlap round trips, few enough to stay well inside the RU budget's burst.
     private const int _maxConcurrentWrites = 8;
@@ -80,5 +81,15 @@ public sealed class CosmosMatchStore(CosmosClient client) : IMatchStore
         using var content = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(match, DomainJson.Options));
         using var response = await Matches.UpsertItemStreamAsync(content, new PartitionKey(match.MatchId), cancellationToken: cancellationToken);
         response.EnsureSuccessStatusCode();
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<MatchEvent>> GetEventsAsync(string matchId, CancellationToken cancellationToken)
+    {
+        // One partition, so the query never fans out. The stored documents are the events' own
+        // JSON plus Cosmos DB's system properties, which DomainJson ignores.
+        var events = await CosmosQueries.ReadAllAsync<MatchEvent>(
+            Events, new QueryDefinition("SELECT * FROM c"), new PartitionKey(matchId), cancellationToken);
+        return [.. events.OrderBy(e => e.Sequence)];
     }
 }

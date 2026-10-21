@@ -15,6 +15,14 @@ public sealed class SimulatorOptionsValidator : IValidateOptions<SimulatorOption
         ArgumentNullException.ThrowIfNull(options);
 
         var failures = new List<string>();
+
+        // A misplaced or missing section binds to an empty list, which would play nothing and
+        // still succeed: as a job, an execution that "worked" having published nothing.
+        if (options.Matches.Count == 0)
+        {
+            failures.Add("Simulator:Matches is empty, so there is nothing to play. Check the section is named Simulator and holds a Matches list.");
+        }
+
         foreach (var (plan, index) in options.Matches.Select((p, i) => (p, i)))
         {
             var label = $"Simulator:Matches:{index} (seed {plan.Seed})";

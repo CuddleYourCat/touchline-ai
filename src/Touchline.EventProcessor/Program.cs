@@ -23,4 +23,8 @@ builder.Services.AddSingleton<IMatchStore, CosmosMatchStore>();
 builder.Services.AddSingleton<IKeyMomentPublisher, ServiceBusKeyMomentPublisher>();
 builder.Services.AddSingleton<MatchEventProcessor>();
 
+// The season projection, fed by the matches container's change feed (ADR-025).
+builder.Services.AddSingleton<ISeasonStore, CosmosSeasonStore>();
+builder.Services.AddSingleton<SeasonProjector>();
+
 await builder.Build().RunAsync();

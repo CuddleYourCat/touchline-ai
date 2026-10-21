@@ -9,7 +9,10 @@ namespace Touchline.Simulator.Engine;
 /// </summary>
 public sealed record MatchOptions
 {
-    /// <summary>The match ID stamped on every event. Defaults to <c>{home}-{away}-{seed}</c>.</summary>
+    /// <summary>
+    /// The match ID stamped on every event. Defaults to <c>{home}-{away}-{seed}</c>, and for a fixture
+    /// <c>{home}-{away}-{season}-r{round}-{seed}</c>, so an exhibition never shares a fixture's ID.
+    /// </summary>
     public string? MatchId { get; init; }
 
     /// <summary>The kick-off time in the metadata. Defaults to <see cref="MatchSimulator.DefaultKickOffUtc"/>.</summary>
@@ -29,4 +32,10 @@ public sealed record MatchOptions
 
     /// <summary>For a replay, the match ID of the fixture it re-runs.</summary>
     public string? ReplayOf { get; init; }
+
+    /// <summary>
+    /// Players who can't play: suspended for this round (ADR-025). They're left out of the squad
+    /// before the starting eleven is picked. Empty by default.
+    /// </summary>
+    public IReadOnlySet<string> Unavailable { get; init; } = new HashSet<string>();
 }
