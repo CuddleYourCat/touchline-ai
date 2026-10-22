@@ -1,0 +1,175 @@
+/*
+ * Design tokens (ADR-034). Dark is the default; [data-theme='light'] on <html> swaps the palette.
+ * The OS colour-scheme preference is ignored on purpose: the toggle decides.
+ */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0a1020;
+  --surface: #111a2e;
+  --line: #2b3b5e;
+  --text: #e7edf8;
+  --muted: #8b9bbd;
+  --accent: #ff8a1f;
+  --highlight: #39d3df;
+  --on-accent: #0a1020;
+  --grid: rgb(43 59 94 / 0.35);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f3f6fb;
+  --surface: #ffffff;
+  --line: #c9d3e6;
+  --text: #0e1830;
+  --muted: #52617f;
+  --accent: #c25e00;
+  --highlight: #0b7f8a;
+  --on-accent: #ffffff;
+  --grid: rgb(14 24 48 / 0.06);
+}
+
+:root {
+  --font-display: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-data: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --radius: 6px;
+  --gutter: 16px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--text);
+  font-family: var(--font-body);
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  margin: 0 0 0.5rem;
+}
+
+a {
+  color: var(--highlight);
+}
+
+code,
+.data {
+  font-family: var(--font-data);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--text);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.brand-sub {
+  color: var(--accent);
+}
+
+.badge-synthetic {
+  font-family: var(--font-data);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--accent);
+}
+
+.nav {
+  display: flex;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nav a.active,
+.nav a:hover {
+  color: var(--highlight);
+}
+
+.theme-toggle {
+  font-family: var(--font-data);
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.theme-toggle:hover,
+.theme-toggle:focus-visible {
+  border-color: var(--highlight);
+}
+
+.main {
+  padding: 24px 0;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+@media (max-width: 600px) {
+  .nav {
+    margin-left: 0;
+    width: 100%;
+  }
+}

@@ -3,6 +3,8 @@
 **/bin
 **/obj
 **/TestResults
+**/node_modules
+**/dist
 .git
 .github
 .vs

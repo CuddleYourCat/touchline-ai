@@ -49,6 +49,47 @@ jobs:
           path: TestResults/**/coverage.cobertura.xml
           if-no-files-found: ignore
 
+  web:
+    name: Match Centre UI
+    # Node lives here only; the .NET jobs stay Node-free (ADR-033).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: src/Touchline.MatchCentre.Web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The same exact version as the Dockerfile's node image.
+          node-version: 22.23.4
+          cache: npm
+          cache-dependency-path: src/Touchline.MatchCentre.Web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Verify the API types match the contract
+        # Regenerates src/api/schema.d.ts from contracts/matchcentre.openapi.json and
+        # fails if the committed file is out of date.
+        run: |
+          npm run generate:api
+          git diff --exit-code -- src/api/schema.d.ts
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
   validate-infra:
     name: Validate infrastructure
     runs-on: ubuntu-latest
@@ -86,7 +127,7 @@ jobs:
   deploy:
     name: Deploy Match Centre
     # Only after both checks pass, and only for commits that reached main.
-    needs: [build-test, validate-infra]
+    needs: [build-test, web, validate-infra]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -162,7 +203,7 @@ jobs:
   deploy-pipeline:
     name: Deploy event pipeline
     # Beside the Match Centre deploy, after the same checks (ADR-024).
-    needs: [build-test, validate-infra]
+    needs: [build-test, web, validate-infra]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20

@@ -8,6 +8,12 @@ bin/
 obj/
 out/
 
+# Match Centre UI: npm packages, the Vite build, and the copy the Docker build
+# puts in the Match Centre's wwwroot
+node_modules/
+src/Touchline.MatchCentre.Web/dist/
+src/Touchline.MatchCentre/wwwroot/
+
 # Visual Studio
 *.user
 *.suo

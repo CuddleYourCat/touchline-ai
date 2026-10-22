@@ -4,6 +4,17 @@
 #   az acr build --registry <registry> --image matchcentre:<tag> \
 #       --file src/Touchline.MatchCentre/Dockerfile .
 
+# The Match Centre UI (ADR-033). Dependencies first, from the lock file only, so
+# the npm ci layer is cached until a package version changes. The generated API
+# types (src/api/schema.d.ts) are committed, so the contract isn't needed here.
+# Pinned to an exact version (the same as CI) that satisfies package.json engines.
+FROM node:22.23.4-slim AS web
+WORKDIR /web
+COPY src/Touchline.MatchCentre.Web/package.json src/Touchline.MatchCentre.Web/package-lock.json src/Touchline.MatchCentre.Web/.npmrc ./
+RUN npm ci
+COPY src/Touchline.MatchCentre.Web/ ./
+RUN npm run build
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
@@ -24,6 +35,10 @@ RUN dotnet restore src/Touchline.MatchCentre/Touchline.MatchCentre.csproj
 # source. That costs a few KB of upload and nothing at run time, because only
 # the published output reaches the final image.
 COPY src/ src/
+# The built UI goes into the project's wwwroot before publishing, so it lands in
+# /app/wwwroot and MapStaticAssets' build manifest (fingerprints, compressed
+# copies) covers every file.
+COPY --from=web /web/dist/ src/Touchline.MatchCentre/wwwroot/
 RUN dotnet publish src/Touchline.MatchCentre/Touchline.MatchCentre.csproj \
     --configuration Release --no-restore --output /app
 

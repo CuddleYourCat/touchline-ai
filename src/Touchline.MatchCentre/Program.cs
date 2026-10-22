@@ -50,6 +50,23 @@ app.MapDefaultEndpoints();
 app.MapOpenApi();
 app.MapMatchCentreApi();
 
+// The Match Centre UI (ADR-033): the built React app in wwwroot, mapped after the API. Any other
+// path that isn't a file gets index.html, so the browser router can handle /matches/{id} and the
+// rest. /api and /openapi are left out of the fallback, so an unknown API path still gets a 404
+// problem from UseStatusCodePages, never a page of HTML. With no build in wwwroot (tests, a plain
+// dotnet run beside the Vite dev server) the fallback finds no file and answers 404. The
+// exclusion ignores case, so /API/foo is treated like /api/foo. index.html goes out with
+// Cache-Control: no-cache, so a browser always revalidates it after a deploy and never keeps an
+// old copy pointing at hashed bundles the new revision no longer has; the fingerprinted bundles
+// themselves stay cacheable.
+app.MapStaticAssets();
+var indexHtmlOptions = new StaticFileOptions
+{
+    OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache",
+};
+app.MapFallbackToFile("/", "index.html", indexHtmlOptions);
+app.MapFallbackToFile("{*path:nonfile:regex(^(?i)(?!(api|openapi)(/|$)).*$)}", "index.html", indexHtmlOptions);
+
 await app.RunAsync();
 
 /// <summary>

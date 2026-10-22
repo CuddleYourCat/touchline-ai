@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Touchline Match Centre: live, explainable commentary on synthetic football matches." />
+    <title>Touchline Match Centre</title>
+    <!-- Once a Content-Security-Policy is added, this inline script needs a sha256 hash in script-src. -->
+    <script>
+      // Applied before first paint so a light-theme visitor never sees a dark flash.
+      // Mirrors src/theme/theme.ts; the OS colour-scheme setting is deliberately ignored.
+      try {
+        if (localStorage.getItem('touchline.theme') === 'light') {
+          document.documentElement.dataset.theme = 'light';
+        }
+      } catch {
+        // Storage blocked: stay on the dark default.
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
