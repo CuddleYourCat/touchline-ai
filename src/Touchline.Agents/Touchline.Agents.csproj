@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The agent squad (ADR-006, ADR-007, ADR-030): Commentator, Analyst, Localiser and Producer,
+    on Microsoft Agent Framework through IChatClient. It implements Touchline.Domain's ISquad and
+    writes commentary through ICommentaryStore. It's hosted twice: by the Event Processor for live
+    commentary, and by the Match Centre for Q&A and the recap. Empty until the agent lane starts.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Touchline.Tests.Unit" />
+  </ItemGroup>
+
+</Project>

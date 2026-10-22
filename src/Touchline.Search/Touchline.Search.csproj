@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Retrieval (ADR-008, ADR-026): the possession documents, their embeddings with
+    text-embedding-3-small, and Azure AI Search with hybrid queries and semantic ranking. It
+    implements Touchline.Domain's IPossessionSearch. Empty until the search lane starts.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Touchline.Tests.Unit" />
+  </ItemGroup>
+
+</Project>

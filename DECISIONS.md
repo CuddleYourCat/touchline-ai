@@ -26,6 +26,9 @@ The hackathon provides no dataset and no feed. A seeded simulator gives a live s
 **Trade-offs**
 Realism depends on our model of football. A simulator that's too random produces nonsense patterns, and one that's too scripted makes the agents' insights look canned. Calibration is real work.
 
+**Update (22 Oct): the same seed on every platform**
+CI found that a seed played a different match on Linux than on Windows. `Math.Exp`, `Math.Log` and `Math.Cos` call the operating system's C maths library, which can differ in the last bit, and one flipped bit steers every later random choice (here from event 109 of seed 174). The engine now uses `PortableMath`: Exp, Log and Cos built only from IEEE 754's correctly rounded operations (+, −, ×, ÷ and square root), so a seed replays identically on a PC, in CI and in the Azure job. A test pins exact bit patterns, so CI on Linux proves it. Matches changed only in their last digits (seed 174 is still the same 3–2), and calibration still passes. Any new transcendental function in the engine must go through `PortableMath` too.
+
 ---
 
 ## ADR-002 — Fictional clubs defined as team-profile data, with a roster guardrail
@@ -1022,3 +1025,215 @@ A possession is football's natural unit of play. "Show me how that goal was buil
 **Trade-offs**
 - **About £2 a day, billed hourly:** roughly £40–£50 a month in total with the other fixed charges. October goes over the old £30 line.
 - **The budget is an alert, not a cap** (ADR-011), so the teardown date in the ledger is the real control.
+
+---
+
+## ADR-027 — The Match Centre API contract, defined before the agents exist
+
+**Status:** Accepted · 22 Oct, start of Stage 3 (unblocks the UI lane)
+
+**Question**
+What does the Match Centre API look like, and how is that contract fixed so the UI can be built in parallel with the agents, the search index and the live feed that will sit behind it?
+
+**Draft contract (v1)**
+
+Everything is under `/api`, JSON in camelCase with enums as strings (as `DomainJson`). Errors are RFC 7807 problem details. Every response that carries match data says `"dataSource": "synthetic"`.
+
+| Endpoint | Returns | Backed by |
+|---|---|---|
+| `GET /api/status` | Service name and data source (exists) | Match Centre |
+| `GET /api/teams` | Team summaries: ID, name, short name, colours | Team profiles |
+| `GET /api/teams/{teamId}` | A profile with its roster (ID, name, shirt number, position), for the favourite club and player pickers | Team profiles |
+| `GET /api/matches?status=scheduled|live|fulltime&season=` | Match summaries: teams, score, clock, status, kick-off, kind, round | `matches` container |
+| `GET /api/matches/{matchId}` | The match: metadata (line-ups, venue, referee, season, round) and state (score, clock, team stats, full time) | `matches` container |
+| `GET /api/matches/{matchId}/events?after={sequence}&limit=` | A page of match events, for the timeline and the pitch view | `events` container |
+| `GET /api/matches/{matchId}/momentum` | Momentum readings in five-minute windows (skill shot 2) | Domain, over the events |
+| `GET /api/matches/{matchId}/moments` | Key and notable moments, each with its commentary line for the viewer | Moments, Commentator |
+| `GET /api/matches/{matchId}/stream` | Server-sent events, live (below) | Live feed |
+| `POST /api/matches/{matchId}/questions` | Fan Q&A: `{ question }` in, `{ text, citations[] }` out, citations naming possessions and moments | Analyst and AI Search |
+| `GET /api/matches/{matchId}/recap` | The Producer's full-time recap; `409` before full time | Producer |
+| `GET /api/seasons/{season}/players/{playerId}` | A player's season card (ADR-025) | `player-seasons` container |
+
+**The viewer** (viewing modes) travels as query parameters on the endpoints that produce words: `mode=analyst|casual`, `lang=en|…`, `team={teamId}`, `player={playerId}`, `metric={name}`. The service stores no profile; the browser keeps it.
+
+**The stream** (`text/event-stream`). Each message has an `event:` name, an `id:` for `Last-Event-ID` resume, and one JSON `data:` line. A heartbeat goes out after 15 quiet seconds so idle proxies don't cut the connection.
+
+| `event:` | Payload | When |
+|---|---|---|
+| `state` | Score, clock, team stats | After every event, and first on a stream started "from now" |
+| `event` | One match event | Every event (the pitch view) |
+| `moment` | A key or notable moment, with its tier | When detected |
+| `commentary` | `{ momentId, tier, text, mode, lang }` | Template lines at once, model lines a few seconds later |
+| `analysis` | The Analyst's "why it happened", with citations | Key moments only, later still |
+| `milestone` | A milestone (first goal, a brace, a 50th pass, a personal-best speed) | When detected |
+| `momentum` | A new momentum reading | Each closed five-minute window |
+| `overlay` | `{ at, type, durationMs, payload }` timecoded cards | With the moment or milestone they illustrate |
+| `fulltime` | The final state | Once |
+| `heartbeat` | The server time, with no `id` | After 15 quiet seconds |
+
+**Options for fixing the contract**
+- **A. Code first, with a demo data source.** The DTOs are C# records in the Match Centre. The OpenAPI 3.1 document is generated by .NET 10's built-in `Microsoft.AspNetCore.OpenApi` and committed. Every endpoint is live on day one, serving **one recorded, seeded match** replayed at speed, so the UI builds against the running service, not a mock. CI fails if the committed OpenAPI document drifts from the code. The recorded match later doubles as the fallback when the pipeline is cold (a chaos test).
+- **B. Contract first.** A hand-written `openapi.yaml` is the source of truth, a mock server (such as Prism) serves it to the UI, and the C# side is checked against it. More neutral between front and back end, but two copies to keep in step, and OpenAPI can't describe a server-sent event stream properly, so the stream would still be a Markdown table.
+- **C. Shared types only.** Agree the DTOs and stream messages, and let each side stub the other. Quickest to write, but nothing fails when one side drifts.
+
+**Decision:** A. The recorded match is real simulator output, so the UI sees realistic data from the first hour, and nothing is thrown away later.
+
+**As built (contract slice, 22 Oct)**
+- **The contract is `contracts/matchcentre.openapi.json`** (OpenAPI 3.1), generated by `Microsoft.AspNetCore.OpenApi` and served live at `/openapi/v1.json`. A unit test fails when the committed file and the code differ. `TOUCHLINE_UPDATE_SNAPSHOTS=1` regenerates it. The UI lane generates its TypeScript types from this file.
+- **The stream's message types are in the document too,** added as component schemas by a document transformer, because OpenAPI can describe the stream endpoint but not the messages inside it.
+- **Numbers are strictly numbers.** The web JSON defaults also accept numbers as strings, which made every integer `integer | string` in the schema. The Match Centre turns that off.
+- **The status filter takes the `MatchStatus` names:** `status=scheduled|live|fulltime`, case-insensitive.
+- **Heartbeats are an `event: heartbeat` message** with no `id`, not an SSE comment, because .NET's `SseItem<T>` can't write a comment. It goes out after 15 quiet seconds (`MatchCentre:Stream:HeartbeatInterval`).
+- **`fulltime` carries the final `LiveState` only.** A client asks for the recap, and gets `409` before full time and `503` if the squad is down.
+- **A fan's question is at most 280 characters,** checked before any model sees it. It bounds the input tokens a question can cost.
+- **The demo match is seed 174,** a 3–2 with two penalties and eight key moments. It's committed as gzipped JSON lines (56 KB), and a test fails if the engine no longer plays exactly that match for that seed. It replays in **laps** (`demo-1`, `demo-2` and so on) on one clock that starts with the service, at 10× by default, with a minute between laps. Each lap has its own ID, so stream IDs never go backwards within a match.
+- **Where the ports live.** The ports that cross services (`ISquad`, `ICommentaryStore`, `IPossessionSearch`, and the `Viewer`) are in `Touchline.Domain`, so the agent and search libraries implement them without depending on the Match Centre. The Match Centre-only ports (`IMatchReadModel`, `ILiveFeed`) live in the Match Centre.
+- **One projector for both feeds.** `MatchStreamProjector` turns events into stream messages (event, state, moment, momentum, full time), so the demo replay and the change-feed reader produce identical streams.
+- **Stand-ins until their lanes land.** The demo's commentary is the detector's reason, its overlay is a plain card, and its squad answers from the score and moments only, starting with "The Analyst isn't connected in this demo build". No model is called.
+
+---
+
+## ADR-028 — The Match Centre UI stack
+
+**Status:** Accepted · 22 Oct, start of Stage 3
+
+**Question**
+What is the Match Centre front end built with, and where is it served from?
+
+**Options**
+- **A. React and TypeScript (Vite), built to static files served by the Match Centre.** The richest ecosystem for the pitch view, animation and overlays. `EventSource` handles the stream natively. TypeScript types are generated from ADR-027's OpenAPI document, so CI catches drift. Costs: a second language, and an npm build in CI and the Dockerfile.
+- **B. Blazor WebAssembly, served by the Match Centre.** All C#, sharing the DTO records directly, so the compiler checks the contract. Costs: a several-megabyte first download that a judge will notice, and the stream needs a fetch-streaming or JavaScript interop shim.
+- **C. Plain HTML, CSS and JavaScript (web components), no build step,** like the replay viewer. The lightest and quickest to start, but no types against the contract, and harder to keep tidy as it grows.
+
+**Either way,** the UI is served from the Match Centre's own container: same origin, so no CORS, one Container App, and one URL for the judges.
+
+**Decision:** A, React and TypeScript, for the user-experience score (20% of the judging).
+
+---
+
+## ADR-029 — How the Match Centre hears about live events
+
+**Status:** Accepted · 22 Oct, start of Stage 3
+
+**Question**
+The stream (ADR-027) needs events, moments and commentary as they happen. Where does the Match Centre get them?
+
+**Options**
+- **A. The Cosmos DB change feed.** A change feed processor in the Match Centre reads `events`, `matches` and a new `commentary` container, and fans out in memory to each open stream. Cosmos DB is already the source of truth, resuming after a reconnect is a query, and the pattern is the one ADR-025 built. Latency is a poll interval (about a second) behind the processor.
+- **B. Its own Event Hubs consumer group.** The lowest latency, but **Event Hubs Basic allows only the `$Default` consumer group**, which the processor holds, so this means Standard (about £10 a month more). Commentary would still need a second source.
+- **C. Each open stream polls Cosmos DB.** The simplest code, but request units grow with every viewer.
+
+**Decision:** A. It also means the agents write their output to Cosmos DB and never talk to the Match Centre directly.
+
+---
+
+## ADR-030 — Where the agents run
+
+**Status:** Accepted · 22 Oct, start of Stage 3 (builds on ADR-006)
+
+**Question**
+The squad has live work (commentary on each key moment, from the Service Bus `commentary` subscription) and on-demand work (a fan's question, the recap). Which process hosts which?
+
+**Options**
+- **A. One `Touchline.Agents` library, hosted twice.** The agents, workflow and tools live in a class library. Live commentary runs as a Service Bus-triggered function in the existing processor app. Q&A and the recap run inside the Match Centre, behind ADR-027's endpoints. No new Azure resource, and both hosts already have identities.
+- **B. A new agents Container App** that does all of it, with the Match Centre calling it over HTTP for Q&A. A clean service boundary with its own scaling, but a new app, identity and network hop, and one more thing to keep warm for the judges.
+- **C. Everything inside the Match Centre,** including a Service Bus processor. The fewest moving parts, but the UI host then scales with model calls, and a slow model call competes with open streams.
+
+**Decision:** A. The library is the unit the agent lane builds and tests with a fake `IChatClient`, and the hosts stay thin.
+
+---
+
+## ADR-031 — Build your own team
+
+**Status:** Accepted · 22 Oct, Stage 3 (extends ADR-002 and ADR-027)
+
+**Question**
+Fans want to create and edit their own clubs: name, colours, crest, manager, players, and the line-up and subs for a match. How do we allow that without sign-in, without real clubs or players slipping in, and without breaking the simulator's calibration?
+
+**Decision**
+- **Ownership by edit key, no sign-in.** Creating a team returns a random 256-bit edit key, once. The service stores only its SHA-256 hash and compares in constant time. The browser keeps the key and sends it as `Touchline-Edit-Key` to update or delete. Anyone can view a fan team and play against it. A lost key leaves the team read-only.
+- **Crests come from a builder, never uploads.** A crest is a shape, an emblem from a fixed set, up to three initials and two colours, and the service renders it as SVG. The emblem set avoids motifs tied to real clubs (no cannons, cockerels, liver birds, hammers or lions). Built-in teams get a crest derived from their colours and short name.
+- **Names are free text, checked on the server.** Team, venue, manager and player names must:
+  - pass a format rule (letters, spaces, hyphens, apostrophes and full stops; at most 30 characters and four words), which also keeps instructions out of names that later reach prompts;
+  - pass Azure AI Content Safety, in the existing Foundry account (AIServices kind), keyless. One call checks for abuse and against a **custom blocklist** of real Premier League clubs, their nicknames and stadiums, and current players' full names.
+
+  The blocklist lives in Content Safety, never in the repo: CLAUDE.md keeps real club names out of the code, and the repo goes public. Its source list is kept in the private notes repo and loaded by a script.
+
+  A "suggest a name" generator offers fictional names. A rejected name gets a clear reason for an IP match and a generic one for abuse.
+- **Players are archetypes.** Each player has a name, a shirt number, a preferred foot and an archetype (such as poacher, deep playmaker or sweeper keeper). The archetype sets the position and the tuned ratings, so a fan team stays inside the simulator's calibrated ranges. Ratings never appear in the API.
+- **Managers have a style.** A manager has a name and one style (balanced, high press, possession, counter or direct), which sets the team's tendencies (ADR-014).
+- **Squad rules:** 14 to 25 players with distinct shirt numbers from 1 to 99, and at least 2 goalkeepers, 4 defenders, 3 midfielders and 3 forwards. Built-in teams are read-only.
+- **Fan teams are stored in a Cosmos DB `teams` container,** partitioned by `/id`, with the built-in profiles as seed data (ADR-021). IDs start with `fan-`, so they never collide with built-ins. Player IDs are `{teamId}-p{n}`, assigned by the service and kept across updates, so a player's history follows them through a rename. Deletes are soft, with a TTL, because the change feed doesn't see deletes.
+- **Updates are optimistic.** Each team has a version, sent as an `ETag`. A `PUT` with a stale `If-Match` gets a `412`.
+- **Fan teams play exhibitions only** (ADR-032). They never count towards a season.
+
+**The contract** (added to ADR-027)
+
+| Endpoint | Does | Errors |
+|---|---|---|
+| `GET /api/team-builder/options` | Archetypes, manager styles, crest shapes and emblems, and the squad rules, for the builder UI | — |
+| `GET /api/team-builder/names?kind=team\|player\|manager\|venue&count=` | Suggested fictional names | `400` |
+| `POST /api/team-builder/names/check` | Checks up to 30 names as the fan types; each comes back allowed, or with a reason | `400` |
+| `GET /api/teams?origin=builtin\|fan` | Teams, now with origin and crest URL | `400` |
+| `GET /api/teams/{teamId}` | A team with its manager, crest, squad (with archetypes) and version (`ETag`) | `404` |
+| `POST /api/teams` | Creates a fan team; `201` with the team and its edit key (shown once) | `400`, `429` |
+| `PUT /api/teams/{teamId}` | Replaces a fan team (`Touchline-Edit-Key`, optional `If-Match`) | `400`, `403`, `404`, `412` |
+| `DELETE /api/teams/{teamId}` | Deletes a fan team (soft) | `403`, `404`, `409` while it's playing |
+| `GET /api/teams/{teamId}/crest.svg` | The crest as SVG, cacheable | `404` |
+
+**Alternatives considered**
+- **Sign-in with Entra External ID.** Proper ownership and a "my teams" list, but a new identity set-up, and judges would need an account to try it.
+- **Browser-only teams.** The simplest server, but teams couldn't be shared or found, and vanish with the browser's data.
+- **Crest uploads with Content Safety.** Content Safety catches offensive images, not trademarks, so a real crest would get through.
+- **Generated names only.** Watertight, but less personal. **A model check per name** costs a call per save and can be wrong either way.
+- **A points budget, or free sliders.** More control, but a budget needs its own calibration, and free sliders let a maxed-out team wreck the xG and score realism the analysis depends on.
+
+**Trade-offs**
+- **A blocklist is never complete.** It covers this season's Premier League squads and clubs, not every footballer ever. Content Safety and the format rule narrow the gap; the rest is accepted risk, with fan teams clearly labelled as fan-made.
+- **An edit key is a bearer secret.** Anyone holding it can edit, and there's no recovery. It's fine for a demo league, but not for anything valuable.
+- **Fan names reach prompts.** The format rule limits what fits in a name, and the agent lane passes rosters as tool results, never in system prompts.
+- **New rate limits:** team creation is limited per client (10 an hour), and so are the endpoints that call a model or Content Safety (see the review fixes under ADR-032). Container Apps passes the client address in `X-Forwarded-For`, and only the rightmost address is trustworthy.
+
+**As built (contract slice, 22 Oct)**
+- The endpoints run on an in-memory demo store, and the demo name guard applies only the format rule, so the UI can build against them now. The Cosmos DB store, Content Safety with its blocklist, archetype ratings, the rate limiter's production settings and the engine's chosen line-ups are lane work (lane H in the plan).
+
+---
+
+## ADR-032 — Fan-started matches: line-ups, bench, and limits
+
+**Status:** Accepted · 22 Oct, Stage 3 (builds on ADR-024 and ADR-031)
+
+**Question**
+How does a fan pick a line-up and kick off a match between any two teams, and what stops that running up cost?
+
+**Decision**
+- **`POST /api/matches` starts an exhibition.** It names the home and away teams and, for each, an optional team sheet: a starting eleven and up to 7 substitutes, all from that team's squad. Without a sheet, the engine picks its default eleven. Anyone can pick a sheet for any team: a team sheet is for one match, not an edit to the team.
+- **Sheet rules:** exactly 11 distinct starters with exactly one goalkeeper, and a bench of 0 to 7 distinct players not in the eleven, every player in the squad. Bans don't apply: they're served in fixtures (ADR-025), and fan matches are exhibitions. `MatchdaySheetRules` still takes an unavailable list for when fixtures use sheets. The formation shown is derived from the eleven's positions (for example 4-4-2).
+- **The full pipeline plays it.** The Match Centre writes a match request to Cosmos DB and starts the simulator job (ADR-024) with the request's ID, so fan matches get the event pipeline, the agents and commentary like any other. The Match Centre's identity needs a role that can start the job.
+- **Limits.** At most one fan match is live at once, and at most 5 a day (`MatchCentre:FanMatches`). Beyond either, the response is `429` with `Retry-After` and a plain message. Each match is about 14 MB of telemetry against the 0.1 GB daily cap (ADR-011), so the daily limit also protects monitoring.
+- **Double-clicks are safe.** An optional `Idempotency-Key` header returns the same match for a repeated request.
+- **The bench is stored, not yet used.** The engine plays the chosen eleven. Substitutions are a backlog slice, built only if time allows; until then the UI shows the bench as named substitutes.
+- **The response** is `202 Accepted`, with the match ID, its status (`Scheduled`), its stream URL and a `Location` header. The match appears in `GET /api/matches` and streams like any other.
+
+| Endpoint | Does | Errors |
+|---|---|---|
+| `POST /api/matches` | Starts an exhibition between two teams, with optional team sheets | `400`, `404` (unknown team), `409` (a team plays itself), `429`, `503` (no pipeline) |
+
+**Alternatives considered**
+- **Play fan matches inside the Match Centre, without the pipeline.** Cheap and instant, but no agents or commentary on fan matches, which undercuts the multi-agent entry.
+- **Queue matches on a timetable.** Predictable cost, but fans wait, which is worse for judges trying it.
+- **Build substitutions now, or have no bench.** The first touches the engine, calibration and event schema in a stage that's already a day late; the second drops part of the feature.
+
+**Trade-offs**
+- **The engine needs a change** to take a chosen eleven instead of picking its own (lane H).
+- **A starting role for the Match Centre** widens its permissions: scope it to the one job.
+- **Five matches a day is a low ceiling.** It's configuration, and can rise if the telemetry cap does.
+
+**As built (contract slice, 22 Oct)**
+- The endpoint validates the request and the sheets, then answers `503` ("fan matches need the live pipeline") from the demo launcher. The job launch, the request document, the limits and the idempotency store are lane work.
+
+**Review fixes (PR #22, 22 Oct)**
+- **Abbreviations are names too.** Short names and crest initials go to the name guard as `Abbreviation`, so a crest or scoreboard can't spell a real club's initials. The blocklist gains real clubs' abbreviations.
+- **Every endpoint that costs money is rate limited per client:** fan questions, recaps and name checks share a `paid-calls` policy (10 a minute), beside team creation (10 an hour). Both live under `MatchCentre:RateLimits`.
+- **`If-Match` follows RFC 9110:** `*` and lists of tags are accepted; weak tags never match.
+- **Malformed requests are `400`s:** a null name entry, an undefined name kind, or a match request with a missing team ID.

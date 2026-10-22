@@ -48,7 +48,7 @@ public static class ExpectedGoalsModel
         var depth = Math.Abs(goal.X - shotAt.X);
         var distance = shotAt.DistanceTo(goal);
 
-        var byDistance = 1 / (1 + Math.Exp(_slope * distance - _offset));
+        var byDistance = 1 / (1 + PortableMath.Exp(_slope * distance - _offset));
         var angleFactor = distance == 0 ? 1 : Math.Max(_minimumAngleFactor, depth / distance);
         var situationFactor = situation switch
         {

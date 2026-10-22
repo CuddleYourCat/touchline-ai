@@ -248,7 +248,7 @@ public sealed partial class MatchSimulator
         private double ShotChance(double distanceToGoal) =>
             distanceToGoal > ShotMaxDistance
                 ? 0
-                : Attackers.Team.Tendencies.ShotAppetite * ShotScale * Math.Exp(-distanceToGoal / ShotDistanceDecay);
+                : Attackers.Team.Tendencies.ShotAppetite * ShotScale * PortableMath.Exp(-distanceToGoal / ShotDistanceDecay);
 
         private IEnumerable<MatchEvent> Pass(bool underPressure)
         {
@@ -620,7 +620,7 @@ public sealed partial class MatchSimulator
         {
             var u1 = 1.0 - _random.NextDouble();
             var u2 = _random.NextDouble();
-            return mean + standardDeviation * Math.Sqrt(-2 * Math.Log(u1)) * Math.Cos(2 * Math.PI * u2);
+            return mean + standardDeviation * Math.Sqrt(-2 * PortableMath.Log(u1)) * PortableMath.Cos(2 * Math.PI * u2);
         }
     }
 }
