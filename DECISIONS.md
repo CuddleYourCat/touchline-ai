@@ -1237,3 +1237,130 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 - **Every endpoint that costs money is rate limited per client:** fan questions, recaps and name checks share a `paid-calls` policy (10 a minute), beside team creation (10 an hour). Both live under `MatchCentre:RateLimits`.
 - **`If-Match` follows RFC 9110:** `*` and lists of tags are accepted; weak tags never match.
 - **Malformed requests are `400`s:** a null name entry, an undefined name kind, or a match request with a missing team ID.
+
+---
+
+## ADR-033 — Match Centre UI: project layout, type generation and build
+
+**Status:** Accepted · 22 Oct, lane A
+
+**Decision**
+- **The app lives in `src/Touchline.MatchCentre.Web`** (React, TypeScript, Vite). A `node:22` stage in the Match Centre's Dockerfile builds it, and the output goes into `/app/wwwroot`. A `.dockerignore` keeps `node_modules` and `dist` out of the ACR upload. The Dockerfile stays plain multi-stage, because ACR Tasks uses the classic builder.
+- **The Match Centre serves it** with `MapStaticAssets` and `MapFallbackToFile("index.html")`, mapped after the API, so `/api` and `/openapi` keep their own 404s. In development, the Vite dev server proxies `/api` to the Match Centre.
+- **Types come from `contracts/matchcentre.openapi.json`** through openapi-typescript, with openapi-fetch as a thin typed client. A separate CI `web` job runs `npm ci`, regenerates the types and fails on `git diff`, then runs the type check, lint and Vitest. The .NET jobs stay free of Node.
+
+**Alternatives considered:** an MSBuild target that runs npm on every `dotnet publish` (every .NET build would need Node); Orval-generated hooks (a larger generated surface); a JavaScript SDK `.esproj` (more moving parts).
+
+---
+
+## ADR-034 — Match Centre UI: look, theme toggle, routing and synthetic labelling
+
+**Status:** Accepted · 22 Oct, lane A
+
+**Decision**
+- **The look follows the study notes' console style:** deep-navy grid, orange accent, cyan highlights, with Chakra Petch for display, IBM Plex Sans for body and JetBrains Mono for data. A matching **light theme** comes from the same design tokens.
+- **The theme is a manual toggle, not the OS setting.** The choice is kept in `localStorage`, and dark is the default. Only the visual style carries over: the learning material's gadget naming never appears in the app (CLAUDE.md section 2).
+- **React Router with path URLs:** `/`, `/matches/:id`, `/teams`, `/teams/:id/edit`, `/kickoff`.
+- **"Synthetic" is unmissable:** a persistent "SYNTHETIC DATA" badge in the header, and `dataSource` on every match card. Crests come only from `crest.svg`. There are no real names, logos or Premier League marks.
+
+**Alternatives considered:** a light "matchday programme" palette; a floodlit dark broadcast palette; themes that follow the OS.
+
+---
+
+## ADR-035 — Live view: stream client, momentum, and player positions from a shape model
+
+**Status:** Accepted · 22 Oct, lane A (the shape model is a contract change)
+
+**Decision**
+- **One `useMatchStream` hook over `EventSource`,** with a reducer per message type. It uses `?after=` on first load and `Last-Event-ID` on reconnect. Heartbeats only reset a staleness timer: after about 30 silent seconds a "reconnecting" banner shows. `fulltime` fetches the recap, and `409`, `429` and `503` are handled gracefully.
+- **Momentum is hand-rolled SVG bars** around a zero line, coloured by team, so there's no chart dependency and the palette stays in control.
+- **Player dots come from a shape model on the server.** The engine tracks only the ball, so positions are *modelled*, not tracked. A pure domain function places all 22 players from their formation slots (derived from the line-up's positions), shifted by the ball's position, the phase of play (who has the ball) and each team's tendencies (width, pressing). `MatchStreamProjector` sends the result as a new `shape` stream message (22 positions, keyed by player ID) after each event. The contract gains the `shape` message and its schema. The engine and event stream don't change.
+- **The pitch view** animates the ball from each event's `start` to `end` (pass arc, carry line, shot to goal), with a short fading trail and markers for fouls and cards. Player dots ease towards each new shape.
+
+**Alternatives considered:** a shape model in TypeScript (team tendencies aren't in the contract, and the logic would sit outside the NUnit-tested C#); simulated tracking in the engine (a big engine change, recalibration, and far more Event Hubs and Cosmos DB volume five days out); ball trail only (dots were a requirement).
+
+**Trade-offs:** positions are plausible, not real, so nothing that needs real positions (offside, pressing distances) can use them. The UI and any overlay must not present them as tracking data.
+
+---
+
+## ADR-036 — Which source serves a match: the recording or Cosmos DB
+
+**Status:** Accepted · 22 Oct, lane B
+
+**Decision**
+**Matches are routed by ID.** A composite serves `demo-*` IDs from the recording and every other ID from Cosmos DB. The match list merges both, and shows the demo alone if Cosmos DB fails. The chaos test is a Cosmos DB fake that throws: the demo's list, detail and stream still work, and other IDs answer `503`. Cosmos DB stays out of the liveness check (readiness only), so an outage doesn't make Container Apps restart the app.
+
+**Alternatives considered:** a configuration switch (no fallback when Cosmos DB is down); a switch with automatic fallback (twice the paths to test).
+
+---
+
+## ADR-037 — How the Match Centre reads the change feed
+
+**Status:** Accepted · 22 Oct, lane B (implements ADR-029)
+
+**Decision**
+- **Each replica reads the change feed itself with the pull model**, `GetChangeFeedStreamIterator` from `ChangeFeedStartFrom.Now()`, on `events` and `commentary`. It keeps no leases. Every replica needs every change for its own open streams, and the Reader role is enough.
+- **One shared hub per live match, per replica:** one `MatchStreamProjector` fed by the change feed, fanned out to streams over channels, with duplicates dropped by sequence. A new stream gets a state snapshot plus a query for the events after `after`, so RU cost doesn't grow with viewers.
+
+**Alternatives considered:** a change feed processor with a lease prefix per replica (it needs write access on `leases`, and orphaned leases pile up); a processor with shared leases (⚠️ it splits partitions *between* replicas, so each stream would miss events, and it would collide with `ProjectSeason`'s leases); a replay per stream (RU cost grows with every viewer).
+
+---
+
+## ADR-038 — The commentary container, the Match Centre's data role, and lane E
+
+**Status:** Accepted · 22 Oct, lane B
+
+**Decision**
+- **`commentary` is partitioned by `/matchId`, with ID `{momentId}:{mode}:{language}`.** An upsert replaces a line, as `ICommentaryStore` promises, and a match's lines are one single-partition query.
+- **The Match Centre's identity gets Cosmos DB Built-in Data Reader on four containers only:** `matches`, `events`, `player-seasons` and `commentary`, as a Bicep loop in the simulator's pattern. If commentary is ever written from the Match Centre, it gets Contributor on `commentary` alone.
+- **Lane E** (notable-moment tiers and overlay cards) is a separate slice after the live feed works.
+
+**Alternatives considered:** partitioning by `/momentId` (a match's commentary becomes a cross-partition query); Reader or Contributor on the whole database (broader than needed); folding lane E into the live-feed slice (a bigger, harder review).
+
+---
+
+## ADR-042 — The squad's workflow for a key moment
+
+**Status:** Accepted · 22 Oct, lane D (builds on ADR-006)
+
+**Decision**
+**Write, check, fan out.** The Commentator writes the Casual and Analyst lines in one structured call (small model). The roster guardrail checks them. Then Localisers translate concurrently, using the workflow's fan-out and fan-in edges, and every line is stored through `ICommentaryStore`. The workflow is the orchestrator. The Analyst (Q&A) and Producer (recap) have their own workflows behind `ISquad`, on the large model. Built on `Microsoft.Agents.AI.Workflows` 1.25.0 (GA), and exposed as an agent with `AsAIAgent()`.
+
+**Alternatives considered:** the Analyst alongside the Commentator on every key moment (richer, but the large model runs about 30 times a match); the Commentator alone (a weak multi-agent story).
+
+---
+
+## ADR-043 — Token budgets and the model client
+
+**Status:** Accepted · 22 Oct, lane D (builds on ADR-007)
+
+**Decision**
+- **Budgets are enforced in one middleware,** a `DelegatingChatClient` that sets `MaxOutputTokens` from `SquadOptions`, trims input over about 4k tokens, and records tokens on an OpenTelemetry counter tagged by agent and model. Output caps: Commentator 150, Localiser 200, Analyst 600, Producer 1,200. All are configurable.
+- **The client is the GA `OpenAI` SDK (2.14.0)** against the Foundry account's v1 endpoint with an Entra ID token, through `.AsIChatClient()` (`Microsoft.Extensions.AI.OpenAI` 10.11.0). There are two keyed clients, `small` and `large`.
+
+**Alternatives considered:** caps per call (easy to forget one); the `Azure.AI.OpenAI` beta (a beta pinned in a release build; the stable 2.1.0 predates gpt-5 parameters); the prerelease `Microsoft.Agents.AI.Foundry` package (its APIs are still moving).
+
+---
+
+## ADR-044 — The roster guardrail and prompt-injection defences
+
+**Status:** Accepted · 22 Oct, lane D (builds on ADR-002)
+
+**Decision**
+- **On a miss, retry once, then use the template line.** If output names anyone not in the match's rosters (fan-built teams included), the agent regenerates once with a corrective note, then falls back to the template line (`CommentarySource.Template`). A fan always gets a safe line.
+- **Prompt injection:** Prompt Shields switched on in the deployments' content filter. The fan's question is wrapped as delimited user data, never in a system prompt. Agents can call read-only tools only. Rosters and names always arrive as tool results. The roster check runs on output as well.
+
+**Alternatives considered:** redacting unknown names (awkward lines); dropping the line (gaps in the feed); a separate Content Safety `shieldPrompt` call (another resource, about 100 ms and cost); role separation only (the weakest defence).
+
+---
+
+## ADR-045 — How commentary is localised
+
+**Status:** Accepted · 22 Oct, lane D
+
+**Decision**
+**A fixed set, ahead of time.** Live lines are written in English, Spanish and French, in both modes (configurable). Q&A and the recap are written in the viewer's language on demand. `ICommentaryStore` already replaces lines by moment, mode and language.
+
+**Alternatives considered:** on demand with a cache (the first viewer of each language waits); English only (`Viewer.Language` half-used).
+
+**Note:** the Event Processor needs `Microsoft.Azure.Functions.Worker.Extensions.ServiceBus` for the live commentary trigger (lane D, slice 3).
