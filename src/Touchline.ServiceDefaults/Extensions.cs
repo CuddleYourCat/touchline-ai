@@ -90,6 +90,10 @@ public static class Extensions
             {
                 // The app's own meter is named after it, like its activity source below.
                 metrics.AddMeter(builder.Environment.ApplicationName)
+                    // Every other Touchline meter, such as the agent squad's token counter (ADR-043), by
+                    // wildcard: the defaults stay free of the agents library and its packages, which
+                    // every service image would otherwise have to restore.
+                    .AddMeter("Touchline.*")
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation();

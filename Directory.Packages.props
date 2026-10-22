@@ -22,6 +22,15 @@
     <PackageVersion Include="Microsoft.Azure.Functions.Worker.OpenTelemetry" Version="1.2.0" />
     <!-- Exports the service defaults' OpenTelemetry to Application Insights in Azure (ADR-024). -->
     <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.10.0" />
+    <!-- The agent squad (ADR-006, ADR-042, ADR-043): Agent Framework, Microsoft.Extensions.AI and the GA OpenAI SDK, with an Entra ID token. -->
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <PackageVersion Include="Microsoft.Agents.AI" Version="1.25.0" />
+    <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.25.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+    <PackageVersion Include="OpenAI" Version="2.14.0" />
     <PackageVersion Include="FluentAssertions" Version="7.2.0" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />

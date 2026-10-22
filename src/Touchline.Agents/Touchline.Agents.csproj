@@ -4,8 +4,20 @@
     The agent squad (ADR-006, ADR-007, ADR-030): Commentator, Analyst, Localiser and Producer,
     on Microsoft Agent Framework through IChatClient. It implements Touchline.Domain's ISquad and
     writes commentary through ICommentaryStore. It's hosted twice: by the Event Processor for live
-    commentary, and by the Match Centre for Q&A and the recap. Empty until the agent lane starts.
+    commentary, and by the Match Centre for Q&A and the recap. Slice 1 adds the model clients,
+    the token budgets and the roster guardrail (ADR-043, ADR-044).
   -->
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Microsoft.Agents.AI" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows" />
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="OpenAI" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
