@@ -22,6 +22,9 @@ database.AddContainer("player-matches", "/playerId");
 database.AddContainer("player-seasons", "/season");
 database.AddContainer("leases", "/id");
 
+// The agents' commentary, which the Match Centre follows on the change feed (ADR-029).
+database.AddContainer("commentary", "/matchId");
+
 // The Functions host's own storage (AzureWebJobsStorage), which also holds the Event Hubs
 // trigger's checkpoints.
 var storage = builder.AddAzureStorage("storage").RunAsEmulator();
@@ -39,7 +42,9 @@ builder.AddProject<Projects.Touchline_Simulator>("simulator")
     .WaitFor(cosmos)
     .WaitFor(eventProcessor);
 
+// No WaitFor(cosmos): the Match Centre must start, and serve its demo match, without the emulator.
 builder.AddProject<Projects.Touchline_MatchCentre>("matchcentre")
+    .WithReference(cosmos)
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health");
 

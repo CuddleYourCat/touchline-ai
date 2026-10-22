@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Cosmos DB helpers the Event Processor and the Match Centre share. It references the
+       domain only for DomainJson; the domain stays free of the Cosmos DB SDK. -->
+  <ItemGroup>
+    <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

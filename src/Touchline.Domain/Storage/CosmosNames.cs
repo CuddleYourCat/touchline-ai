@@ -23,6 +23,9 @@ public static class CosmosNames
     /// <summary>Each player's rebuilt season, partitioned by <c>/season</c>.</summary>
     public const string PlayerSeasons = "player-seasons";
 
+    /// <summary>Each key moment's commentary lines, partitioned by <c>/matchId</c> (ADR-029).</summary>
+    public const string Commentary = "commentary";
+
     /// <summary>The change feed trigger's checkpoints, partitioned by <c>/id</c>.</summary>
     public const string Leases = "leases";
 }

@@ -8,6 +8,7 @@
     <Project Path="src/Touchline.Search/Touchline.Search.csproj" />
     <Project Path="src/Touchline.ServiceDefaults/Touchline.ServiceDefaults.csproj" />
     <Project Path="src/Touchline.Simulator/Touchline.Simulator.csproj" />
+    <Project Path="src/Touchline.Storage/Touchline.Storage.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Touchline.Tests.Unit/Touchline.Tests.Unit.csproj" />

@@ -346,6 +346,8 @@ resource matchCentre 'Microsoft.App/containerApps@2024-03-01' = {
           env: [
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
             { name: 'AZURE_CLIENT_ID', value: appIdentity.properties.clientId }
+            // Keyless and read-only, for the live read model (ADR-038), the same way as the simulator.
+            { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
           ]
           // The placeholder image has no /alive or /health, so probes only apply to the real image.
           // The startup probe holds off liveness while a cold start from zero replicas
@@ -496,6 +498,8 @@ var cosmosContainerDefinitions = [
   { name: 'player-matches', partitionKey: '/playerId' }
   { name: playerSeasonsContainerName, partitionKey: '/season' }
   { name: 'leases', partitionKey: '/id' }
+  // The agents' commentary, which the Match Centre follows on the change feed (ADR-029).
+  { name: 'commentary', partitionKey: '/matchId' }
 ]
 
 resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = [
@@ -838,6 +842,24 @@ resource cosmosReaderForSimulator 'Microsoft.DocumentDB/databaseAccounts/sqlRole
     scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/${playerSeasonsContainerName}'
   }
 }
+
+// Match Centre identity: read the match store, the season cards and the commentary (ADR-038).
+// Read-only, with one assignment per container, so it can't see the season projection's
+// working set or the leases, let alone write anything.
+var matchCentreReadContainers = ['matches', 'events', playerSeasonsContainerName, 'commentary']
+
+resource cosmosReaderForMatchCentre 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = [
+  for container in matchCentreReadContainers: {
+    parent: cosmos
+    name: guid(cosmos.id, appIdentity.id, cosmosDataReaderRoleId, container)
+    dependsOn: [cosmosContainers]
+    properties: {
+      roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataReaderRoleId}'
+      principalId: appIdentity.properties.principalId
+      scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/${container}'
+    }
+  }
+]
 
 // CI identity, continued: deploy the function's package and point the job at a new image.
 resource websiteContributorForCi 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

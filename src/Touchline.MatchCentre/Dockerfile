@@ -12,6 +12,7 @@ WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
 COPY src/Touchline.Domain/Touchline.Domain.csproj src/Touchline.Domain/
 COPY src/Touchline.ServiceDefaults/Touchline.ServiceDefaults.csproj src/Touchline.ServiceDefaults/
+COPY src/Touchline.Storage/Touchline.Storage.csproj src/Touchline.Storage/
 COPY src/Touchline.MatchCentre/Touchline.MatchCentre.csproj src/Touchline.MatchCentre/
 RUN dotnet restore src/Touchline.MatchCentre/Touchline.MatchCentre.csproj
 

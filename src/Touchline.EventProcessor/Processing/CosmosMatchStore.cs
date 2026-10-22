@@ -5,6 +5,7 @@ using Microsoft.Azure.Cosmos;
 using Touchline.Domain;
 using Touchline.Domain.Matches;
 using Touchline.Domain.Storage;
+using Touchline.Storage;
 
 namespace Touchline.EventProcessor.Processing;
 
