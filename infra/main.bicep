@@ -31,8 +31,8 @@ param principalId string = ''
 @description('Where budget alerts are sent. Supplied at deploy time, never committed.')
 param ownerEmail string
 
-@description('Monthly budget in the billing currency (GBP). ADR-011.')
-param monthlyBudget int = 30
+@description('Monthly budget in the billing currency (GBP). ADR-011, raised to £60 by ADR-026 for Azure AI Search Basic.')
+param monthlyBudget int = 60
 
 @description('First day of the budget period. deploy.ps1 passes the existing budget\'s start date, so this default only applies on the first deploy.')
 param budgetStartDate string = utcNow('yyyy-MM-01')

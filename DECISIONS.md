@@ -154,7 +154,7 @@ The solution's shape changes between stages, and the first shared adapter means 
 
 ## ADR-011 — Azure environment: own resource group in Sweden Central, £30 monthly budget
 
-**Status:** Accepted · Kick-off
+**Status:** Accepted · Kick-off. The £30 budget is superseded by ADR-026 (£60, for Azure AI Search Basic).
 
 **Decision**
 Every touchline-ai resource lives in a new resource group, `rg-touchline-ai`, in **Sweden Central**. It's on the existing pay-as-you-go subscription, alongside other projects but separate from them. A budget alert at **£30 a month** is scoped to the resource group, and the app must stay within it through judging.
@@ -918,46 +918,107 @@ The unit tests now reference `Touchline.Simulator` as well, and an engine class 
 
 ## ADR-006 — Agent orchestration framework
 
-**Status:** Proposed · needed before Stage 3
+**Status:** Accepted · 21 Oct, before Stage 3
 
 **Question**
 What hosts and orchestrates the agent squad (Orchestrator, Analyst, Commentator, Localiser, Producer)?
 
-**Options**
-- **A. Microsoft Agent Framework, in process.** Agents run in our own .NET service and call Foundry models through `IChatClient`. Tools are plain C# methods. Full control and easy to unit test.
-- **B. Foundry Agent Service, hosted.** Agents are defined in Foundry, which stores threads and calls tools server-side. Orchestrated from .NET with Agent Framework. A stronger "Best Use of Foundry" story, with less control and harder unit testing.
-- **C. Semantic Kernel agents.** Continuity with ai-doc-intelligence ADR-001, but Microsoft now points new agent work towards Agent Framework.
+**Decision**
+- **Microsoft Agent Framework, in process.** The agents run in our own .NET service and call Foundry models through `IChatClient`.
+- **Tools are plain C# methods**, such as reading a match's state or searching its possessions.
+- **An Agent Framework workflow orchestrates them,** with explicit steps rather than free-form agent chat, so each key moment takes a known, bounded path.
 
-**To verify before deciding:** current package versions and the GA or preview status of Agent Framework and Foundry Agent Service for .NET.
+**Alternatives considered**
+- **Foundry Agent Service, hosted.** Agents are defined in Foundry, which stores threads and calls tools server-side, orchestrated from .NET. A stronger Foundry story for the judges, but less control, harder unit testing, and one more hosted service to wire up in six days.
+- **Semantic Kernel agents.** Continuity with ai-doc-intelligence ADR-001 and a mature package, but Microsoft now directs new agent work to Agent Framework, its successor.
+
+**Rationale**
+- **Agent Framework is the successor** to both Semantic Kernel and AutoGen, from the same teams, with workflows built for multi-agent orchestration. It fits the "Best Multi-Agent" target category.
+- **In process, every agent and tool can be unit tested with a fake `IChatClient`.** CLAUDE.md requires that model calls are never live in unit tests.
+- **Explicit workflows bound cost.** Each step has a known model and token cap (ADR-007).
+
+**Trade-offs**
+- **The Foundry package (`Microsoft.Agents.AI.Foundry`) still installs as a prerelease** (checked 21 Oct). APIs may shift, so versions are pinned centrally.
+- **Agent state lives in our service**, not in Foundry threads. Anything that must survive a restart goes in Cosmos DB.
 
 ---
 
 ## ADR-007 — Which model each agent uses
 
-**Status:** Proposed · needed before Stage 3
+**Status:** Accepted · 21 Oct, before Stage 3
 
 **Question**
 Which model does each agent use, and what are the token limits?
 
-**Options**
-- **A. One small, fast model for everything.** Cheapest and fastest, but analysis may be shallow.
-- **B. Split by job.** A small model for live commentary lines and localisation, a larger model for the Analyst and the full-time recap.
-- **C. A larger model everywhere.** Best quality, highest cost and latency.
+**Decision**
+- **Split by job:**
+  - **A small, fast model** (initially `gpt-5.4-mini`) for the jobs that run many times a match: the Commentator's live lines and the Localiser's translations.
+  - **A larger model** (initially `gpt-5.5`) for the jobs that run a few times: the Analyst's "why did that happen?" and the Producer's full-time recap.
+- **Both are Global Standard deployments** in the existing Foundry account in Sweden Central (checked available, 21 Oct). The exact versions are confirmed against the pricing page when the deployment slice runs.
+- **Every call has a configurable maximum token limit** (CLAUDE.md), set per agent in configuration, and counted on an OpenTelemetry counter.
+- **Embeddings stay `text-embedding-3-small`** (already deployed).
 
-**To verify before deciding:** which chat models the chosen region offers in Foundry, and their prices. Embeddings use `text-embedding-3-small` regardless.
+**Alternatives considered**
+- **One small model for everything.** The cheapest and fastest, and one deployment, but the analysis and the recap may read shallow, which the judges will notice.
+- **One large model for everything.** The best quality, but commentary runs on every key moment, so it's the highest cost and latency.
+
+**Rationale**
+Cost and latency follow call volume, and quality matters most where calls are few. A match has about 30 key moments but one recap, so the expensive model goes where it's called rarely and read closely.
+
+**Trade-offs**
+- **Two deployments to keep in step** in Bicep, configuration and the AppHost.
+- **The model names will date.** They're configuration, not code, so changing a model is a redeploy, not a rebuild.
 
 ---
 
 ## ADR-008 — How to chunk a match timeline for retrieval
 
-**Status:** Proposed · needed before Stage 3
+**Status:** Accepted · 21 Oct, before Stage 3
 
 **Question**
 What is one "document" in the AI Search index?
 
-**Options**
-- **A. Fixed time windows** (for example 30 seconds). Simple and predictable, but a window can cut a move in half.
-- **B. Possession sequences**, from winning the ball to losing it. This is football's natural unit of play and keeps a move intact, but lengths vary widely.
-- **C. Windows anchored on key moments**, the N seconds before each one. Built for "why did this happen?", but it misses play that led nowhere.
+**Decision**
+- **One document per possession sequence:** from a team winning the ball to losing it, using the events' existing `possessionId`. The ID is `{matchId}:{possessionId}`.
+- **Each document holds:**
+  - the match, the team and the time span;
+  - the players involved;
+  - whether it ended in a shot or a key moment;
+  - a short text summary of the move, for embedding with `text-embedding-3-small` and for full-text search.
+- **The summary has a length cap,** because sequences vary from 2 events to 30 or more.
+- **The moment indexer slice decides how documents get in** (from the stored events, after each possession ends).
 
-This is the timeline equivalent of the document-chunking decision in ai-doc-intelligence.
+**Alternatives considered**
+- **Fixed time windows** (say 30 seconds). Simple sizes and complete coverage, but a window can cut a move in half, so retrieval often returns half a story.
+- **Windows anchored on key moments** (the 60 seconds before each one). Built for "why did that happen?", but play that led to nothing is never indexed.
+
+**Rationale**
+A possession is football's natural unit of play. "Show me how that goal was built" retrieves one complete document, and so does "how did they keep the ball in the first half?". It's the timeline equivalent of chunking a document at its headings, not at a fixed character count (ai-doc-intelligence).
+
+**Trade-offs**
+- **Uneven lengths:** one long possession can dominate a summary's word budget, which is why the cap.
+- **About 150–250 documents a match.** That's small, but a season adds up, and it all goes in the Basic tier's limits (ADR-026).
+
+---
+
+## ADR-026 — Azure AI Search Basic for retrieval, and a £60 monthly budget
+
+**Status:** Accepted · 21 Oct, before Stage 3 (supersedes ADR-011's £30 budget)
+
+**Decision**
+- **Retrieval runs on Azure AI Search, Basic tier,** in `rg-touchline-ai`. It uses hybrid search (vector plus keyword) and semantic ranking, over the possession documents (ADR-008).
+- **The monthly budget alert rises from £30 to £60** (ADR-011), in Bicep, so it still warns before anything runs away.
+- **Search runs from the indexer slice through judging, to the 15 November teardown,** with its teardown date in the resource ledger.
+
+**Alternatives considered**
+- **Cosmos DB for NoSQL hybrid search** (vector plus BM25 full-text, combined with RRF), in the existing serverless account. No new fixed cost, but no semantic ranker (only in preview), and the exam's AI Search topics would be studied rather than built.
+- **Azure AI Search Free.** No cost, but only if the subscription's one free service isn't already taken by ai-doc-intelligence, and it has no semantic ranker.
+- **Search only for build and judging,** deleted afterwards. A few pounds cheaper at the end, but the app breaks if a judge looks late.
+
+**Rationale**
+- **Azure AI Search is the architecture's named retrieval service** (README), and the AI-200 exam's main retrieval topic: indexes, vectorisation, hybrid queries and semantic ranking.
+- **Building it beats reading about it.** The extra spend is about £50 over the whole project.
+
+**Trade-offs**
+- **About £2 a day, billed hourly:** roughly £40–£50 a month in total with the other fixed charges. October goes over the old £30 line.
+- **The budget is an alert, not a cap** (ADR-011), so the teardown date in the ledger is the real control.
