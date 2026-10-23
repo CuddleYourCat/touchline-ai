@@ -46,6 +46,23 @@ internal sealed class FakeChatClient : IChatClient
         return this;
     }
 
+    public FakeChatClient Returns(ChatResponse response)
+    {
+        lock (_gate)
+        {
+            _script.Enqueue(() => response);
+        }
+
+        return this;
+    }
+
+    /// <summary>A response asking for one tool call.</summary>
+    public static ChatResponse ToolCall(string name, IDictionary<string, object?>? arguments = null, string callId = "call-1") =>
+        new(new ChatMessage(ChatRole.Assistant, [new FunctionCallContent(callId, name, arguments)]))
+        {
+            Usage = new UsageDetails { InputTokenCount = 10, OutputTokenCount = 2 }
+        };
+
     public FakeChatClient Throws(Exception exception)
     {
         lock (_gate)

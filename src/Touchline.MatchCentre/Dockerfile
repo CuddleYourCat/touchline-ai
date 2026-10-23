@@ -21,6 +21,7 @@ WORKDIR /src
 # Restore first, from project files only, so the restore layer is cached
 # until a project file or package version changes.
 COPY Directory.Build.props Directory.Packages.props ./
+COPY src/Touchline.Agents/Touchline.Agents.csproj src/Touchline.Agents/
 COPY src/Touchline.Domain/Touchline.Domain.csproj src/Touchline.Domain/
 COPY src/Touchline.ServiceDefaults/Touchline.ServiceDefaults.csproj src/Touchline.ServiceDefaults/
 COPY src/Touchline.Storage/Touchline.Storage.csproj src/Touchline.Storage/

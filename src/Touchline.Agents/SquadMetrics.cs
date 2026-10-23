@@ -29,8 +29,15 @@ public sealed class SquadMetrics
     /// <summary>The tag saying whether tokens were <c>input</c> or <c>output</c>, following the GenAI conventions.</summary>
     public const string TokenTypeTag = "gen_ai.token.type";
 
+    /// <summary>The answer counter's name: every fan question answered, by agent and outcome.</summary>
+    public const string AnswerCounterName = "touchline.agents.answers";
+
+    /// <summary>The tag saying how an answer was produced: <c>model</c> or <c>fallback</c>.</summary>
+    public const string OutcomeTag = "touchline.answer.outcome";
+
     private readonly Counter<long> _tokens;
     private readonly Counter<long> _fallbacks;
+    private readonly Counter<long> _answers;
 
     /// <summary>Creates the squad's meter from the host's meter factory.</summary>
     /// <param name="meterFactory">The host's meter factory, which owns the meter's lifetime.</param>
@@ -46,7 +53,20 @@ public sealed class SquadMetrics
             FallbackCounterName,
             unit: "{fallback}",
             description: "Times an agent's output was replaced by a template or skipped, by agent and reason.");
+        _answers = meter.CreateCounter<long>(
+            AnswerCounterName,
+            unit: "{answer}",
+            description: "Fan questions answered, by agent and whether the model's answer or a safe fallback was sent.");
     }
+
+    /// <summary>Records one answer to a fan's question.</summary>
+    /// <param name="agent">The agent that answered.</param>
+    /// <param name="outcome"><c>model</c> or <c>fallback</c>.</param>
+    public void RecordAnswer(SquadAgent agent, string outcome) =>
+        _answers.Add(
+            1,
+            new KeyValuePair<string, object?>(AgentTag, agent.ToString()),
+            new KeyValuePair<string, object?>(OutcomeTag, outcome));
 
     /// <summary>Records one fallback: a template line used, or a language skipped.</summary>
     /// <param name="agent">The agent whose output was replaced or skipped.</param>
