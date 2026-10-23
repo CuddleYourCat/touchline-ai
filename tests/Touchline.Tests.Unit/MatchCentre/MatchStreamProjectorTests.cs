@@ -53,6 +53,18 @@ public class MatchStreamProjectorTests
     }
 
     [Test]
+    public void A_match_with_lost_events_projects_with_the_gaps_skipped()
+    {
+        var projector = new MatchStreamProjector(DemoRecording.Events[0].MatchId, _detector);
+        var withGaps = DemoRecording.Events.Where(e => e.Sequence is not (5 or 6 or 40)).ToList();
+
+        var project = () => withGaps.SelectMany(e => projector.Apply(e).Messages).ToList();
+
+        project.Should().NotThrow().Subject[^1].Event.Should().Be(StreamEvents.FullTime);
+        projector.State.LastSequence.Should().Be(DemoRecording.Events[^1].Sequence);
+    }
+
+    [Test]
     public void Momentum_is_sent_for_each_window_once_it_closes_and_agrees_with_the_whole_match_reading()
     {
         var sent = ProjectWholeMatch().Where(m => m.Event == StreamEvents.Momentum).Select(m => (MomentumReading)m.Data).ToList();

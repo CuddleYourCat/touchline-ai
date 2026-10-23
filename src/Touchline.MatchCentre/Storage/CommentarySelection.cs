@@ -18,6 +18,9 @@ namespace Touchline.MatchCentre.Storage;
 /// </remarks>
 internal static class CommentarySelection
 {
+    /// <summary>The worst rank a line in the viewer's own mode can have.</summary>
+    public const int WorstInMode = 5;
+
     private const string _english = "en";
 
     /// <summary>Picks the viewer's line from one moment's lines.</summary>
@@ -25,18 +28,31 @@ internal static class CommentarySelection
     /// <param name="mode">The viewer's mode.</param>
     /// <param name="language">The viewer's language tag, such as <c>es-MX</c>.</param>
     /// <returns>The line to show, or null when nothing suitable is written yet.</returns>
-    public static CommentaryLine? Pick(IEnumerable<CommentaryLine> lines, ViewingMode mode, string language)
-    {
-        List<CommentaryLine> all = [.. lines];
-        var baseLanguage = language.Split('-')[0];
-        return Best(all, line => line.Mode == mode && Same(line.Language, language))
-            ?? Best(all, line => line.Mode == mode && Same(line.Language, baseLanguage))
-            ?? Best(all, line => line.Mode == mode && Same(line.Language, _english))
-            ?? Best(all, line => Same(line.Language, _english));
-    }
+    public static CommentaryLine? Pick(IEnumerable<CommentaryLine> lines, ViewingMode mode, string language) =>
+        lines.Select(line => (Line: line, Rank: Rank(line, mode, language)))
+            .Where(ranked => ranked.Rank is not null)
+            .OrderBy(ranked => ranked.Rank)
+            .Select(ranked => ranked.Line)
+            .FirstOrDefault();
 
-    private static CommentaryLine? Best(List<CommentaryLine> lines, Func<CommentaryLine, bool> matches) =>
-        lines.Where(matches).OrderByDescending(line => line.Source == CommentarySource.Model).FirstOrDefault();
+    /// <summary>
+    /// Ranks a line for a viewer, lower being better, by the steps <see cref="Pick"/> follows:
+    /// 0 and 1 for the exact language, 2 and 3 for its base, 4 and 5 for English in the viewer's
+    /// mode, 6 and 7 for English in another mode. The even rank of each pair is the model line.
+    /// </summary>
+    /// <param name="line">The line.</param>
+    /// <param name="mode">The viewer's mode.</param>
+    /// <param name="language">The viewer's language tag.</param>
+    /// <returns>The rank, or null when the line doesn't suit the viewer at all.</returns>
+    public static int? Rank(CommentaryLine line, ViewingMode mode, string language)
+    {
+        int? step = line.Mode == mode && Same(line.Language, language) ? 0
+            : line.Mode == mode && Same(line.Language, language.Split('-')[0]) ? 1
+            : line.Mode == mode && Same(line.Language, _english) ? 2
+            : Same(line.Language, _english) ? 3
+            : null;
+        return (step * 2) + (line.Source == CommentarySource.Model ? 0 : 1);
+    }
 
     private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }

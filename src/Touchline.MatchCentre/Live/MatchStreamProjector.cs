@@ -44,12 +44,18 @@ internal sealed class MatchStreamProjector
     public MatchState State => _state;
 
     /// <summary>
-    /// Feeds the next event in sequence order.
+    /// Feeds the next event in sequence order. Sequences missing before it are skipped, as the
+    /// Event Processor skips events it lost, so a match with gaps projects instead of throwing.
     /// </summary>
-    /// <param name="matchEvent">The event.</param>
+    /// <param name="matchEvent">The event, with a sequence after every one fed in so far.</param>
     /// <returns>The messages it produces.</returns>
     public Projection Apply(MatchEvent matchEvent)
     {
+        for (var missing = _state.LastSequence + 1; missing < matchEvent.Sequence; missing++)
+        {
+            _state = _state.Skip(missing);
+        }
+
         var wasFullTime = _state.FullTime;
         var messages = new List<LiveMessage>();
         var id = LiveMessage.IdFor(matchEvent.Sequence);
