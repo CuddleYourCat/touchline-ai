@@ -4,11 +4,13 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using simulator::Touchline.Simulator.Engine;
 using Touchline.Domain;
 using Touchline.Domain.Matches;
 using Touchline.Domain.Moments;
+using Touchline.Domain.Squad;
 using Touchline.Domain.Storage;
 using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
@@ -28,6 +30,7 @@ public class CosmosMatchReadModelTests
 
     private Mock<Container> _matches = null!;
     private Mock<Container> _events = null!;
+    private Mock<ICommentaryStore> _commentary = null!;
     private CosmosMatchReadModel _readModel = null!;
 
     [SetUp]
@@ -40,7 +43,44 @@ public class CosmosMatchReadModelTests
         var client = new Mock<CosmosClient>();
         client.Setup(c => c.GetContainer(CosmosNames.Database, CosmosNames.Matches)).Returns(_matches.Object);
         client.Setup(c => c.GetContainer(CosmosNames.Database, CosmosNames.Events)).Returns(_events.Object);
-        _readModel = new CosmosMatchReadModel(client.Object, _teams, new KeyMomentDetector());
+        _commentary = new Mock<ICommentaryStore>();
+        _commentary.Setup(s => s.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _readModel = new CosmosMatchReadModel(client.Object, _teams, new KeyMomentDetector(), _commentary.Object, NullLogger<CosmosMatchReadModel>.Instance);
+    }
+
+    [Test]
+    public async Task Moments_carry_the_viewers_commentary_read_fresh_on_every_call()
+    {
+        var stored = Stored(_match.Count);
+        Store(stored);
+        _events.Setup(c => c.GetItemQueryStreamIterator(It.IsAny<QueryDefinition>(), It.IsAny<string>(), It.IsAny<QueryRequestOptions>()))
+            .Returns(() => Pages(_match));
+        var first = (await _readModel.GetMomentsAsync(stored.MatchId, Viewer.Default, CancellationToken.None))![0];
+        first.Commentary.Should().BeNull("nothing is written yet");
+        var line = new CommentaryLine(stored.MatchId, first.Id, first.Sequence, MomentTier.Key, CommentarySource.Model, "What a strike.", ViewingMode.Casual, "en");
+        _commentary.Setup(s => s.GetAsync(stored.MatchId, It.IsAny<CancellationToken>())).ReturnsAsync([line]);
+
+        var moments = await _readModel.GetMomentsAsync(stored.MatchId, Viewer.Default, CancellationToken.None);
+
+        moments![0].Commentary.Should().Be(line);
+        moments.Skip(1).Should().OnlyContain(m => m.Commentary == null);
+        _commentary.Verify(s => s.GetAsync(stored.MatchId, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Test]
+    public async Task Moments_still_come_back_without_commentary_when_the_store_is_down()
+    {
+        var stored = Stored(_match.Count);
+        Store(stored);
+        _events.Setup(c => c.GetItemQueryStreamIterator(It.IsAny<QueryDefinition>(), It.IsAny<string>(), It.IsAny<QueryRequestOptions>()))
+            .Returns(() => Pages(_match));
+        _commentary.Setup(s => s.GetAsync(stored.MatchId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CosmosException("Service unavailable", HttpStatusCode.ServiceUnavailable, 0, "activity", 0));
+
+        var moments = await _readModel.GetMomentsAsync(stored.MatchId, Viewer.Default, CancellationToken.None);
+
+        moments.Should().NotBeNullOrEmpty();
+        moments.Should().OnlyContain(m => m.Commentary == null);
     }
 
     [Test]

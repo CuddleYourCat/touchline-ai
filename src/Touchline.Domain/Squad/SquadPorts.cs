@@ -157,11 +157,15 @@ public interface ISquad
 public interface ICommentaryStore
 {
     /// <summary>
-    /// Saves a line. Saving the same moment, mode and language again replaces it.
+    /// Saves a line, in one slot per moment, mode and language (the language tag normalised, so
+    /// <c>es-mx</c> and <c>es-MX</c> share a slot). A model line replaces whatever is in the slot,
+    /// a template or an older model line. A template line only fills an empty slot: if a line is
+    /// already there it's kept, so a template never replaces a model line.
     /// </summary>
     /// <param name="line">The line.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>A task that completes when the line is stored.</returns>
+    /// <returns>A task that completes when the line is stored, or kept out by a line already there.</returns>
+    /// <exception cref="ArgumentException">The line's moment ID isn't <see cref="MomentIds.For"/> its match and sequence.</exception>
     Task SaveAsync(CommentaryLine line, CancellationToken cancellationToken);
 
     /// <summary>

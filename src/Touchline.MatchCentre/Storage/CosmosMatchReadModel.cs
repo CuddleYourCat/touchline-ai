@@ -1,8 +1,10 @@
 using Microsoft.Azure.Cosmos;
+using Microsoft.Extensions.Logging;
 using Touchline.Domain.Analytics;
 using Touchline.Domain.Matches;
 using Touchline.Domain.Moments;
 using Touchline.Domain.Season;
+using Touchline.Domain.Squad;
 using Touchline.Domain.Storage;
 using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
@@ -16,21 +18,26 @@ namespace Touchline.MatchCentre.Storage;
 /// <summary>
 /// The Match Centre's read model over what the Event Processor and the season projection store
 /// in Cosmos DB (ADR-023, ADR-025, ADR-029): <c>matches</c>, <c>events</c> and
-/// <c>player-seasons</c>.
+/// <c>player-seasons</c>, with commentary from <c>commentary</c>.
 /// </summary>
 /// <remarks>
 /// Every read goes through the stream API with <c>DomainJson</c>, as the Event Processor's store
 /// does, because the SDK's default serialiser doesn't know the domain's System.Text.Json options.
 /// Moments are rebuilt by re-running the <see cref="KeyMomentDetector"/> over the stored events,
-/// so they always agree with what the processor published; commentary comes later (slice 2).
+/// so they always agree with what the processor published. Each is given the viewer's line of
+/// commentary, picked by <see cref="CommentarySelection"/>.
 /// </remarks>
 /// <param name="client">The Cosmos DB client, configured by Aspire.</param>
 /// <param name="teams">The built-in team profiles, for line-up names.</param>
 /// <param name="detector">Finds the key moments in the stored events.</param>
-public sealed class CosmosMatchReadModel(
+/// <param name="commentary">The commentary the agents have written.</param>
+/// <param name="logger">Logs a failed commentary read, after which the moments go out without it.</param>
+public sealed partial class CosmosMatchReadModel(
     CosmosClient client,
     IReadOnlyDictionary<string, TeamProfile> teams,
-    KeyMomentDetector detector) : IMatchReadModel
+    KeyMomentDetector detector,
+    ICommentaryStore commentary,
+    ILogger<CosmosMatchReadModel> logger) : IMatchReadModel
 {
     /// <summary>Every match and event is labelled as generated (CLAUDE.md club and IP rules).</summary>
     private const string _dataSource = "synthetic";
@@ -137,6 +144,10 @@ public sealed class CosmosMatchReadModel(
             return null;
         }
 
+        // Commentary changes while a match is live (a model line replaces a template line), so
+        // it's read fresh every time, even for a finished match: one single-partition query.
+        var lines = (await ReadCommentaryAsync(matchId, cancellationToken)).ToLookup(line => line.MomentId);
+
         var moments = new List<MomentView>();
         var state = MatchState.KickOff(matchId);
         foreach (var matchEvent in events)
@@ -150,7 +161,8 @@ public sealed class CosmosMatchReadModel(
 
             if (detector.Detect(matchEvent, state) is { } moment)
             {
-                moments.Add(MomentViews.From(moment, matchId, commentary: null));
+                var line = CommentarySelection.Pick(lines[MomentIds.For(matchId, matchEvent.Sequence)], viewer.Mode, viewer.Language);
+                moments.Add(MomentViews.From(moment, matchId, line));
             }
 
             state = state.Apply(matchEvent);
@@ -171,6 +183,24 @@ public sealed class CosmosMatchReadModel(
             ? CosmosQueries.ReadOneAsync<PlayerSeason>(PlayerSeasons, id, new PartitionKey(season), cancellationToken)
             : Task.FromResult<PlayerSeason?>(null);
     }
+
+    // Commentary is an extra on top of the moments, so a failed read degrades to moments with no
+    // line instead of failing the whole request. Cancellation still propagates.
+    private async Task<IReadOnlyList<CommentaryLine>> ReadCommentaryAsync(string matchId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await commentary.GetAsync(matchId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogCommentaryUnavailable(logger, exception, matchId);
+            return [];
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Commentary for {MatchId} couldn't be read, so its moments are served without it")]
+    private static partial void LogCommentaryUnavailable(ILogger logger, Exception exception, string matchId);
 
     // An ID Cosmos DB would refuse can't name a stored match, so it reads as "no such match"
     // rather than failing as a server error.

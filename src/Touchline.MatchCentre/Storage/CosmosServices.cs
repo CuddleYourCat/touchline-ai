@@ -1,4 +1,6 @@
+using Touchline.Domain.Squad;
 using Touchline.MatchCentre.Api;
+using Touchline.Storage;
 
 namespace Touchline.MatchCentre.Storage;
 
@@ -8,7 +10,7 @@ namespace Touchline.MatchCentre.Storage;
 internal static class CosmosServices
 {
     /// <summary>
-    /// Serves matches, events, moments, momentum and season cards from Cosmos DB, through a
+    /// Serves matches, events, moments with their commentary, momentum and season cards from Cosmos DB, through a
     /// keyless Aspire client (the <c>cosmos</c> connection). Not registered yet: routing between
     /// the demo and the live source is a later slice (ADR-036).
     /// </summary>
@@ -19,6 +21,7 @@ internal static class CosmosServices
         // No Cosmos DB health check: /health is the Container App's readiness probe, so an
         // outage would take every replica out of rotation and the demo fallback with it.
         builder.AddAzureCosmosClient("cosmos", settings => settings.DisableHealthChecks = true);
+        builder.Services.AddSingleton<ICommentaryStore, CosmosCommentaryStore>();
         builder.Services.AddSingleton<IMatchReadModel, CosmosMatchReadModel>();
         return builder;
     }
