@@ -3,6 +3,7 @@ using Touchline.Domain.Moments;
 using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Demo;
+using Touchline.MatchCentre.Squad;
 using Touchline.MatchCentre.Storage;
 using Touchline.MatchCentre.TeamBuilding;
 
@@ -46,6 +47,10 @@ if (MatchSources.IsCosmosConfigured(builder.Configuration))
 
 builder.Services.AddMatchSourceRouting();
 builder.Services.AddDemoTeamBuilder();
+
+// The Analyst answers fan questions (ADR-030) when Squad:FoundryEndpoint is set; without it the
+// demo squad's stand-in answers stay. After the read model and the team store, which its tools use.
+builder.Services.AddMatchCentreAnalyst(builder.Configuration);
 
 var app = builder.Build();
 

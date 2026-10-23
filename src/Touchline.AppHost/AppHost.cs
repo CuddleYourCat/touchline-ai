@@ -39,13 +39,15 @@ var eventProcessor = builder.AddAzureFunctionsProject<Projects.Touchline_EventPr
 
 // The squad's model settings (ADR-043), passed through only when set in the AppHost's
 // configuration (user secrets or environment), so a machine with no Foundry still runs the
-// processor on template commentary. No keys: the models are reached with an Entra ID token.
-foreach (var setting in new[] { "FoundryEndpoint", "ManagedIdentityClientId", "Deployments:Small", "Deployments:Large" })
+// processor on template commentary and the Match Centre on the demo's stand-in answers. Both
+// host the squad (ADR-030). No keys: the models are reached with an Entra ID token.
+var squadSettings = new[] { "FoundryEndpoint", "ManagedIdentityClientId", "Deployments:Small", "Deployments:Large" }
+    .Select(setting => (Name: $"Squad__{setting.Replace(":", "__", StringComparison.Ordinal)}", Value: builder.Configuration[$"Squad:{setting}"]))
+    .Where(setting => !string.IsNullOrEmpty(setting.Value))
+    .ToList();
+foreach (var (name, value) in squadSettings)
 {
-    if (builder.Configuration[$"Squad:{setting}"] is { Length: > 0 } value)
-    {
-        eventProcessor.WithEnvironment($"Squad__{setting.Replace(":", "__", StringComparison.Ordinal)}", value);
-    }
+    eventProcessor.WithEnvironment(name, value);
 }
 
 builder.AddProject<Projects.Touchline_Simulator>("simulator")
@@ -60,6 +62,10 @@ var matchcentre = builder.AddProject<Projects.Touchline_MatchCentre>("matchcentr
     .WithReference(cosmos)
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health");
+foreach (var (name, value) in squadSettings)
+{
+    matchcentre.WithEnvironment(name, value);
+}
 
 // The Match Centre's React UI as a Vite dev server, for local development only: its proxy sends
 // /api and /openapi to the Match Centre endpoint that WithReference injects. AddViteApp runs
