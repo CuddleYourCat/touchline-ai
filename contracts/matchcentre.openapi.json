@@ -2252,7 +2252,8 @@
         "required": [
           "id",
           "name",
-          "shortName"
+          "shortName",
+          "crestUrl"
         ],
         "type": "object",
         "properties": {
@@ -2267,6 +2268,10 @@
           "shortName": {
             "type": "string",
             "description": "The scoreboard name."
+          },
+          "crestUrl": {
+            "type": "string",
+            "description": "Where the team's crest SVG is served, so a client never builds the route itself."
           }
         },
         "description": "One side of a match, as listed."

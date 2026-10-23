@@ -105,7 +105,8 @@ public sealed record TeamDetail(TeamSummary Team, ManagerSpec? Manager, CrestSpe
 /// <param name="Id">The team ID.</param>
 /// <param name="Name">The full name.</param>
 /// <param name="ShortName">The scoreboard name.</param>
-public sealed record MatchTeam(string Id, string Name, string ShortName);
+/// <param name="CrestUrl">Where the team's crest SVG is served, so a client never builds the route itself.</param>
+public sealed record MatchTeam(string Id, string Name, string ShortName, string CrestUrl);
 
 /// <summary>
 /// A match, as listed.

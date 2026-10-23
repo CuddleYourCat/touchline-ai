@@ -173,3 +173,150 @@ code,
     width: 100%;
   }
 }
+
+.button {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+}
+
+.button:hover,
+.button:focus-visible {
+  border-color: var(--highlight);
+}
+
+/* Match list (home page) */
+.match-section {
+  margin-top: 20px;
+}
+
+.match-section h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.match-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 12px;
+}
+
+.match-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.match-card:hover,
+.match-card:focus-visible {
+  border-color: var(--highlight);
+}
+
+.match-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.match-card-teams {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.match-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.match-team-away {
+  justify-content: flex-end;
+}
+
+.match-team img {
+  flex: none;
+}
+
+.match-team-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-score,
+.match-clock {
+  font-variant-numeric: tabular-nums;
+}
+
+.match-score {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.match-clock {
+  color: var(--highlight);
+}
+
+.match-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 0.8rem;
+}
+
+.match-source {
+  margin-left: auto;
+  text-transform: lowercase;
+}
+
+.pill {
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.pill-live {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  animation: pill-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pill-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill-live {
+    animation: none;
+  }
+}

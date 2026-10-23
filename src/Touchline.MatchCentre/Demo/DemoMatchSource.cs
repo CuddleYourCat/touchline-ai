@@ -10,6 +10,7 @@ using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Live;
+using Touchline.MatchCentre.TeamBuilding;
 
 namespace Touchline.MatchCentre.Demo;
 
@@ -357,8 +358,8 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
             lap.MatchId,
             _metadata.Kind,
             state.FullTime ? MatchStatus.FullTime : MatchStatus.Live,
-            new MatchTeam(_metadata.Home.Id, _metadata.Home.Name, _metadata.Home.ShortName),
-            new MatchTeam(_metadata.Away.Id, _metadata.Away.Name, _metadata.Away.ShortName),
+            new MatchTeam(_metadata.Home.Id, _metadata.Home.Name, _metadata.Home.ShortName, TeamViews.CrestUrl(_metadata.Home.Id)),
+            new MatchTeam(_metadata.Away.Id, _metadata.Away.Name, _metadata.Away.ShortName, TeamViews.CrestUrl(_metadata.Away.Id)),
             new Score(state.Home.Goals, state.Away.Goals),
             ClockReading.From(state.Time),
             lap.KickOff,

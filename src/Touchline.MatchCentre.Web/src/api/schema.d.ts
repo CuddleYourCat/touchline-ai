@@ -708,6 +708,8 @@ export interface components {
             name: string;
             /** @description The scoreboard name. */
             shortName: string;
+            /** @description Where the team's crest SVG is served, so a client never builds the route itself. */
+            crestUrl: string;
         };
         /**
          * @description The match clock as a broadcaster shows it. The second half starts at 45:00, so added

@@ -8,6 +8,7 @@ using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Live;
+using Touchline.MatchCentre.TeamBuilding;
 using Touchline.Storage;
 
 namespace Touchline.MatchCentre.Storage;
@@ -208,8 +209,8 @@ public sealed class CosmosMatchReadModel(
         new(match.MatchId,
             metadata.Kind,
             match.State.FullTime ? MatchStatus.FullTime : MatchStatus.Live,
-            new MatchTeam(metadata.Home.Id, metadata.Home.Name, metadata.Home.ShortName),
-            new MatchTeam(metadata.Away.Id, metadata.Away.Name, metadata.Away.ShortName),
+            new MatchTeam(metadata.Home.Id, metadata.Home.Name, metadata.Home.ShortName, TeamViews.CrestUrl(metadata.Home.Id)),
+            new MatchTeam(metadata.Away.Id, metadata.Away.Name, metadata.Away.ShortName, TeamViews.CrestUrl(metadata.Away.Id)),
             new Score(match.State.Home.Goals, match.State.Away.Goals),
             ClockReading.From(match.State.Time),
             metadata.KickOffUtc,
