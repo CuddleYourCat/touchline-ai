@@ -31,9 +31,10 @@ namespace Touchline.Agents;
 /// sentence, and an unlisted ordinary word opening a sentence (<c>Clinical finish.</c>) is
 /// flagged: a false positive costs one retry. It doesn't catch a first
 /// name of one player joined to another's surname, names written in lower case, or a real
-/// person whose name is all common words. Capitalised non-names mid-sentence that aren't in
-/// the word list (a nationality such as <c>Spanish</c>, a city) are flagged: a false positive
-/// costs one retry and, at worst, the template line, which ADR-044 accepts.</para>
+/// person whose name is all common words. Common nationalities and continents are in the word
+/// list, so <c>a Spanish midfielder</c> passes, but other capitalised non-names mid-sentence
+/// (a city) are flagged: a false positive costs one retry and, at worst, the template line,
+/// which ADR-044 accepts.</para>
 /// </remarks>
 public static partial class RosterGuardrail
 {
@@ -63,6 +64,15 @@ public static partial class RosterGuardrail
             // Days and months.
             "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february",
             "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+            // Nationalities and continents: capitalised in English, lower case in Spanish and French
+            // (the continents are capitalised in all three).
+            "english", "spanish", "french", "german", "dutch", "brazilian", "argentine", "argentinian", "italian",
+            "portuguese", "belgian", "irish", "scottish", "welsh", "british", "croatian", "danish", "swedish",
+            "norwegian", "polish", "swiss", "austrian", "czech", "serbian", "turkish", "uruguayan", "colombian",
+            "mexican", "american", "canadian", "nigerian", "ghanaian", "senegalese", "ivorian", "moroccan",
+            "egyptian", "japanese", "korean", "australian", "european", "african", "asian", "europe", "africa",
+            "asia", "america", "americas", "oceania", "australia", "europa", "afrique", "amerique", "asie",
+            "oceanie",
             // Spanish and French.
             "gol", "penalti", "penal", "arbitro", "portero", "el", "la", "los", "las", "un",
             "una", "y", "que", "pero", "arbitre", "gardien", "le", "les", "une", "et", "quel", "quelle",
@@ -104,7 +114,48 @@ public static partial class RosterGuardrail
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(rosterNames);
 
+        return Find(text, KnownPhrases(rosterNames.Concat(otherKnownNames ?? [])), skipSentenceOpeners: false);
+    }
+
+    /// <summary>
+    /// Returns the capitalised personal names in a translation of already-approved lines that
+    /// aren't on the match's rosters, among the other known names, or in the approved lines.
+    /// </summary>
+    /// <remarks>
+    /// The approved source lines have already passed the guardrail, so this check is looser in
+    /// two ways: every sentence's opening word is skipped (a Spanish or French opener such as
+    /// <c>Qué</c> or <c>Superbe</c> isn't a name), and every capitalised word from the approved
+    /// lines is known. A capitalised word mid-sentence that isn't known is still flagged.
+    /// </remarks>
+    /// <param name="text">The translated text.</param>
+    /// <param name="rosterNames">Every player's full name, from both teams' rosters.</param>
+    /// <param name="otherKnownNames">Other names that may appear: team names and short names, venues, the referee.</param>
+    /// <param name="approvedSourceLines">The approved lines the translation was made from.</param>
+    /// <returns>The unknown names, as written, first appearance first, without duplicates. Empty when the text is clean.</returns>
+    public static IReadOnlyList<string> FindUnknownNames(
+        string text,
+        IEnumerable<string> rosterNames,
+        IEnumerable<string>? otherKnownNames,
+        IEnumerable<string> approvedSourceLines)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(rosterNames);
+        ArgumentNullException.ThrowIfNull(approvedSourceLines);
+
         var known = KnownPhrases(rosterNames.Concat(otherKnownNames ?? []));
+        foreach (var run in approvedSourceLines.SelectMany(line => Runs(line ?? "")))
+        {
+            foreach (var word in run.Words.Where(IsCapitalised))
+            {
+                known.Add(Normalise(word));
+            }
+        }
+
+        return Find(text, known, skipSentenceOpeners: true);
+    }
+
+    private static List<string> Find(string text, HashSet<string> known, bool skipSentenceOpeners)
+    {
         var unknown = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
@@ -114,8 +165,8 @@ public static partial class RosterGuardrail
             int start = 0;
             var first = Normalise(words[0]);
             if (run.AtSentenceStart
-                && !known.Contains(first)
-                && (_commonWords.Contains(first) || _openers.Contains(first)))
+                && (skipSentenceOpeners
+                    || (!known.Contains(first) && (_commonWords.Contains(first) || _openers.Contains(first)))))
             {
                 start = 1;
             }

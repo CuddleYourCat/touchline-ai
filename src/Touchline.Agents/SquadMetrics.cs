@@ -14,6 +14,12 @@ public sealed class SquadMetrics
     /// <summary>The token counter's name.</summary>
     public const string TokenCounterName = "touchline.agents.tokens";
 
+    /// <summary>The fallback counter's name: a model line replaced by a template, or a language skipped.</summary>
+    public const string FallbackCounterName = "touchline.agents.fallbacks";
+
+    /// <summary>The tag saying why a fallback happened, such as <c>failed</c> or <c>guardrail</c>.</summary>
+    public const string ReasonTag = "touchline.fallback.reason";
+
     /// <summary>The tag naming the agent.</summary>
     public const string AgentTag = "touchline.agent";
 
@@ -24,6 +30,7 @@ public sealed class SquadMetrics
     public const string TokenTypeTag = "gen_ai.token.type";
 
     private readonly Counter<long> _tokens;
+    private readonly Counter<long> _fallbacks;
 
     /// <summary>Creates the squad's meter from the host's meter factory.</summary>
     /// <param name="meterFactory">The host's meter factory, which owns the meter's lifetime.</param>
@@ -35,7 +42,20 @@ public sealed class SquadMetrics
             TokenCounterName,
             unit: "{token}",
             description: "Tokens sent to and received from the squad's models, by agent and model.");
+        _fallbacks = meter.CreateCounter<long>(
+            FallbackCounterName,
+            unit: "{fallback}",
+            description: "Times an agent's output was replaced by a template or skipped, by agent and reason.");
     }
+
+    /// <summary>Records one fallback: a template line used, or a language skipped.</summary>
+    /// <param name="agent">The agent whose output was replaced or skipped.</param>
+    /// <param name="reason">Why, such as <c>failed</c>, <c>guardrail</c> or <c>store-failed</c>.</param>
+    public void RecordFallback(SquadAgent agent, string reason) =>
+        _fallbacks.Add(
+            1,
+            new KeyValuePair<string, object?>(AgentTag, agent.ToString()),
+            new KeyValuePair<string, object?>(ReasonTag, reason));
 
     /// <summary>Records one call's token usage.</summary>
     /// <param name="agent">The agent that made the call.</param>

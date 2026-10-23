@@ -57,4 +57,30 @@ public sealed class RosterGuardrailTests
     public void Each_unknown_name_is_reported_once() =>
         RosterGuardrail.FindUnknownNames("Pass to John Smith. Back to John Smith again.", _roster, _others)
             .Should().Equal("John Smith");
+
+    [TestCase("Okafor, a Spanish midfielder, curls it in.")]
+    [TestCase("The best Brazilian finish of the season from Mensah.")]
+    [TestCase("Mensah has scored in Europe and Africa.")]
+    public void A_nationality_or_continent_is_not_flagged(string text) =>
+        RosterGuardrail.FindUnknownNames(text, _roster, _others).Should().BeEmpty();
+
+    [TestCase("¡Qué golazo de Okafor!")]
+    [TestCase("Quel but ! Superbe finition de Mensah.")]
+    [TestCase("Increíble. Golazo de Okafor en Harbour Lane.")]
+    public void A_translation_opening_with_an_ordinary_word_passes(string text) =>
+        RosterGuardrail.FindUnknownNames(text, _roster, _others, ["What a goal from Okafor!"]).Should().BeEmpty();
+
+    [Test]
+    public void A_translation_may_use_capitalised_words_from_the_approved_lines() =>
+        RosterGuardrail.FindUnknownNames(
+                "Un remate de Okafor con xG, segundo palo para el Wanderers.",
+                _roster,
+                _others,
+                ["Okafor's xG shot finds the far post for the Wanderers."])
+            .Should().BeEmpty();
+
+    [Test]
+    public void A_translation_with_an_unknown_name_mid_sentence_is_caught() =>
+        RosterGuardrail.FindUnknownNames("Gran pase de Haaland", _roster, _others, ["Great pass from Okafor."])
+            .Should().Equal("Haaland");
 }

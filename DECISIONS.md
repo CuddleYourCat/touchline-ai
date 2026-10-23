@@ -1324,7 +1324,9 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 **Status:** Accepted · 22 Oct, lane D (builds on ADR-006)
 
 **Decision**
-**Write, check, fan out.** The Commentator writes the Casual and Analyst lines in one structured call (small model). The roster guardrail checks them. Then Localisers translate concurrently, using the workflow's fan-out and fan-in edges, and every line is stored through `ICommentaryStore`. The workflow is the orchestrator. The Analyst (Q&A) and Producer (recap) have their own workflows behind `ISquad`, on the large model. Built on `Microsoft.Agents.AI.Workflows` 1.25.0 (GA), and exposed as an agent with `AsAIAgent()`.
+**Write, check, fan out.** The Commentator writes the Casual and Analyst lines in one structured call (small model). The roster guardrail checks them. Then Localisers translate concurrently, using the workflow's fan-out and fan-in edges, and every line is stored through `ICommentaryStore`. The workflow is the orchestrator. The Analyst (Q&A) and Producer (recap) have their own workflows behind `ISquad`, on the large model. Built on `Microsoft.Agents.AI.Workflows` 1.25.0 (GA), and called as a typed workflow through `CommentaryWorkflow.RunAsync`.
+
+**Amended (23 Oct, PR #29): not exposed with `AsAIAgent()`.** `Workflow.AsAIAgent()` in Agent Framework 1.25.0 needs a chat-protocol start executor that takes `List<ChatMessage>` and a `TurnToken`, and yields its output as chat messages. The commentary workflow starts from a typed key moment and match context, builds a fresh graph for each run, and writes to the store rather than replying. Wrapping it as a chat agent would mean serialising the typed input to JSON and adding an executor that carries no logic, so it stays a typed workflow called through `RunAsync`. The Analyst and Producer, which do answer in chat, are the candidates for an agent surface (lane D slices 4 and 5).
 
 **Alternatives considered:** the Analyst alongside the Commentator on every key moment (richer, but the large model runs about 30 times a match); the Commentator alone (a weak multi-agent story).
 
