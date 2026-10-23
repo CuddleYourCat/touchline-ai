@@ -320,3 +320,100 @@ code,
     animation: none;
   }
 }
+
+/* Live match page */
+.match-live {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.banner {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-family: var(--font-data);
+}
+
+.scoreboard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scoreboard-teams {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.scoreboard-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.scoreboard-score {
+  font-size: 2.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.moment {
+  display: grid;
+  grid-template-columns: 4.5em 1fr;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.moment-clock {
+  color: var(--highlight);
+  font-variant-numeric: tabular-nums;
+}
+
+.moment-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.moment-text,
+.moment-analysis {
+  margin: 6px 0 0;
+}
+
+.moment-analysis {
+  font-size: 0.9rem;
+}
+
+.pill-key {
+  border-color: var(--highlight);
+  color: var(--highlight);
+}
+
+.tag {
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
