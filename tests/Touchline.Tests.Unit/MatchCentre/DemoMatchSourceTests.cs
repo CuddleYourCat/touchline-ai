@@ -64,9 +64,9 @@ public class DemoMatchSourceTests
         var moments = await _source.GetMomentsAsync("demo-1", Viewer.Default, CancellationToken.None);
 
         match!.Summary.Status.Should().Be(MatchStatus.FullTime);
-        match.State.Score.Should().Be(new Score(3, 2));
+        match.State.Score.Should().Be(new Score(3, 3));
         match.State.LastSequence.Should().Be(DemoRecording.Events.Count);
-        moments.Should().HaveCount(8);
+        moments.Should().HaveCount(9);
         moments!.Should().OnlyContain(m => m.Commentary!.Source == CommentarySource.Template && m.Id.StartsWith("demo-1:", StringComparison.Ordinal));
     }
 
@@ -85,13 +85,16 @@ public class DemoMatchSourceTests
     [TestCase("demo-0")]
     [TestCase("demo-01", Description = "not the canonical spelling")]
     [TestCase("demo-x")]
-    [TestCase("north-bank-fc-v-thames-valley-united-174")]
     public async Task Anything_but_a_lap_that_has_kicked_off_is_no_match(string matchId)
     {
         (await _source.GetMatchAsync(matchId, CancellationToken.None)).Should().BeNull();
         (await _source.GetEventsAsync(matchId, 0, 10, CancellationToken.None)).Should().BeNull();
         (await _source.GetMomentumAsync(matchId, CancellationToken.None)).Should().BeNull();
     }
+
+    [Test]
+    public Task The_recordings_own_match_id_is_no_match() =>
+        Anything_but_a_lap_that_has_kicked_off_is_no_match(DemoRecording.Events[0].MatchId);
 
     [Test]
     public async Task Events_come_in_pages_relabelled_with_the_lap_and_only_up_to_now()

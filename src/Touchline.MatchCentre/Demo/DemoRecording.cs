@@ -7,16 +7,17 @@ using Touchline.Domain.Matches;
 namespace Touchline.MatchCentre.Demo;
 
 /// <summary>
-/// The recorded demo match: seed 174, North Bank FC against Thames Valley United, a 3–2 with two
-/// penalties. It's real simulator output, stored as gzipped JSON lines (one event a line,
-/// <see cref="DomainJson"/>) and embedded in the assembly. A unit test replays the seed and
+/// The recorded demo match: seed 572, North Bank FC against Thames Valley United, a 3–3 with
+/// action from the first minute and a stoppage-time penalty and goal. It's real simulator
+/// output, stored as gzipped JSON lines (one event a line, <see cref="DomainJson"/>) and
+/// embedded in the assembly. A unit test replays the seed and
 /// fails if the engine no longer produces this exact match, so the recording can't drift
 /// unnoticed.
 /// </summary>
 internal static class DemoRecording
 {
     /// <summary>The seed the match was played with.</summary>
-    public const int Seed = 174;
+    public const int Seed = 572;
 
     /// <summary>The home team.</summary>
     public const string HomeTeamId = "north-bank-fc";

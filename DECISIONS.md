@@ -1086,10 +1086,11 @@ Everything is under `/api`, JSON in camelCase with enums as strings (as `DomainJ
 - **Heartbeats are an `event: heartbeat` message** with no `id`, not an SSE comment, because .NET's `SseItem<T>` can't write a comment. It goes out after 15 quiet seconds (`MatchCentre:Stream:HeartbeatInterval`).
 - **`fulltime` carries the final `LiveState` only.** A client asks for the recap, and gets `409` before full time and `503` if the squad is down.
 - **A fan's question is at most 280 characters,** checked before any model sees it. It bounds the input tokens a question can cost.
-- **The demo match is seed 174,** a 3–2 with two penalties and eight key moments. It's committed as gzipped JSON lines (56 KB), and a test fails if the engine no longer plays exactly that match for that seed. It replays in **laps** (`demo-1`, `demo-2` and so on) on one clock that starts with the service, at 10× by default, with a minute between laps. Each lap has its own ID, so stream IDs never go backwards within a match.
+- **The demo match is seed 572,** a 3–3 with nine key moments, the first in the opening minute and a penalty and goal in stoppage time. It's committed as gzipped JSON lines (55 KB), and a test fails if the engine no longer plays exactly that match for that seed. It replays in **laps** (`demo-1`, `demo-2` and so on) on one clock that starts with the service, at 10× by default, with a minute between laps. Each lap has its own ID, so stream IDs never go backwards within a match.
 - **Where the ports live.** The ports that cross services (`ISquad`, `ICommentaryStore`, `IPossessionSearch`, and the `Viewer`) are in `Touchline.Domain`, so the agent and search libraries implement them without depending on the Match Centre. The Match Centre-only ports (`IMatchReadModel`, `ILiveFeed`) live in the Match Centre.
 - **One projector for both feeds.** `MatchStreamProjector` turns events into stream messages (event, state, moment, momentum, full time), so the demo replay and the change-feed reader produce identical streams.
 - **Stand-ins until their lanes land.** The demo's commentary is the detector's reason, its overlay is a plain card, and its squad answers from the score and moments only, starting with "The Analyst isn't connected in this demo build". No model is called.
+- **Demo seed changed (23 Oct).** The demo moved from seed 174 (a 3–2 with no key moment before 47') to seed 572 for a livelier first half.
 
 ---
 

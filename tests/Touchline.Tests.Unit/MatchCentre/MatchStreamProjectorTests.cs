@@ -40,8 +40,8 @@ public class MatchStreamProjectorTests
     {
         var moments = ProjectWholeMatch().Where(m => m.Event == StreamEvents.Moment).Select(m => (MomentView)m.Data).ToList();
 
-        moments.Should().HaveCount(8);
-        moments.Count(m => m.Kind == nameof(KeyMomentKind.Goal)).Should().Be(5);
+        moments.Should().HaveCount(9);
+        moments.Count(m => m.Kind == nameof(KeyMomentKind.Goal)).Should().Be(6);
         moments.Should().OnlyContain(m => m.Id == $"{DemoRecording.Events[0].MatchId}:{m.Sequence}");
     }
 
@@ -52,7 +52,7 @@ public class MatchStreamProjectorTests
 
         messages.Count(m => m.Event == StreamEvents.FullTime).Should().Be(1);
         messages[^1].Event.Should().Be(StreamEvents.FullTime);
-        ((LiveState)messages[^1].Data).Score.Should().Be(new Score(3, 2));
+        ((LiveState)messages[^1].Data).Score.Should().Be(new Score(3, 3));
     }
 
     [Test]

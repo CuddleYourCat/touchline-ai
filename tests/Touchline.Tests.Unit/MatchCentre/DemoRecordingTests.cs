@@ -4,8 +4,11 @@ using FluentAssertions;
 using simulator::Touchline.Simulator.Engine;
 using Touchline.Domain;
 using Touchline.Domain.Matches;
+using Touchline.Domain.Moments;
 using Touchline.Domain.Teams;
+using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Demo;
+using Touchline.MatchCentre.Live;
 
 namespace Touchline.Tests.Unit.MatchCentre;
 
@@ -29,12 +32,23 @@ public class DemoRecordingTests
     }
 
     [Test]
-    public void The_recording_is_the_three_two_with_two_penalties_the_demo_promises()
+    public void The_recording_is_the_lively_three_three_the_demo_promises()
     {
-        var final = DemoRecording.Events.Aggregate(MatchState.KickOff(DemoRecording.Events[0].MatchId), (state, e) => state.Apply(e));
+        // Projected the way viewers get it, so the promise is about the timeline the demo shows.
+        var projector = new MatchStreamProjector(
+            DemoRecording.Events[0].MatchId, new KeyMomentDetector(teams: TeamProfileCatalog.LoadEmbedded().Values));
+        var projections = DemoRecording.Events.Select(projector.Apply).ToList();
+        var moments = projections.Select(p => p.Moment).OfType<KeyMoment>().ToList();
+        var final = projections[^1].State;
 
         final.FullTime.Should().BeTrue();
-        final.Score.Should().Be("3–2");
+        final.Score.Should().Be("3–3");
+        moments.Should().NotBeEmpty();
+        moments[0].Trigger.Time.Clock.Should().BeLessThan(TimeSpan.FromMinutes(2), "the demo should have action from the first minute");
+        moments.Count(m => m.Trigger.Time.Period == MatchPeriod.FirstHalf).Should().BeGreaterThanOrEqualTo(4);
+        moments.Count(m => m.Trigger.Time.Period == MatchPeriod.SecondHalf).Should().BeGreaterThanOrEqualTo(4);
+        moments.Should().Contain(m => m.Kind == KeyMomentKind.PenaltyAwarded && m.Trigger.Time.Clock >= TimeSpan.FromMinutes(90));
+        projections.SelectMany(p => p.Messages).Count(m => m.Event == StreamEvents.Moment).Should().Be(moments.Count);
     }
 
     [Test]
