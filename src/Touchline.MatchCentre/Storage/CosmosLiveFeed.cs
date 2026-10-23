@@ -13,6 +13,13 @@ internal sealed class CosmosLiveFeed(LiveMatchHubs hubs) : ILiveFeed
 {
     /// <inheritdoc />
     /// <remarks>
+    /// Loads the match's hub, which waits a bounded time for the change feed to start, so the
+    /// stream that follows finds it ready.
+    /// </remarks>
+    public Task PrepareAsync(string matchId, CancellationToken cancellationToken) => hubs.GetAsync(matchId, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>
     /// With no <paramref name="after"/> the stream starts with a state snapshot, as the demo does;
     /// otherwise it replays the hub's messages after it. Then it follows live, and ends after
     /// <see cref="StreamEvents.FullTime"/> or when the hub is evicted.

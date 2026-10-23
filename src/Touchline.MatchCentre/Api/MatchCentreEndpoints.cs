@@ -185,6 +185,8 @@ internal static partial class MatchCentreEndpoints
             return NoMatch(matchId);
         }
 
+        // Before the response starts: a source that's down becomes a 503, not a stream that hangs.
+        await feed.PrepareAsync(matchId, cancellationToken);
         var messages = HeartbeatStream.WithHeartbeats(
             feed.FollowAsync(matchId, from, viewer, cancellationToken),
             options.Value.HeartbeatInterval,

@@ -1,5 +1,6 @@
 using Touchline.Domain.Squad;
 using Touchline.MatchCentre.Api;
+using Touchline.MatchCentre.Storage;
 
 namespace Touchline.MatchCentre.Demo;
 
@@ -9,7 +10,8 @@ namespace Touchline.MatchCentre.Demo;
 internal static class DemoServices
 {
     /// <summary>
-    /// Serves the recorded match as the read model, the live feed and the squad.
+    /// Serves the recorded match as the squad, and as the read model and the live feed keyed
+    /// <see cref="MatchSources.Demo"/>, for the routers to serve its <c>demo-*</c> IDs (ADR-036).
     /// </summary>
     /// <param name="services">The services.</param>
     /// <returns>The services, for chaining.</returns>
@@ -21,8 +23,8 @@ internal static class DemoServices
             .ValidateOnStart();
 
         services.AddSingleton(provider => ActivatorUtilities.CreateInstance<DemoMatchSource>(provider, DemoRecording.Events));
-        services.AddSingleton<IMatchReadModel>(provider => provider.GetRequiredService<DemoMatchSource>());
-        services.AddSingleton<ILiveFeed>(provider => provider.GetRequiredService<DemoMatchSource>());
+        services.AddKeyedSingleton<IMatchReadModel>(MatchSources.Demo, (provider, _) => provider.GetRequiredService<DemoMatchSource>());
+        services.AddKeyedSingleton<ILiveFeed>(MatchSources.Demo, (provider, _) => provider.GetRequiredService<DemoMatchSource>());
         services.AddSingleton<ISquad, DemoSquad>();
         return services;
     }

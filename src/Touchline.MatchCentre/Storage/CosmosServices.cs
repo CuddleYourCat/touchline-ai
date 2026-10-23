@@ -1,4 +1,8 @@
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Touchline.Domain.Moments;
 using Touchline.Domain.Squad;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Live;
@@ -13,8 +17,8 @@ internal static class CosmosServices
 {
     /// <summary>
     /// Serves matches, events, moments with their commentary, momentum and season cards from Cosmos DB, through a
-    /// keyless Aspire client (the <c>cosmos</c> connection). Not registered yet: routing between
-    /// the demo and the live source is a later slice (ADR-036).
+    /// keyless Aspire client (the <c>cosmos</c> connection). The read model is keyed
+    /// <see cref="MatchSources.Cosmos"/>, for the router to serve every non-demo ID (ADR-036).
     /// </summary>
     /// <param name="builder">The host builder.</param>
     /// <returns>The builder, for chaining.</returns>
@@ -24,14 +28,14 @@ internal static class CosmosServices
         // outage would take every replica out of rotation and the demo fallback with it.
         builder.AddAzureCosmosClient("cosmos", settings => settings.DisableHealthChecks = true);
         builder.Services.AddSingleton<ICommentaryStore, CosmosCommentaryStore>();
-        builder.Services.AddSingleton<IMatchReadModel, CosmosMatchReadModel>();
+        builder.Services.AddKeyedSingleton<IMatchReadModel, CosmosMatchReadModel>(MatchSources.Cosmos);
         return builder;
     }
 
     /// <summary>
     /// Serves the live stream from the Cosmos DB change feed (ADR-037): the pull-model source, the
-    /// replica's hubs, the background reader that feeds them, and the <see cref="ILiveFeed"/>.
-    /// Needs <see cref="AddCosmosReadModel"/>. Not registered yet: routing by match ID is slice 4.
+    /// replica's hubs, the background reader that feeds them, and the <see cref="ILiveFeed"/>
+    /// keyed <see cref="MatchSources.Cosmos"/>. Needs <see cref="AddCosmosReadModel"/>.
     /// </summary>
     /// <param name="builder">The host builder.</param>
     /// <returns>The builder, for chaining.</returns>
@@ -39,9 +43,15 @@ internal static class CosmosServices
     {
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IChangeFeedSource, CosmosChangeFeedSource>();
-        builder.Services.AddSingleton(provider => ActivatorUtilities.CreateInstance<LiveMatchHubs>(provider, LiveMatchHubs.DefaultBuffer));
+        builder.Services.AddOptions<LiveFeedOptions>()
+            .BindConfiguration(LiveFeedOptions.SectionName)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        // Built by the container, so every parameter (the options included, and any added later)
+        // resolves from DI; the buffer keeps its default.
+        builder.Services.AddSingleton<LiveMatchHubs>();
         builder.Services.AddHostedService<ChangeFeedReader>();
-        builder.Services.AddSingleton<ILiveFeed, CosmosLiveFeed>();
+        builder.Services.AddKeyedSingleton<ILiveFeed, CosmosLiveFeed>(MatchSources.Cosmos);
         return builder;
     }
 }

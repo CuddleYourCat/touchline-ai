@@ -3,6 +3,7 @@ using Touchline.Domain.Moments;
 using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Demo;
+using Touchline.MatchCentre.Storage;
 using Touchline.MatchCentre.TeamBuilding;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -32,9 +33,18 @@ builder.Services.AddMatchCentreRateLimits();
 builder.Services.AddSingleton(provider =>
     new KeyMomentDetector(teams: provider.GetRequiredService<IReadOnlyDictionary<string, TeamProfile>>().Values));
 
-// The recorded match behind every port, until the live read side (ADR-029) and the agents
-// (ADR-030) arrive. Those lanes register their own implementations instead of this.
+// Matches are routed by ID (ADR-036): demo-* IDs from the recording, every other ID from Cosmos DB
+// when a cosmos connection is configured. Without one (tests, a plain dotnet run) the app is
+// demo-only. Cosmos DB stays out of both health checks, so an outage never restarts a replica or
+// takes it out of rotation; the routers answer its IDs with a 503 instead.
 builder.Services.AddDemoMatch();
+if (MatchSources.IsCosmosConfigured(builder.Configuration))
+{
+    builder.AddCosmosReadModel();
+    builder.AddCosmosLiveFeed();
+}
+
+builder.Services.AddMatchSourceRouting();
 builder.Services.AddDemoTeamBuilder();
 
 var app = builder.Build();

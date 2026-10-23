@@ -72,4 +72,14 @@ public interface ILiveFeed
     /// <param name="cancellationToken">Cancels the stream, when the client disconnects.</param>
     /// <returns>The messages, as they happen.</returns>
     IAsyncEnumerable<LiveMessage> FollowAsync(string matchId, long? after, Viewer viewer, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Checks the feed can serve the match, before the stream's response starts, so a source
+    /// that's down is refused with a status code rather than a stream that hangs. A source with
+    /// nothing to check leaves this as it is.
+    /// </summary>
+    /// <param name="matchId">The match, which the caller has already checked exists.</param>
+    /// <param name="cancellationToken">Cancels the check.</param>
+    /// <returns>Completes when the feed is ready.</returns>
+    Task PrepareAsync(string matchId, CancellationToken cancellationToken) => Task.CompletedTask;
 }

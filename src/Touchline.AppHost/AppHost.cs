@@ -7,8 +7,10 @@ var matchEvents = eventHubs.AddHub("match-events");
 
 var serviceBus = builder.AddAzureServiceBus("servicebus").RunAsEmulator();
 var keyMoments = serviceBus.AddServiceBusTopic("key-moments");
-keyMoments.AddServiceBusSubscription("commentary");
-keyMoments.AddServiceBusSubscription("highlights");
+// Aspire resource names are unique across the whole app, and "commentary" is also a Cosmos DB
+// container, so the subscriptions get prefixed resource names and keep their real names.
+keyMoments.AddServiceBusSubscription("key-moments-commentary", subscriptionName: "commentary");
+keyMoments.AddServiceBusSubscription("key-moments-highlights", subscriptionName: "highlights");
 
 // The Cosmos DB emulator, with its Data Explorer, so stored events can be browsed locally.
 var cosmos = builder.AddAzureCosmosDB("cosmos").RunAsEmulator(emulator => emulator.WithDataExplorer());
