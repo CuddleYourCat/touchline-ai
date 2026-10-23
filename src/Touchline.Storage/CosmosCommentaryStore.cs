@@ -4,6 +4,7 @@ using Microsoft.Azure.Cosmos;
 using Touchline.Domain;
 using Touchline.Domain.Squad;
 using Touchline.Domain.Storage;
+using Touchline.Domain.Viewing;
 
 namespace Touchline.Storage;
 
@@ -111,5 +112,28 @@ public sealed class CosmosCommentaryStore(CosmosClient client) : ICommentaryStor
 
         return await CosmosQueries.ReadAllAsync<CommentaryLine>(
             Commentary, new QueryDefinition(MatchQuery), new PartitionKey(matchId), cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<CommentaryLine?> FindAsync(
+        string matchId, string momentId, ViewingMode mode, string language, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(momentId);
+        ArgumentNullException.ThrowIfNull(language);
+        var id = $"{momentId}:{mode}:{NormaliseLanguage(language)}";
+        if (!CosmosIds.IsValid(matchId) || !CosmosIds.IsValid(id))
+        {
+            return null;
+        }
+
+        // A point read on the slot's ID: one request unit, where a query costs more.
+        using var response = await Commentary.ReadItemStreamAsync(id, new PartitionKey(matchId), cancellationToken: cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await JsonSerializer.DeserializeAsync<CommentaryLine>(response.Content, DomainJson.Options, cancellationToken);
     }
 }

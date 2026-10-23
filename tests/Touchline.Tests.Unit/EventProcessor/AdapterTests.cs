@@ -39,6 +39,21 @@ public class AdapterTests
     }
 
     [Test]
+    public void A_key_moment_message_carries_the_score_and_an_older_one_without_it_still_reads()
+    {
+        var goal = Match().First(e => e.IsGoal);
+
+        var body = JsonNode.Parse(ServiceBusKeyMomentPublisher.ToMessage(new KeyMoment(KeyMomentKind.Goal, goal, "GOAL!", HomeScore: 2, AwayScore: 1)).Body.ToString())!;
+        var older = body.DeepClone().AsObject();
+        older.Remove("homeScore");
+        older.Remove("awayScore");
+
+        ((int?)body["homeScore"], (int?)body["awayScore"]).Should().Be((2, 1));
+        var read = JsonSerializer.Deserialize<KeyMoment>(older.ToJsonString(), DomainJson.Options)!;
+        (read.HomeScore, read.AwayScore).Should().Be((null, null));
+    }
+
+    [Test]
     public async Task An_event_is_stored_as_its_own_json_with_its_sequence_as_the_document_id()
     {
         var written = new List<(JsonObject Document, PartitionKey Partition)>();

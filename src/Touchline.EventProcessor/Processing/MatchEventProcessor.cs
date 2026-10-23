@@ -9,7 +9,8 @@ namespace Touchline.EventProcessor.Processing;
 /// <summary>
 /// Processes a batch from the event stream (ADR-023). For each match in it: check each
 /// envelope, read the events a tolerant reader accepts, apply them to the match state in
-/// order, detect key moments, then store the events, publish the moments and store the state.
+/// order, detect key moments, then store the events (and any new metadata), publish the moments
+/// and store the state.
 /// </summary>
 /// <remarks>
 /// Delivery is at least once, so a batch can arrive again. The stored state's last sequence
@@ -101,12 +102,15 @@ public sealed partial class MatchEventProcessor(
                 continue;
             }
 
-            if (detector.Detect(matchEvent, state) is { } moment)
+            // The detector reads the state before the event; the published moment carries the
+            // score after it, which the commentary needs and only this loop knows.
+            var moment = detector.Detect(matchEvent, state);
+            state = state.Apply(matchEvent);
+            if (moment is not null)
             {
-                moments.Add(moment);
+                moments.Add(moment with { HomeScore = state.Home.Goals, AwayScore = state.Away.Goals });
             }
 
-            state = state.Apply(matchEvent);
             metadata = matchEvent.Metadata ?? metadata;
             stored.Add(matchEvent);
         }
@@ -126,6 +130,17 @@ public sealed partial class MatchEventProcessor(
         }
 
         await store.UpsertEventsAsync(matchId, stored, cancellationToken);
+
+        // The commentary function reads the match document's metadata (the line-ups) for each
+        // moment, so new metadata is written before the moments go out. Only the metadata: the
+        // state, the watermark, still goes last, so a failed publish leaves the batch to be
+        // processed and its moments published again. Both writes are upserts of the same
+        // document, so a redelivery repeats them harmlessly.
+        if (moments.Count > 0 && record.Metadata is null && metadata is not null)
+        {
+            await store.UpsertMatchAsync(record with { Metadata = metadata }, cancellationToken);
+        }
+
         await publisher.PublishAsync(moments, cancellationToken);
         await store.UpsertMatchAsync(record with { Metadata = metadata, State = state }, cancellationToken);
 

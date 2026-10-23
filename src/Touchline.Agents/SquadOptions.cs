@@ -46,6 +46,13 @@ public sealed class SquadOptions
     /// <see cref="DefaultLanguages"/>.
     /// </summary>
     public IList<string> Languages { get; set; } = [];
+
+    /// <summary>
+    /// Whether the squad has models to call. True by default; the host's no-Foundry registration
+    /// sets it false, so the workflows go straight to their template lines instead of making
+    /// calls that are bound to fail.
+    /// </summary>
+    public bool ModelsAvailable { get; set; } = true;
 }
 
 /// <summary>The model deployment name for each model size (ADR-007).</summary>

@@ -27,4 +27,8 @@ builder.Services.AddSingleton<MatchEventProcessor>();
 builder.Services.AddSingleton<ISeasonStore, CosmosSeasonStore>();
 builder.Services.AddSingleton<SeasonProjector>();
 
+// The live commentary on the key-moments topic (ADR-030). Without Squad:FoundryEndpoint the
+// models are stand-ins that always fail, so every moment gets its template lines.
+builder.Services.AddLiveCommentary(builder.Configuration);
+
 await builder.Build().RunAsync();

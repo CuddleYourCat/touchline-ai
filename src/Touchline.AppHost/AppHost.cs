@@ -35,6 +35,17 @@ var eventProcessor = builder.AddAzureFunctionsProject<Projects.Touchline_EventPr
     .WithReference(cosmos).WaitFor(cosmos)
     .WithReference(serviceBus).WaitFor(serviceBus);
 
+// The squad's model settings (ADR-043), passed through only when set in the AppHost's
+// configuration (user secrets or environment), so a machine with no Foundry still runs the
+// processor on template commentary. No keys: the models are reached with an Entra ID token.
+foreach (var setting in new[] { "FoundryEndpoint", "ManagedIdentityClientId", "Deployments:Small", "Deployments:Large" })
+{
+    if (builder.Configuration[$"Squad:{setting}"] is { Length: > 0 } value)
+    {
+        eventProcessor.WithEnvironment($"Squad__{setting.Replace(":", "__", StringComparison.Ordinal)}", value);
+    }
+}
+
 builder.AddProject<Projects.Touchline_Simulator>("simulator")
     .WithReference(matchEvents)
     .WithReference(cosmos)

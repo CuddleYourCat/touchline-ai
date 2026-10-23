@@ -198,6 +198,79 @@ public sealed class CommentaryWorkflowTests
         var outcome = await Workflow("en").RunAsync(_moment, _context, CancellationToken.None);
 
         outcome.Lines.Should().BeEmpty();
+        outcome.AllStored.Should().BeFalse();
+        outcome.EnglishModelLineLost.Should().BeTrue();
+        outcome.FailedSaves.Should().Contain(line => line.Source == CommentarySource.Model)
+            .And.Contain(line => line.Source == CommentarySource.Template);
+    }
+
+    [Test]
+    public async Task A_failed_template_save_alone_is_reported_but_loses_no_model_line()
+    {
+        _chat.Throws(new HttpRequestException("The model is unavailable."));
+        _store.Setup(s => s.SaveAsync(It.IsAny<CommentaryLine>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Cosmos DB is unavailable."));
+
+        var outcome = await Workflow("en").RunAsync(_moment, _context, CancellationToken.None);
+
+        outcome.AllStored.Should().BeFalse();
+        outcome.FailedSaves.Should().NotBeEmpty().And.OnlyContain(line => line.Source == CommentarySource.Template);
+        outcome.EnglishModelLineLost.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task A_clean_run_reports_every_line_stored()
+    {
+        _chat.Returns(_cleanLines);
+
+        var outcome = await Workflow("en").RunAsync(_moment, _context, CancellationToken.None);
+
+        outcome.AllStored.Should().BeTrue();
+        outcome.FailedSaves.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task With_no_models_the_template_is_stored_without_any_model_call()
+    {
+        var reasons = new ConcurrentQueue<string>();
+        using var listener = FallbackListener(reasons);
+        _chat.Returns(_cleanLines);
+        var workflow = new CommentaryWorkflow(
+            _chat,
+            _store.Object,
+            Options.Create(new SquadOptions { Languages = ["en", "es"], ModelsAvailable = false }),
+            new SquadMetrics(_provider.GetRequiredService<IMeterFactory>()),
+            NullLogger<CommentaryWorkflow>.Instance);
+
+        var outcome = await workflow.RunAsync(_moment, _context, CancellationToken.None);
+
+        _chat.Requests.Should().BeEmpty();
+        _saved.Should().HaveCount(2).And.OnlyContain(line => line.Source == CommentarySource.Template && line.Language == "en");
+        outcome.AllStored.Should().BeTrue();
+        reasons.Should().Equal("no-models");
+    }
+
+    [Test]
+    public async Task An_unknown_score_is_left_out_of_the_template_and_the_prompt()
+    {
+        _chat.Returns(_inventedLines).Returns(_inventedLines);
+        var context = _context with { HomeScore = null, AwayScore = null };
+
+        await Workflow("en").RunAsync(_moment, context, CancellationToken.None);
+
+        _saved.Single(line => line.Mode == ViewingMode.Analyst).Text
+            .Should().Be("Goal: North Bank FC lead 1-0 after 23 minutes.");
+        _chat.Requests[0].Messages.Should().NotContain(m => m.Text.Contains("scoreAfter", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task A_known_score_is_in_the_prompt()
+    {
+        _chat.Returns(_cleanLines);
+
+        await Workflow("en").RunAsync(_moment, _context, CancellationToken.None);
+
+        _chat.Requests[0].Messages.Should().Contain(m => m.Text.Contains("\"scoreAfter\":{\"home\":1,\"away\":0}", StringComparison.Ordinal));
     }
 
     [Test]

@@ -22,23 +22,38 @@ namespace Touchline.Agents;
 /// <param name="HomePlayers">The home team's players' full names.</param>
 /// <param name="AwayPlayers">The away team's players' full names.</param>
 /// <param name="OtherKnownNames">Other names a line may use: team names and short names, the venue, the referee.</param>
-/// <param name="HomeScore">The home team's goals after the moment.</param>
-/// <param name="AwayScore">The away team's goals after the moment.</param>
+/// <param name="HomeScore">The home team's goals after the moment, or null if unknown.</param>
+/// <param name="AwayScore">The away team's goals after the moment, or null if unknown.</param>
 public sealed record MatchContext(
     string MatchId,
     IReadOnlyList<string> HomePlayers,
     IReadOnlyList<string> AwayPlayers,
     IReadOnlyList<string> OtherKnownNames,
-    int HomeScore,
-    int AwayScore)
+    int? HomeScore,
+    int? AwayScore)
 {
     /// <summary>Every player's full name, from both rosters.</summary>
     public IEnumerable<string> RosterNames => HomePlayers.Concat(AwayPlayers);
+
+    /// <summary>Whether the score after the moment is known. When it isn't, no line or prompt states one.</summary>
+    public bool HasScore => HomeScore is not null && AwayScore is not null;
 }
 
-/// <summary>What one run of the commentary workflow stored.</summary>
+/// <summary>What one run of the commentary workflow stored, and what it failed to store.</summary>
 /// <param name="Lines">Every line saved, in the order they were saved. Empty if even the template couldn't be saved.</param>
-public sealed record CommentaryOutcome(IReadOnlyList<CommentaryLine> Lines);
+/// <param name="FailedSaves">Every line whose save threw (already logged and counted).</param>
+public sealed record CommentaryOutcome(IReadOnlyList<CommentaryLine> Lines, IReadOnlyList<CommentaryLine> FailedSaves)
+{
+    /// <summary>Whether every line the run wrote was stored.</summary>
+    public bool AllStored => FailedSaves.Count == 0;
+
+    /// <summary>
+    /// Whether an English model line failed to save. The caller should have the moment retried:
+    /// the template may stand in for now, but the model line is lost unless the run is repeated.
+    /// </summary>
+    public bool EnglishModelLineLost => FailedSaves.Any(line =>
+        line.Source == CommentarySource.Model && line.Language == CommentaryWorkflow.English);
+}
 
 /// <summary>
 /// The live commentary workflow for one key moment (ADR-042, ADR-044, ADR-045), on Microsoft
@@ -53,7 +68,8 @@ public sealed record CommentaryOutcome(IReadOnlyList<CommentaryLine> Lines);
 /// <item><b>roster-guardrail</b>: <see cref="RosterGuardrail.FindUnknownNames(string, IEnumerable{string}, IEnumerable{string})"/> on both lines.
 /// A miss loops back to the commentator once, with a corrective note naming the unknown words.
 /// A second miss, or a failed call, becomes the template line from <see cref="KeyMoment.Reason"/>,
-/// clock prefix stripped: Casual is the reason, Analyst adds the score after the moment.</item>
+/// clock prefix stripped: Casual is the reason, Analyst adds the score after the moment when it is known.
+/// With <see cref="SquadOptions.ModelsAvailable"/> false the template is used straight away, with no model call.</item>
 /// <item><b>localiser-{language}</b> (small model): a fan-out edge sends approved lines to one
 /// Localiser per language in <see cref="SquadOptions.Languages"/> other than English, which run
 /// concurrently in the same superstep. Each translation goes through the guardrail's translation
@@ -139,18 +155,27 @@ public sealed partial class CommentaryWorkflow
     /// <param name="moment">The key moment.</param>
     /// <param name="context">The match's names and the score after the moment.</param>
     /// <param name="cancellationToken">Cancels the run. Cancellation is the one thing that propagates.</param>
-    /// <returns>The lines that were stored.</returns>
+    /// <returns>The lines that were stored, and any whose save failed.</returns>
     public async Task<CommentaryOutcome> RunAsync(KeyMoment moment, MatchContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(moment);
         ArgumentNullException.ThrowIfNull(context);
 
         var stored = new ConcurrentQueue<CommentaryLine>();
+        var failed = new ConcurrentQueue<CommentaryLine>();
         var start = new CommentaryStep(StepKind.Start, moment, context, Attempt: 0, Lines: null, UnknownNames: [], Language: null);
+
+        // With no models configured every call would fail, so the template is the whole run.
+        if (!_options.ModelsAvailable)
+        {
+            _metrics.RecordFallback(SquadAgent.Commentator, "no-models");
+            await StoreAsync(Template(start), stored, failed, cancellationToken).ConfigureAwait(false);
+            return new CommentaryOutcome([.. stored], [.. failed]);
+        }
 
         try
         {
-            var workflow = Build(stored, Localisations());
+            var workflow = Build(stored, failed, Localisations());
             await using var run = await InProcessExecution.RunAsync(workflow, start, cancellationToken: cancellationToken).ConfigureAwait(false);
             foreach (var failure in run.NewEvents.OfType<ExecutorFailedEvent>())
             {
@@ -167,10 +192,10 @@ public sealed partial class CommentaryWorkflow
 
         if (!stored.Any(line => line.Language == English))
         {
-            await StoreAsync(Template(start), stored, cancellationToken).ConfigureAwait(false);
+            await StoreAsync(Template(start), stored, failed, cancellationToken).ConfigureAwait(false);
         }
 
-        return new CommentaryOutcome([.. stored]);
+        return new CommentaryOutcome([.. stored], [.. failed]);
     }
 
     private List<string> Localisations() =>
@@ -180,13 +205,13 @@ public sealed partial class CommentaryWorkflow
 
     private static string PrimarySubtag(string language) => language.Split('-', '_')[0].Trim();
 
-    private Workflow Build(ConcurrentQueue<CommentaryLine> stored, List<string> languages)
+    private Workflow Build(ConcurrentQueue<CommentaryLine> stored, ConcurrentQueue<CommentaryLine> failed, List<string> languages)
     {
         var commentator = new Func<CommentaryStep, CancellationToken, ValueTask<CommentaryStep>>(CommentateAsync)
             .BindAsExecutor<CommentaryStep, CommentaryStep>("commentator");
         var guardrail = new Func<CommentaryStep, CommentaryStep>(Check)
             .BindAsExecutor<CommentaryStep, CommentaryStep>("roster-guardrail");
-        var store = new Func<CommentaryStep, CancellationToken, ValueTask>((step, ct) => StoreAsync(step, stored, ct))
+        var store = new Func<CommentaryStep, CancellationToken, ValueTask>((step, ct) => StoreAsync(step, stored, failed, ct))
             .BindAsExecutor<CommentaryStep>("store");
         var localisers = languages
             .Select(language => new Func<CommentaryStep, CancellationToken, ValueTask<CommentaryStep>>(
@@ -293,7 +318,11 @@ public sealed partial class CommentaryWorkflow
         }
     }
 
-    private async ValueTask StoreAsync(CommentaryStep step, ConcurrentQueue<CommentaryLine> stored, CancellationToken cancellationToken)
+    private async ValueTask StoreAsync(
+        CommentaryStep step,
+        ConcurrentQueue<CommentaryLine> stored,
+        ConcurrentQueue<CommentaryLine> failed,
+        CancellationToken cancellationToken)
     {
         if (step.Lines is not { } lines)
         {
@@ -324,6 +353,7 @@ public sealed partial class CommentaryWorkflow
             {
                 LogStoreFailed(mode, language, line.MomentId, ex);
                 _metrics.RecordFallback(SquadAgent.Commentator, "store-failed");
+                failed.Enqueue(line);
             }
         }
     }
@@ -331,9 +361,9 @@ public sealed partial class CommentaryWorkflow
     private static CommentaryStep Template(CommentaryStep step)
     {
         var reason = ClockPrefix().Replace(step.Moment.Reason, "").Trim();
-        var analyst = string.Create(
-            CultureInfo.InvariantCulture,
-            $"{reason} Score: {step.Context.HomeScore}–{step.Context.AwayScore}.");
+        var analyst = step.Context.HasScore
+            ? string.Create(CultureInfo.InvariantCulture, $"{reason} Score: {step.Context.HomeScore}–{step.Context.AwayScore}.")
+            : reason;
         return step with { Kind = StepKind.Template, Lines = new Lines(reason, analyst), Language = English };
     }
 
@@ -377,7 +407,7 @@ public sealed partial class CommentaryWorkflow
             moment.Trigger.Team.ToString(),
             moment.Reason,
             moment.GoalLineMarginCm,
-            new ScoreFacts(context.HomeScore, context.AwayScore),
+            context.HasScore ? new ScoreFacts(context.HomeScore!.Value, context.AwayScore!.Value) : null,
             context.HomePlayers,
             context.AwayPlayers,
             context.OtherKnownNames);
@@ -464,7 +494,7 @@ public sealed partial class CommentaryWorkflow
         string Team,
         string Reason,
         int? GoalLineMarginCm,
-        ScoreFacts ScoreAfter,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ScoreFacts? ScoreAfter,
         IReadOnlyList<string> HomePlayers,
         IReadOnlyList<string> AwayPlayers,
         IReadOnlyList<string> OtherNames);

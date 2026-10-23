@@ -38,4 +38,16 @@ public enum KeyMomentKind
 /// centimetres: positive for a goal, negative for a clearance that hadn't fully crossed.
 /// Null unless the call was within <see cref="KeyMomentDetector.CloseCallCm"/>.
 /// </param>
-public sealed record KeyMoment(KeyMomentKind Kind, MatchEvent Trigger, string Reason, int? GoalLineMarginCm = null);
+/// <param name="HomeScore">
+/// The home team's goals after the trigger event, set by the Event Processor when it publishes
+/// the moment. Null on a moment published before the score was carried (optional, so older
+/// messages still read).
+/// </param>
+/// <param name="AwayScore">The away team's goals after the trigger event; null as for <paramref name="HomeScore"/>.</param>
+public sealed record KeyMoment(
+    KeyMomentKind Kind,
+    MatchEvent Trigger,
+    string Reason,
+    int? GoalLineMarginCm = null,
+    int? HomeScore = null,
+    int? AwayScore = null);

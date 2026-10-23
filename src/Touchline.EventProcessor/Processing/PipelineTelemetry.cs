@@ -21,6 +21,8 @@ public sealed class PipelineTelemetry : IDisposable
     private readonly Counter<long> _lost;
     private readonly Counter<long> _missingMetadata;
     private readonly Counter<long> _fixturesProjected;
+    private readonly Counter<long> _commentarySkipped;
+    private readonly Counter<long> _commentaryDeadLettered;
 
     /// <summary>
     /// Creates the meter and its counters.
@@ -38,6 +40,8 @@ public sealed class PipelineTelemetry : IDisposable
         _lost = _meter.CreateCounter<long>("touchline.events.lost", "{event}", "Events never received, found as a gap in a match's sequence. Alert on any.");
         _missingMetadata = _meter.CreateCounter<long>("touchline.matches.missing_metadata", "{match}", "Matches whose first event (the metadata) was skipped or lost.");
         _fixturesProjected = _meter.CreateCounter<long>("touchline.season.fixtures_projected", "{fixture}", "Finished fixtures projected into player and season documents (ADR-025).");
+        _commentarySkipped = _meter.CreateCounter<long>("touchline.commentary.skipped", "{moment}", "Redelivered key moments whose English model lines were already stored, so the squad was not run again.");
+        _commentaryDeadLettered = _meter.CreateCounter<long>("touchline.commentary.dead_lettered", "{message}", "Key-moment messages that could not be read and went to the dead-letter queue. Alert on any.");
     }
 
     /// <summary>The activity source for the processor's spans.</summary>
@@ -67,6 +71,12 @@ public sealed class PipelineTelemetry : IDisposable
 
     /// <summary>Counts a finished fixture projected into the season.</summary>
     public void FixtureProjected() => _fixturesProjected.Add(1);
+
+    /// <summary>Counts a redelivered key moment whose commentary the models had already written.</summary>
+    public void CommentarySkipped() => _commentarySkipped.Add(1);
+
+    /// <summary>Counts a key-moment message sent to the dead-letter queue.</summary>
+    public void CommentaryDeadLettered() => _commentaryDeadLettered.Add(1);
 
     /// <inheritdoc />
     public void Dispose() => _meter.Dispose();

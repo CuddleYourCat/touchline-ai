@@ -175,6 +175,17 @@ public interface ICommentaryStore
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Every stored line for the match.</returns>
     Task<IReadOnlyList<CommentaryLine>> GetAsync(string matchId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the one line in a moment's slot for a mode and language: a point read, not a query.
+    /// </summary>
+    /// <param name="matchId">The match.</param>
+    /// <param name="momentId">The moment (<see cref="MomentIds.For"/>).</param>
+    /// <param name="mode">The viewing mode.</param>
+    /// <param name="language">The language tag, normalised as <see cref="SaveAsync"/> does.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The line, or null if the slot is empty.</returns>
+    Task<CommentaryLine?> FindAsync(string matchId, string momentId, ViewingMode mode, string language, CancellationToken cancellationToken);
 }
 
 /// <summary>

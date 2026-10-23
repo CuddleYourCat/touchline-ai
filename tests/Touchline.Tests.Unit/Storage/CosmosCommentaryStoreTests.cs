@@ -47,6 +47,11 @@ public class CosmosCommentaryStoreTests
                 _documents[key] = document;
                 return new ResponseMessage(HttpStatusCode.Created);
             });
+        _container.Setup(c => c.ReadItemStreamAsync(It.IsAny<string>(), It.IsAny<PartitionKey>(), It.IsAny<ItemRequestOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string id, PartitionKey partition, ItemRequestOptions _, CancellationToken _) =>
+                _documents.TryGetValue((id, partition), out var document)
+                    ? new ResponseMessage(HttpStatusCode.OK) { Content = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(document)) }
+                    : new ResponseMessage(HttpStatusCode.NotFound));
         var client = new Mock<CosmosClient>();
         client.Setup(c => c.GetContainer(CosmosNames.Database, CosmosNames.Commentary)).Returns(_container.Object);
         _store = new CosmosCommentaryStore(client.Object);
@@ -60,6 +65,26 @@ public class CosmosCommentaryStoreTests
         _documents.Keys.Should().Equal(("demo-3:412:Analyst:es-MX", new PartitionKey(_matchId)));
         var stored = _documents.Values.Single().Deserialize<CommentaryLine>(DomainJson.Options);
         stored.Should().Be(Line("Gol!", ViewingMode.Analyst, "es-MX"));
+    }
+
+    [Test]
+    public async Task Find_point_reads_one_slot_with_the_language_normalised()
+    {
+        await _store.SaveAsync(Line("Gol!", ViewingMode.Analyst, "es-MX", CommentarySource.Model), CancellationToken.None);
+
+        var found = await _store.FindAsync(_matchId, "demo-3:412", ViewingMode.Analyst, "es-mx", CancellationToken.None);
+
+        found.Should().Be(Line("Gol!", ViewingMode.Analyst, "es-MX", CommentarySource.Model));
+        _container.Verify(c => c.ReadItemStreamAsync("demo-3:412:Analyst:es-MX", new PartitionKey(_matchId), It.IsAny<ItemRequestOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+        _container.Verify(c => c.GetItemQueryStreamIterator(It.IsAny<QueryDefinition>(), It.IsAny<string>(), It.IsAny<QueryRequestOptions>()), Times.Never);
+    }
+
+    [Test]
+    public async Task Find_returns_null_for_an_empty_slot()
+    {
+        var found = await _store.FindAsync(_matchId, "demo-3:412", ViewingMode.Casual, "en", CancellationToken.None);
+
+        found.Should().BeNull();
     }
 
     [Test]

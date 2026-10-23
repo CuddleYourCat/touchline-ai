@@ -5,6 +5,10 @@
     "eventHubs": {
       "maxEventBatchSize": 100,
       "batchCheckpointFrequency": 1
+    },
+    "serviceBus": {
+      "maxConcurrentCalls": 4,
+      "prefetchCount": 0
     }
   },
   "logging": {

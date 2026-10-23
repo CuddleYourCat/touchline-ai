@@ -124,6 +124,25 @@ public class MatchEventProcessorTests
     }
 
     [Test]
+    public async Task Each_published_moment_carries_the_score_after_its_trigger_event()
+    {
+        var match = Match();
+        var state = MatchState.KickOff(match[0].MatchId);
+        var after = new Dictionary<long, (int?, int?)>();
+        foreach (var e in match)
+        {
+            state = state.Apply(e);
+            after[e.Sequence] = (state.Home.Goals, state.Away.Goals);
+        }
+
+        await ProcessInBatches(match.Select(Message));
+
+        _publisher.Published.Should().Contain(m => m.Kind == KeyMomentKind.Goal);
+        _publisher.Published.Select(m => (m.HomeScore, m.AwayScore))
+            .Should().Equal(_publisher.Published.Select(m => after[m.Trigger.Sequence]));
+    }
+
+    [Test]
     public async Task A_redelivered_batch_changes_nothing_and_publishes_nothing_again()
     {
         var match = Match();
@@ -249,7 +268,8 @@ public class MatchEventProcessorTests
         var process = () => _processor.ProcessAsync(batch, CancellationToken.None);
 
         await process.Should().ThrowAsync<InvalidOperationException>("Service Bus is unavailable");
-        _store.Matches.Should().NotContainKey(match[0].MatchId, "the watermark is written last, after the moments");
+        _store.Matches[match[0].MatchId].State.LastSequence.Should().Be(0, "the watermark is written last, after the moments");
+        _store.Matches[match[0].MatchId].Metadata.Should().NotBeNull("the line-ups are written before the moments go out");
         _store.Events[match[0].MatchId].Should().HaveCount(batch.Count, "the events were stored, and storing them again is harmless");
 
         // The Functions retry policy runs the same batch again once Service Bus is back.
@@ -260,13 +280,37 @@ public class MatchEventProcessorTests
     }
 
     [Test]
-    public async Task Events_are_stored_before_moments_are_published_and_the_state_is_written_last()
+    public async Task Events_then_the_metadata_are_stored_before_moments_are_published_and_the_state_is_written_last()
     {
+        var match = Match();
+        var firstGoal = match.First(e => e.IsGoal);
+        var calls = new List<string>();
+        MatchRecord? atPublish = null;
+        _store.OnCall = calls.Add;
+        _publisher.OnCall = call =>
+        {
+            calls.Add(call);
+            atPublish = _store.Matches.GetValueOrDefault(match[0].MatchId);
+        };
+
+        await _processor.ProcessAsync([.. match.TakeWhile(e => e.Sequence <= firstGoal.Sequence).Select(Message)], CancellationToken.None);
+
+        calls.Should().Equal("get match", "upsert events", "upsert match", "publish", "upsert match");
+        atPublish!.Metadata.Should().NotBeNull("the commentary function reads the line-ups for each moment");
+        atPublish.State.LastSequence.Should().Be(0, "the watermark still goes last");
+    }
+
+    [Test]
+    public async Task A_later_batch_with_the_metadata_already_stored_writes_the_match_once()
+    {
+        var match = Match();
+        var firstGoal = match.First(e => e.IsGoal);
+        await _processor.ProcessAsync([.. match.Take(5).Select(Message)], CancellationToken.None);
         var calls = new List<string>();
         _store.OnCall = calls.Add;
         _publisher.OnCall = calls.Add;
 
-        await _processor.ProcessAsync([.. Match().Take(100).Select(Message)], CancellationToken.None);
+        await _processor.ProcessAsync([.. match.Skip(5).TakeWhile(e => e.Sequence <= firstGoal.Sequence).Select(Message)], CancellationToken.None);
 
         calls.Should().Equal("get match", "upsert events", "publish", "upsert match");
     }

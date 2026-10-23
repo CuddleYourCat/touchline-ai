@@ -1141,6 +1141,15 @@ The squad has live work (commentary on each key moment, from the Service Bus `co
 
 **Decision:** A. The library is the unit the agent lane builds and tests with a fake `IChatClient`, and the hosts stay thin.
 
+**As built (lane D slice 3, 23 Oct):** `CommentaryFunction` in the Event Processor, on `key-moments`/`commentary` (`Microsoft.Azure.Functions.Worker.Extensions.ServiceBus` 5.24.0).
+- The published `KeyMoment` gains optional `homeScore` and `awayScore` (after the trigger event), so older messages still read. A message without them has an unknown score: the stored state can be later than the moment, so it isn't used, and the template and prompt leave the score out.
+- The processor writes new match metadata (the line-ups) before publishing moments, and the state (the watermark) still last, so the function finds the line-ups and a failed publish is still retried.
+- Rosters are each team profile's whole squad, so substitutes pass the guardrail (the team sheet has no bench). A team not in the catalogue gets an empty roster, logged once, so its lines fall back to the template.
+- Messages are settled by hand. An unreadable one is dead-lettered (`UnreadableKeyMoment`). A moment whose English model lines are stored for both modes (two point reads, `ICommentaryStore.FindAsync`) is completed without a run (a redelivery). An English model line that fails to save throws, so the moment is redelivered and rerun (a second set of model calls, accepted to keep the line); a failed template or translation save completes. Any other failure throws and Service Bus redelivers.
+- The key-moment message ID is the moment ID. **D6 to-do:** turn on duplicate detection on the `key-moments` topic in Bicep, so a moment published twice is dropped before two deliveries can both pay for the models.
+- `maxConcurrentCalls` is 4: each moment makes up to five model calls, and the deployments' quota is the limit.
+- Without `Squad:FoundryEndpoint`, both model keys get a stand-in client that always throws, options aren't validated, `SquadOptions.ModelsAvailable` is false, and every moment stores its English template lines with no model call (fallback reason `no-models`). The AppHost passes `Squad:*` settings through only when set.
+
 ---
 
 ## ADR-031 — Build your own team

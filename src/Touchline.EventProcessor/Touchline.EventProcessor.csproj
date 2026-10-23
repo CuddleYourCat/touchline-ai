@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The Event Processor: an Azure Functions isolated-worker app with an Event Hubs trigger (ADR-015, ADR-023). -->
+  <!--
+    The Event Processor: an Azure Functions isolated-worker app with an Event Hubs trigger (ADR-015, ADR-023).
+    It also hosts the live commentary, a Service Bus trigger on the key-moments topic (ADR-030).
+  -->
   <PropertyGroup>
     <AzureFunctionsVersion>v4</AzureFunctionsVersion>
     <OutputType>Exe</OutputType>
@@ -11,6 +14,7 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.EventHubs" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.CosmosDB" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.OpenTelemetry" />
     <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
     <PackageReference Include="Aspire.Azure.Messaging.ServiceBus" />
@@ -26,6 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Touchline.Agents\Touchline.Agents.csproj" />
     <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
     <ProjectReference Include="..\Touchline.ServiceDefaults\Touchline.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Touchline.Storage\Touchline.Storage.csproj" />
