@@ -466,7 +466,7 @@
           "Matches"
         ],
         "summary": "The live match, as server-sent events.",
-        "description": "Server-sent events (text/event-stream). Each message has an event name, an id (the last event sequence the client has fully seen, for Last-Event-ID resume) and one JSON data line. The event names and their data schemas: state = LiveState, event = MatchEvent, moment = MomentView, commentary = CommentaryLine, analysis = MomentAnalysis, milestone = MilestoneView, momentum = MomentumReading, overlay = OverlayCard, fulltime = LiveState (sent once), heartbeat = Heartbeat (no id). Without after or Last-Event-ID the stream starts from now, with a state snapshot. The stream ends after fulltime.",
+        "description": "Server-sent events (text/event-stream). Each message has an event name, an id (the last event sequence the client has fully seen, for Last-Event-ID resume) and one JSON data line. The event names and their data schemas: state = LiveState, event = MatchEvent, moment = MomentView, commentary = CommentaryLine, analysis = MomentAnalysis, milestone = MilestoneView, momentum = MomentumReading, overlay = OverlayCard, shape = ShapeView (modelled player positions after an event, not tracking data), fulltime = LiveState (sent once), heartbeat = Heartbeat (no id). Without after or Last-Event-ID the stream starts from now, with a state snapshot. The stream ends after fulltime.",
         "operationId": "StreamMatch",
         "parameters": [
           {
@@ -3221,6 +3221,58 @@
           }
         },
         "description": "The score."
+      },
+      "ShapeView": {
+        "required": [
+          "sequence",
+          "positions"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "description": "The event the shape follows.",
+            "format": "int64"
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "required": [
+                "playerId",
+                "team",
+                "x",
+                "y"
+              ],
+              "type": "object",
+              "properties": {
+                "playerId": {
+                  "type": "string",
+                  "description": "The player."
+                },
+                "team": {
+                  "enum": [
+                    "Home",
+                    "Away"
+                  ],
+                  "description": "Which of the two teams in a match. The home team attacks towards the far goal line\n(X = 105) for the whole match. The simulator doesn't switch ends at half-time,\nwhich keeps every coordinate comparable."
+                },
+                "x": {
+                  "type": "number",
+                  "description": "Metres along the length, from the home goal line.",
+                  "format": "double"
+                },
+                "y": {
+                  "type": "number",
+                  "description": "Metres across the width, from the bottom touchline.",
+                  "format": "double"
+                }
+              },
+              "description": "One player's modelled position (ADR-035), in metres on the pitch, to one decimal place."
+            },
+            "description": "Every player still on the pitch, home team first."
+          }
+        },
+        "description": "Where every player on the pitch is modelled to be after an event (ADR-035). The positions\ncome from a shape model, not tracking data, so they must never be presented as tracked."
       },
       "ShotDetail": {
         "required": [

@@ -24,6 +24,7 @@ internal sealed class StreamMessageSchemas : IOpenApiDocumentTransformer
         typeof(MilestoneView),
         typeof(MomentumReading),
         typeof(OverlayCard),
+        typeof(ShapeView),
         typeof(Heartbeat)
     ];
 

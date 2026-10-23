@@ -1,7 +1,11 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Touchline.Domain.Analytics;
 using Touchline.Domain.Matches;
+using Touchline.Domain.Matches.Shape;
 using Touchline.Domain.Moments;
 using Touchline.Domain.Squad;
+using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Api;
 
 namespace Touchline.MatchCentre.Live;
@@ -16,28 +20,53 @@ internal sealed record Projection(IReadOnlyList<LiveMessage> Messages, KeyMoment
 
 /// <summary>
 /// Turns a match's events, fed in order, into live stream messages: the event itself, the
-/// state, key moments, closed momentum windows and full time (ADR-027). It's pure, so the
-/// demo replay and the change-feed reader (ADR-029) produce identical streams from identical
-/// events.
+/// modelled shape of both teams (ADR-035), the state, key moments, closed momentum windows and
+/// full time (ADR-027). It's pure, so the demo replay and the change-feed reader (ADR-029)
+/// produce identical streams from identical events.
 /// </summary>
 /// <remarks>
 /// Commentary, analysis, milestones and overlays come from elsewhere (the agents and the
 /// moment tiers) and are merged in by the feed.
 /// </remarks>
-internal sealed class MatchStreamProjector
+internal sealed partial class MatchStreamProjector
 {
     private readonly KeyMomentDetector _detector;
+    private readonly IReadOnlyDictionary<string, TeamProfile>? _teams;
+    private readonly ILogger _logger;
     private readonly List<MatchEvent> _events = [];
+    private readonly HashSet<string> _dismissed = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _defaulted = new(StringComparer.Ordinal);
+    private (ShapeTeam Home, ShapeTeam Away)? _shapeTeams;
     private MatchState _state;
     private (MatchPeriod Period, int FromMinute)? _openWindow;
 
     /// <summary>Starts a projection at kick-off.</summary>
     /// <param name="matchId">The match.</param>
     /// <param name="detector">The key-moment detector.</param>
-    public MatchStreamProjector(string matchId, KeyMomentDetector detector)
+    /// <param name="teams">
+    /// The team profiles, keyed by team ID, for the shape model. Without them no <c>shape</c>
+    /// messages are sent. A team that isn't there gets average tendencies and a 4-4-2.
+    /// </param>
+    /// <param name="lineups">
+    /// The match metadata, when it's known up front, so shapes start even if the metadata
+    /// event (sequence 1) is never fed in. The metadata event replaces it when it arrives.
+    /// </param>
+    /// <param name="logger">Logs a team given default tendencies, once per team.</param>
+    public MatchStreamProjector(
+        string matchId,
+        KeyMomentDetector detector,
+        IReadOnlyDictionary<string, TeamProfile>? teams = null,
+        MatchMetadata? lineups = null,
+        ILogger? logger = null)
     {
         _detector = detector;
+        _teams = teams;
+        _logger = logger ?? NullLogger.Instance;
         _state = MatchState.KickOff(matchId);
+        if (lineups is not null)
+        {
+            SetLineups(lineups);
+        }
     }
 
     /// <summary>The match state after the last event fed in.</summary>
@@ -74,6 +103,11 @@ internal sealed class MatchStreamProjector
         _events.Add(matchEvent);
 
         messages.Add(new LiveMessage(StreamEvents.Event, id, matchEvent));
+        if (ShapeAfter(matchEvent) is { } shape)
+        {
+            messages.Add(new LiveMessage(StreamEvents.Shape, id, shape));
+        }
+
         if (moment is not null)
         {
             messages.Add(new LiveMessage(StreamEvents.Moment, id, MomentViews.From(moment, _state.MatchId, commentary: null)));
@@ -94,6 +128,54 @@ internal sealed class MatchStreamProjector
 
         return new Projection(messages, moment, _state);
     }
+
+    // The shape model runs once the metadata has named both teams. A red card takes its player
+    // off the pitch for the rest of the match.
+    private ShapeView? ShapeAfter(MatchEvent matchEvent)
+    {
+        if (matchEvent is { Metadata: { } metadata })
+        {
+            SetLineups(metadata);
+        }
+
+        if (matchEvent is { Type: MatchEventType.Card, Card: CardColour.Red, PlayerId: { } sentOff })
+        {
+            _dismissed.Add(sentOff);
+        }
+
+        return _shapeTeams is { } teams && ShapeModel.BallAfter(matchEvent) is { } ball
+            ? ShapeView.From(matchEvent.Sequence, ShapeModel.Place(teams.Home, teams.Away, ball, ShapeModel.PossessionAfter(matchEvent), _dismissed))
+            : null;
+    }
+
+    // Each team's formation is worked out here, once, and cached in its ShapeTeam.
+    private void SetLineups(MatchMetadata metadata)
+    {
+        if (_teams is null)
+        {
+            return;
+        }
+
+        _shapeTeams = (ShapeTeamFor(metadata.Home), ShapeTeamFor(metadata.Away));
+    }
+
+    private ShapeTeam ShapeTeamFor(TeamSheet sheet)
+    {
+        if (_teams!.TryGetValue(sheet.Id, out var profile))
+        {
+            return new ShapeTeam(sheet, profile);
+        }
+
+        if (_defaulted.Add(sheet.Id))
+        {
+            LogDefaultShape(_logger, _state.MatchId, sheet.Id);
+        }
+
+        return ShapeTeam.WithDefaults(sheet);
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Match {MatchId}: team {TeamId} has no profile, so its shape uses default tendencies and a 4-4-2")]
+    private static partial void LogDefaultShape(ILogger logger, string matchId, string teamId);
 
     private static (MatchPeriod Period, int FromMinute) WindowOf(MatchTime time) =>
         (time.Period, (int)time.Clock.TotalMinutes / Momentum.WindowMinutes * Momentum.WindowMinutes);
@@ -122,4 +204,31 @@ internal static class MomentViews
             moment.Trigger.PlayerId,
             moment.Reason,
             commentary);
+}
+
+/// <summary>
+/// Trims a replay to the one shape worth drawing.
+/// </summary>
+internal static class ReplayShapes
+{
+    /// <summary>
+    /// Keeps only the last <c>shape</c> in a replay, moved to just after the last <c>event</c>,
+    /// since a reconnecting client draws the latest shape and nothing before it. Every other
+    /// message keeps its place.
+    /// </summary>
+    /// <param name="replay">The replayed messages, in order.</param>
+    /// <returns>The messages with at most one shape.</returns>
+    public static List<LiveMessage> LatestOnly(IEnumerable<LiveMessage> replay)
+    {
+        var messages = replay.ToList();
+        var latest = messages.FindLast(m => m.Event == StreamEvents.Shape);
+        if (latest is null)
+        {
+            return messages;
+        }
+
+        messages.RemoveAll(m => m.Event == StreamEvents.Shape);
+        messages.Insert(messages.FindLastIndex(m => m.Event == StreamEvents.Event) + 1, latest);
+        return messages;
+    }
 }

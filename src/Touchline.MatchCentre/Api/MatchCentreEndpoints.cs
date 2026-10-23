@@ -29,7 +29,7 @@ internal static partial class MatchCentreEndpoints
         "the client has fully seen, for Last-Event-ID resume) and one JSON data line. The event names and their " +
         "data schemas: state = LiveState, event = MatchEvent, moment = MomentView, commentary = CommentaryLine, " +
         "analysis = MomentAnalysis, milestone = MilestoneView, momentum = MomentumReading, overlay = OverlayCard, " +
-        "fulltime = LiveState (sent once), heartbeat = Heartbeat (no id). Without after or Last-Event-ID the " +
+        "shape = ShapeView (modelled player positions after an event, not tracking data), fulltime = LiveState (sent once), heartbeat = Heartbeat (no id). Without after or Last-Event-ID the " +
         "stream starts from now, with a state snapshot. The stream ends after fulltime.";
 
     /// <summary>Maps every API endpoint under <c>/api</c>.</summary>

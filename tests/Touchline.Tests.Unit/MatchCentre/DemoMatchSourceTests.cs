@@ -178,4 +178,18 @@ public class DemoMatchSourceTests
 
         construct.Should().Throw<ArgumentException>();
     }
+
+    [Test]
+    public async Task A_replay_after_a_sequence_sends_only_the_latest_shape_after_the_last_event()
+    {
+        _time.Advance(MatchLength);
+
+        var messages = await _source.FollowAsync("demo-1", 100, Viewer.Default, CancellationToken.None).ToListAsync();
+
+        var shape = messages.Should().ContainSingle(m => m.Event == StreamEvents.Shape).Subject;
+        messages.IndexOf(shape).Should().Be(messages.FindLastIndex(m => m.Event == StreamEvents.Event) + 1);
+        var lastBallEvent = DemoRecording.Events.Last(e => e.Type is not (MatchEventType.MatchMetadata or MatchEventType.PeriodEnd));
+        ((ShapeView)shape.Data).Sequence.Should().Be(lastBallEvent.Sequence);
+        messages.Where(m => m.Event == StreamEvents.Event).Should().HaveCount(DemoRecording.Events.Count - 100);
+    }
 }

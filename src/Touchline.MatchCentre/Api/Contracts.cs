@@ -1,5 +1,6 @@
 using System.Globalization;
 using Touchline.Domain.Matches;
+using Touchline.Domain.Matches.Shape;
 using Touchline.Domain.Squad;
 using Touchline.Domain.Teams;
 using Touchline.Domain.Teams.Builder;
@@ -262,6 +263,32 @@ public sealed record OverlayPayload(string Title, string? Subtitle, TeamSide? Te
 public sealed record OverlayCard(string Id, ClockReading At, string Type, int DurationMs, OverlayPayload Payload);
 
 /// <summary>
+/// One player's modelled position (ADR-035), in metres on the pitch, to one decimal place.
+/// </summary>
+/// <param name="PlayerId">The player.</param>
+/// <param name="Team">The player's team.</param>
+/// <param name="X">Metres along the length, from the home goal line.</param>
+/// <param name="Y">Metres across the width, from the bottom touchline.</param>
+public sealed record ShapePosition(string PlayerId, TeamSide Team, double X, double Y);
+
+/// <summary>
+/// Where every player on the pitch is modelled to be after an event (ADR-035). The positions
+/// come from a shape model, not tracking data, so they must never be presented as tracked.
+/// </summary>
+/// <param name="Sequence">The event the shape follows.</param>
+/// <param name="Positions">Every player still on the pitch, home team first.</param>
+public sealed record ShapeView(long Sequence, IReadOnlyList<ShapePosition> Positions)
+{
+    /// <summary>Converts the model's placements, rounding each coordinate to keep the payload small.</summary>
+    /// <param name="sequence">The event the shape follows.</param>
+    /// <param name="placed">The placements.</param>
+    /// <returns>The view.</returns>
+    public static ShapeView From(long sequence, IEnumerable<PlacedPlayer> placed) =>
+        new(sequence, [.. placed.Select(p => new ShapePosition(
+            p.PlayerId, p.Team, Math.Round(p.Position.X, 1, MidpointRounding.AwayFromZero), Math.Round(p.Position.Y, 1, MidpointRounding.AwayFromZero)))]);
+}
+
+/// <summary>
 /// Sent every few seconds when nothing else is, so idle proxies keep the stream open.
 /// </summary>
 /// <param name="At">The server's time.</param>
@@ -295,6 +322,9 @@ public static class StreamEvents
 
     /// <summary><see cref="OverlayCard"/>: a timecoded overlay card.</summary>
     public const string Overlay = "overlay";
+
+    /// <summary><see cref="ShapeView"/>: every player's modelled position after an event (ADR-035).</summary>
+    public const string Shape = "shape";
 
     /// <summary><see cref="LiveState"/>: the final state, sent once.</summary>
     public const string FullTime = "fulltime";

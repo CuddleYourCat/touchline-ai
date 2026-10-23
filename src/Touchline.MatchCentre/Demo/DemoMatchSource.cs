@@ -50,13 +50,14 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
     private readonly IReadOnlyList<PlayerSummary> _homeLineup;
     private readonly IReadOnlyList<PlayerSummary> _awayLineup;
     private readonly KeyMomentDetector _detector;
+    private readonly IReadOnlyDictionary<string, TeamProfile> _teams;
     private readonly TimeProvider _time;
     private readonly DateTimeOffset _start;
     private readonly TimeSpan _lapLength;
 
     /// <summary>Prepares the replay. The first lap kicks off now.</summary>
     /// <param name="events">The recorded match, from sequence 1, metadata first.</param>
-    /// <param name="teams">The team profiles, for line-up names.</param>
+    /// <param name="teams">The team profiles, for line-up names and the shape model.</param>
     /// <param name="detector">The key-moment detector.</param>
     /// <param name="options">The replay speed and the gap between laps.</param>
     /// <param name="time">The clock.</param>
@@ -75,6 +76,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
         _events = events;
         _metadata = metadata;
         _detector = detector;
+        _teams = teams;
         _time = time;
 
         var speed = options.Value.Speed;
@@ -195,6 +197,24 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
             yield return new LiveMessage(StreamEvents.State, LiveMessage.IdFor(from), LiveState.From(state));
         }
 
+        // A reconnect replays what has already happened with only the latest shape in it.
+        var played = Math.Min(lap.Played, _events.Count);
+        if (after is not null && from < played)
+        {
+            var replay = new List<LiveMessage>();
+            for (var i = from; i < played; i++)
+            {
+                replay.AddRange(MessagesAt(i, projected, matchId, viewer));
+            }
+
+            foreach (var message in ReplayShapes.LatestOnly(replay))
+            {
+                yield return message;
+            }
+
+            from = played;
+        }
+
         for (var i = from; i < _events.Count; i++)
         {
             var wait = lap.KickOff + _offsets[i] - _time.GetUtcNow();
@@ -203,18 +223,27 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
                 await Task.Delay(wait, _time, cancellationToken);
             }
 
-            foreach (var message in projected[i])
+            foreach (var message in MessagesAt(i, projected, matchId, viewer))
             {
                 yield return message;
             }
+        }
+    }
 
-            // Commentary depends on the viewer, so it's added per follower rather than shared.
-            if (_momentAt[i] is { } moment)
-            {
-                var id = LiveMessage.IdFor(moment.Trigger.Sequence);
-                yield return new LiveMessage(StreamEvents.Commentary, id, Commentary(moment, matchId, viewer));
-                yield return new LiveMessage(StreamEvents.Overlay, id, Overlay(moment, matchId));
-            }
+    // One event's shared messages, then its commentary and overlay. Commentary depends on the
+    // viewer, so it's added per follower rather than shared.
+    private IEnumerable<LiveMessage> MessagesAt(int index, IReadOnlyList<LiveMessage>[] projected, string matchId, Viewer viewer)
+    {
+        foreach (var message in projected[index])
+        {
+            yield return message;
+        }
+
+        if (_momentAt[index] is { } moment)
+        {
+            var id = LiveMessage.IdFor(moment.Trigger.Sequence);
+            yield return new LiveMessage(StreamEvents.Commentary, id, Commentary(moment, matchId, viewer));
+            yield return new LiveMessage(StreamEvents.Overlay, id, Overlay(moment, matchId));
         }
     }
 
@@ -296,7 +325,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
                 return cached;
             }
 
-            var projector = new MatchStreamProjector(matchId, _detector);
+            var projector = new MatchStreamProjector(matchId, _detector, _teams);
             var projected = _events.Select(e => projector.Apply(Relabel(e, matchId)).Messages).ToArray();
             _projections[matchId] = projected;
 

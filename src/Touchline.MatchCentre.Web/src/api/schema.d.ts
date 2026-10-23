@@ -133,7 +133,7 @@ export interface paths {
         };
         /**
          * The live match, as server-sent events.
-         * @description Server-sent events (text/event-stream). Each message has an event name, an id (the last event sequence the client has fully seen, for Last-Event-ID resume) and one JSON data line. The event names and their data schemas: state = LiveState, event = MatchEvent, moment = MomentView, commentary = CommentaryLine, analysis = MomentAnalysis, milestone = MilestoneView, momentum = MomentumReading, overlay = OverlayCard, fulltime = LiveState (sent once), heartbeat = Heartbeat (no id). Without after or Last-Event-ID the stream starts from now, with a state snapshot. The stream ends after fulltime.
+         * @description Server-sent events (text/event-stream). Each message has an event name, an id (the last event sequence the client has fully seen, for Last-Event-ID resume) and one JSON data line. The event names and their data schemas: state = LiveState, event = MatchEvent, moment = MomentView, commentary = CommentaryLine, analysis = MomentAnalysis, milestone = MilestoneView, momentum = MomentumReading, overlay = OverlayCard, shape = ShapeView (modelled player positions after an event, not tracking data), fulltime = LiveState (sent once), heartbeat = Heartbeat (no id). Without after or Last-Event-ID the stream starts from now, with a state snapshot. The stream ends after fulltime.
          */
         get: operations["StreamMatch"];
         put?: never;
@@ -1149,6 +1149,39 @@ export interface components {
              * @description Away goals.
              */
             away: number;
+        };
+        /**
+         * @description Where every player on the pitch is modelled to be after an event (ADR-035). The positions
+         *     come from a shape model, not tracking data, so they must never be presented as tracked.
+         */
+        ShapeView: {
+            /**
+             * Format: int64
+             * @description The event the shape follows.
+             */
+            sequence: number;
+            /** @description Every player still on the pitch, home team first. */
+            positions: {
+                /** @description The player. */
+                playerId: string;
+                /**
+                 * @description Which of the two teams in a match. The home team attacks towards the far goal line
+                 *     (X = 105) for the whole match. The simulator doesn't switch ends at half-time,
+                 *     which keeps every coordinate comparable.
+                 * @enum {unknown}
+                 */
+                team: "Home" | "Away";
+                /**
+                 * Format: double
+                 * @description Metres along the length, from the home goal line.
+                 */
+                x: number;
+                /**
+                 * Format: double
+                 * @description Metres across the width, from the bottom touchline.
+                 */
+                y: number;
+            }[];
         };
         /** @description The detail of a shot. */
         ShotDetail: {

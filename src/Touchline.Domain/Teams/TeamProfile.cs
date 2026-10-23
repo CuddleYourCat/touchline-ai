@@ -110,7 +110,11 @@ public sealed record TeamColours(string Primary, string Secondary);
 /// <param name="Width">How much the team uses the wide channels rather than the centre.</param>
 /// <param name="Directness">How often the team plays forward quickly rather than keeping the ball.</param>
 /// <param name="ShotAppetite">How readily the team shoots rather than working a better chance.</param>
-public sealed record TeamTendencies(double PressingIntensity, double Width, double Directness, double ShotAppetite);
+public sealed record TeamTendencies(double PressingIntensity, double Width, double Directness, double ShotAppetite)
+{
+    /// <summary>An average team: 0.5 for every tendency.</summary>
+    public static TeamTendencies Default { get; } = new(0.5, 0.5, 0.5, 0.5);
+}
 
 /// <summary>
 /// A fictional club, defined as data (ADR-002), so fans can pick a team without any code

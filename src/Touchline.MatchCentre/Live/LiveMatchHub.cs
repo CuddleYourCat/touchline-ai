@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Touchline.Domain.Matches;
 using Touchline.Domain.Moments;
 using Touchline.Domain.Squad;
+using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Storage;
@@ -66,10 +67,17 @@ internal sealed partial class LiveMatchHub
     /// <param name="buffer">How many messages a subscriber can fall behind before its stream is ended.</param>
     /// <param name="backfill">Reads the stored events in a gap.</param>
     /// <param name="logger">Logs gaps, skips and overflows.</param>
-    public LiveMatchHub(string matchId, KeyMomentDetector detector, TimeProvider time, int buffer, EventBackfill backfill, ILogger logger)
+    /// <param name="teams">The team profiles, for the shape model, or null to send no shapes.</param>
+    /// <param name="lineups">
+    /// The match metadata from the stored match, so shapes start even when the metadata event
+    /// is never seen; or null to wait for that event.
+    /// </param>
+    public LiveMatchHub(
+        string matchId, KeyMomentDetector detector, TimeProvider time, int buffer, EventBackfill backfill, ILogger logger,
+        IReadOnlyDictionary<string, TeamProfile>? teams = null, MatchMetadata? lineups = null)
     {
         MatchId = matchId;
-        _projector = new MatchStreamProjector(matchId, detector);
+        _projector = new MatchStreamProjector(matchId, detector, teams, lineups, logger);
         _time = time;
         _buffer = buffer;
         _backfill = backfill;
@@ -261,6 +269,11 @@ internal sealed partial class LiveMatchHub
             else
             {
                 Replay(after.Value, subscriber, backlog);
+
+                // A reconnecting client draws only the latest shape, so the rest are left out.
+                var trimmed = ReplayShapes.LatestOnly(backlog);
+                backlog.Clear();
+                backlog.AddRange(trimmed);
             }
 
             if (state.FullTime)

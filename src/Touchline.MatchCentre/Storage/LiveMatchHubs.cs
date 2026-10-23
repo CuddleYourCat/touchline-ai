@@ -4,6 +4,7 @@ using Touchline.Domain.Matches;
 using Touchline.Domain.Moments;
 using Touchline.Domain.Squad;
 using Touchline.Domain.Storage;
+using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Live;
 using Touchline.Storage;
 
@@ -19,13 +20,15 @@ namespace Touchline.MatchCentre.Storage;
 /// <param name="time">The clock, for eviction.</param>
 /// <param name="logger">Logs a failed load, and the hubs' gaps and overflows.</param>
 /// <param name="buffer">How many messages a stream can fall behind before it's ended.</param>
+/// <param name="teams">The team profiles, for the shape model, or null to send no shapes.</param>
 internal sealed partial class LiveMatchHubs(
     CosmosClient client,
     ICommentaryStore commentary,
     KeyMomentDetector detector,
     TimeProvider time,
     ILogger<LiveMatchHubs> logger,
-    int buffer = LiveMatchHubs.DefaultBuffer)
+    int buffer = LiveMatchHubs.DefaultBuffer,
+    IReadOnlyDictionary<string, TeamProfile>? teams = null)
 {
     /// <summary>The default per-stream buffer: several minutes of a busy match.</summary>
     public const int DefaultBuffer = 256;
@@ -76,7 +79,9 @@ internal sealed partial class LiveMatchHubs(
         {
             if (!_hubs.TryGetValue(matchId, out hub!))
             {
-                hub = new LiveMatchHub(matchId, detector, time, buffer, BackfillAsync, logger);
+                // Line-ups are null until the B-lane wiring reads them from the stored match
+                // document; until then shapes start with the metadata event (sequence 1).
+                hub = new LiveMatchHub(matchId, detector, time, buffer, BackfillAsync, logger, teams, lineups: null);
                 hub.Ready = LoadAsync(hub);
                 _hubs[matchId] = hub;
             }
