@@ -11,6 +11,8 @@
     <PackageVersion Include="Aspire.Hosting.Azure.Functions" Version="13.6.1" />
     <PackageVersion Include="Aspire.Hosting.Azure.ServiceBus" Version="13.6.1" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.6.1" />
+    <!-- The Match Centre's React UI, run as a Vite dev server under the AppHost (ADR-033). -->
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.1" />
     <PackageVersion Include="Aspire.Azure.Messaging.EventHubs" Version="13.6.1" />
     <PackageVersion Include="Aspire.Azure.Messaging.ServiceBus" Version="13.6.1" />
     <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.6.1" />

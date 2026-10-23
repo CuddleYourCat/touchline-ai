@@ -1261,6 +1261,8 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 
 **Alternatives considered:** an MSBuild target that runs npm on every `dotnet publish` (every .NET build would need Node); Orval-generated hooks (a larger generated surface); a JavaScript SDK `.esproj` (more moving parts).
 
+**As built (23 Oct, at the user's request):** the AppHost now runs the Vite dev server locally as the `matchcentre-web` resource (`Aspire.Hosting.JavaScript`, `AddViteApp`), which runs `npm install` first, passes the port as `--port`, and gives the proxy the Match Centre's endpoint through `WithReference`. So a local run no longer needs `npm run dev` by hand. Production is unchanged: the Match Centre serves the built UI from `wwwroot`. The AppHost only orchestrates Node at run time, so the .NET build and CI jobs stay Node-free.
+
 ---
 
 ## ADR-034 — Match Centre UI: look, theme toggle, routing and synthetic labelling

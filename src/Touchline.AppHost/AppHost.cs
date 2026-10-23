@@ -56,9 +56,18 @@ builder.AddProject<Projects.Touchline_Simulator>("simulator")
     .WaitFor(eventProcessor);
 
 // No WaitFor(cosmos): the Match Centre must start, and serve its demo match, without the emulator.
-builder.AddProject<Projects.Touchline_MatchCentre>("matchcentre")
+var matchcentre = builder.AddProject<Projects.Touchline_MatchCentre>("matchcentre")
     .WithReference(cosmos)
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health");
+
+// The Match Centre's React UI as a Vite dev server, for local development only: its proxy sends
+// /api and /openapi to the Match Centre endpoint that WithReference injects. AddViteApp runs
+// "npm install" first (a matchcentre-web-installer resource) and passes the port as --port.
+// Production is unchanged: the Match Centre serves the built UI from its wwwroot (ADR-033).
+builder.AddViteApp("matchcentre-web", "../Touchline.MatchCentre.Web")
+    .WithReference(matchcentre)
+    .WaitFor(matchcentre)
+    .WithExternalHttpEndpoints();
 
 await builder.Build().RunAsync();

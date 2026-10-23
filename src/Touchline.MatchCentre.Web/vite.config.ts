@@ -2,8 +2,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// The Match Centre (src/Touchline.MatchCentre) listens on this port under `dotnet run`.
-const matchCentre = 'http://localhost:5054';
+// Under the Aspire AppHost, WithReference(matchcentre) injects the Match Centre's endpoint, and
+// the dev server's port arrives as --port. A plain `npm run dev` falls back to the port the
+// Match Centre (src/Touchline.MatchCentre) listens on under `dotnet run`.
+const matchCentre =
+  process.env.MATCHCENTRE_HTTP ??
+  process.env.services__matchcentre__http__0 ??
+  'http://localhost:5054';
 
 export default defineConfig({
   plugins: [react()],
