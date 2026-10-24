@@ -21,6 +21,11 @@ namespace Touchline.EventProcessor.Processing;
 /// <item>A pair whose model call fails, or whose recap fails the guardrail twice, stores nothing:
 /// the Match Centre serves the template for it, and its attempt marker counts the fallback. After
 /// <see cref="MaxModelAttempts"/> fallbacks the pair isn't tried again. The other pairs carry on.</item>
+/// <item>A pair whose model call failed transiently (throttled, a server error or a timeout; ADR-052)
+/// stores nothing and isn't counted on its attempt marker. It's counted in
+/// <see cref="RecapRun.TransientFailures"/>, so the caller abandons the message and Service Bus
+/// redelivers it; the pairs stored meanwhile are skipped on the retry. A guardrail miss or a
+/// content-filter block is permanent and counts as a fallback.</item>
 /// <item>With no models (<see cref="SquadOptions.ModelsAvailable"/> false), nothing is read or
 /// stored, and the Match Centre serves the template recap.</item>
 /// </list>
@@ -97,7 +102,7 @@ public sealed partial class RecapWriter
         var producer = new ProducerRecap(
             _chatClient, StoredMatchFacts.From(match, events, _detector), _options, _metrics, _loggers.CreateLogger<ProducerRecap>());
 
-        int written = 0, skipped = 0, fallbacks = 0, storeFailures = 0, givenUp = 0;
+        int written = 0, skipped = 0, fallbacks = 0, storeFailures = 0, givenUp = 0, transient = 0;
         foreach (var language in options.Languages.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             foreach (var mode in Enum.GetValues<ViewingMode>())
@@ -127,6 +132,13 @@ public sealed partial class RecapWriter
                     }
 
                     var produced = await producer.WriteAsync(matchId, viewer, cancellationToken);
+                    if (produced.TransientFailure)
+                    {
+                        // Not an attempt: the model never answered, so the redelivery gets a fair try.
+                        transient++;
+                        continue;
+                    }
+
                     if (!produced.FromModel)
                     {
                         fallbacks++;
@@ -145,8 +157,8 @@ public sealed partial class RecapWriter
             }
         }
 
-        LogWritten(_logger, matchId, written, skipped, fallbacks, storeFailures, givenUp);
-        return new RecapRun(RecapRunStatus.Done, written, skipped, fallbacks, storeFailures, givenUp);
+        LogWritten(_logger, matchId, written, skipped, fallbacks, storeFailures, givenUp, transient);
+        return new RecapRun(RecapRunStatus.Done, written, skipped, fallbacks, storeFailures, givenUp, transient);
     }
 
     // Best effort: a marker that fails to save only means one more paid attempt later, so it
@@ -172,8 +184,8 @@ public sealed partial class RecapWriter
     [LoggerMessage(Level = LogLevel.Warning, Message = "The {Mode} recap in {Language} for match {MatchId} couldn't be read or saved")]
     private static partial void LogPairFailed(ILogger logger, Exception exception, string matchId, ViewingMode mode, string language);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Recaps for match {MatchId}: {Written} written, {Skipped} already stored, {Fallbacks} left to the template, {Failed} failed, {GivenUp} given up after repeated fallbacks")]
-    private static partial void LogWritten(ILogger logger, string matchId, int written, int skipped, int fallbacks, int failed, int givenUp);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Recaps for match {MatchId}: {Written} written, {Skipped} already stored, {Fallbacks} left to the template, {Failed} failed, {GivenUp} given up after repeated fallbacks, {Transient} to retry after a transient model failure")]
+    private static partial void LogWritten(ILogger logger, string matchId, int written, int skipped, int fallbacks, int failed, int givenUp, int transient);
 }
 
 /// <summary>How a recap run ended.</summary>
@@ -196,4 +208,5 @@ public enum RecapRunStatus
 /// <param name="Fallbacks">Pairs left to the template: the model failed, or the guardrail caught it twice.</param>
 /// <param name="StoreFailures">Pairs whose read or save failed, which a redelivery retries.</param>
 /// <param name="GivenUp">Pairs not tried, because the model already fell back <see cref="RecapWriter.MaxModelAttempts"/> times.</param>
-public sealed record RecapRun(RecapRunStatus Status, int Written, int Skipped, int Fallbacks, int StoreFailures, int GivenUp = 0);
+/// <param name="TransientFailures">Pairs whose model call failed transiently (ADR-052), which a redelivery retries.</param>
+public sealed record RecapRun(RecapRunStatus Status, int Written, int Skipped, int Fallbacks, int StoreFailures, int GivenUp = 0, int TransientFailures = 0);

@@ -17,7 +17,11 @@ public sealed class SquadMetrics
     /// <summary>The fallback counter's name: a model line replaced by a template, or a language skipped.</summary>
     public const string FallbackCounterName = "touchline.agents.fallbacks";
 
-    /// <summary>The tag saying why a fallback happened, such as <c>failed</c> or <c>guardrail</c>.</summary>
+    /// <summary>
+    /// The tag saying why a fallback happened, such as <c>failed</c>, <c>guardrail</c> or
+    /// <c>content_filter</c> (<see cref="ModelFailures.ContentFilterReason"/>: the deployment's content
+    /// filter blocked the call, ADR-044).
+    /// </summary>
     public const string ReasonTag = "touchline.fallback.reason";
 
     /// <summary>The tag naming the agent.</summary>
@@ -89,7 +93,7 @@ public sealed class SquadMetrics
 
     /// <summary>Records one fallback: a template line used, or a language skipped.</summary>
     /// <param name="agent">The agent whose output was replaced or skipped.</param>
-    /// <param name="reason">Why, such as <c>failed</c>, <c>guardrail</c> or <c>store-failed</c>.</param>
+    /// <param name="reason">Why, such as <c>failed</c>, <c>guardrail</c>, <c>content_filter</c> or <c>store-failed</c>.</param>
     public void RecordFallback(SquadAgent agent, string reason) =>
         _fallbacks.Add(
             1,

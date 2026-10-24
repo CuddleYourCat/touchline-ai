@@ -150,6 +150,59 @@ public sealed class ProducerRecapTests
     }
 
     [Test]
+    public async Task A_prompt_the_content_filter_blocks_counts_a_content_filter_fallback()
+    {
+        var fallbacks = new ConcurrentQueue<string>();
+        using var listener = Listen(SquadMetrics.FallbackCounterName, SquadMetrics.ReasonTag, fallbacks);
+        _chat.Throws(ModelFailuresTests.Failure(400, """{"error":{"code":"content_filter"}}"""));
+
+        var produced = await Producer().WriteAsync(_matchId, Viewer.Default, CancellationToken.None);
+
+        produced.Should().Be(new ProducedRecap(ProducerRecap.Template(_sheet, [_goal], Viewer.Default), FromModel: false));
+        fallbacks.Should().Equal("content_filter");
+    }
+
+    [Test]
+    public async Task A_completion_the_content_filter_cut_off_counts_a_content_filter_fallback()
+    {
+        var fallbacks = new ConcurrentQueue<string>();
+        using var listener = Listen(SquadMetrics.FallbackCounterName, SquadMetrics.ReasonTag, fallbacks);
+        var filtered = Reply("North Bank FC edge it", "Tom Okafor scored.");
+        filtered.FinishReason = ChatFinishReason.ContentFilter;
+        _chat.Returns(filtered);
+
+        var produced = await Producer().WriteAsync(_matchId, Viewer.Default, CancellationToken.None);
+
+        produced.FromModel.Should().BeFalse();
+        produced.TransientFailure.Should().BeFalse("a content-filter block is permanent (ADR-052)");
+        fallbacks.Should().Equal("content_filter");
+    }
+
+    [TestCase(429)]
+    [TestCase(503)]
+    public async Task A_transient_model_error_is_marked_so_the_caller_can_retry(int status)
+    {
+        _chat.Throws(ModelFailuresTests.Failure(status));
+
+        var produced = await Producer().WriteAsync(_matchId, Viewer.Default, CancellationToken.None);
+
+        produced.FromModel.Should().BeFalse();
+        produced.TransientFailure.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task A_guardrail_miss_is_not_transient()
+    {
+        _chat.Returns(Reply("Bukayo Saka wins it", "A great finish."))
+            .Returns(Reply("Bukayo Saka again", "Another finish."));
+
+        var produced = await Producer().WriteAsync(_matchId, Viewer.Default, CancellationToken.None);
+
+        produced.FromModel.Should().BeFalse();
+        produced.TransientFailure.Should().BeFalse();
+    }
+
+    [Test]
     public async Task A_reply_that_is_not_a_recap_gives_the_template()
     {
         _chat.Returns("I can't help with that.");

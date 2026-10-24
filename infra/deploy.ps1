@@ -56,6 +56,26 @@
     Optional. Where budget alerts go. Defaults to the signed-in user's email;
     required (or BUDGET_ALERT_EMAIL) when signed in as a service principal.
 
+.PARAMETER DeploySquadModels
+    Optional. Deploy the squad's chat models, their content filter and the
+    Squad__* app settings (ADR-051). Needed only for the first deploy that adds
+    them: once the small chat deployment exists, every later run keeps the
+    models on without it. On a fresh group, run once without it, then again
+    with it, so a model quota failure can't hold up the rest.
+
+.PARAMETER NoSquadModels
+    Optional. Force the models off, which deletes the chat deployments, their
+    content filter and the Squad__* settings. Can't be combined with
+    -DeploySquadModels.
+
+.PARAMETER SmallModelCapacity
+    Optional. Tokens-per-minute limit, in thousands, for the small chat model.
+    Leave it out for the template's default. Raise it only for demo days, then
+    redeploy without it to lower it again (ADR-051).
+
+.PARAMETER LargeModelCapacity
+    Optional. The same for the large chat model.
+
 .PARAMETER DeploySearch
     Create the Azure AI Search service (Basic, about 2 pounds a day, ADR-026).
     Off by default. Once the service exists, later deploys keep it without the
@@ -74,6 +94,9 @@
     ./infra/deploy.ps1 -Action whatif
 
 .EXAMPLE
+    ./infra/deploy.ps1 -Action deploy -DeploySquadModels
+
+.EXAMPLE
     ./infra/deploy.ps1 -Action deploy -MatchCentreImage crtouchline2ryqfwse6uqn4.azurecr.io/matchcentre:abc123
 #>
 
@@ -90,6 +113,16 @@ param(
     [string]$MatchCentreImage,
 
     [string]$OwnerEmail,
+
+    [switch]$DeploySquadModels,
+
+    [switch]$NoSquadModels,
+
+    [ValidateRange(1, 10000)]
+    [int]$SmallModelCapacity,
+
+    [ValidateRange(1, 10000)]
+    [int]$LargeModelCapacity,
 
     [switch]$DeploySearch,
 
@@ -110,6 +143,11 @@ $MatchCentreAppName = 'ca-matchcentre'
 $SimulatorJobName = 'job-simulator'
 $BudgetName = 'budget-touchline-ai'
 $BudgetApiVersion = '2023-11-01'
+$SmallModelDeploymentName = 'gpt-5.4-mini' # smallModel.name
+
+if ($DeploySquadModels -and $NoSquadModels) {
+    throw "-DeploySquadModels and -NoSquadModels can't be used together."
+}
 
 # Azure AI Search (ADR-040, ADR-041). The index definition is committed beside this script.
 $SearchIndexFile = Join-Path $PSScriptRoot 'search/possessions-index.json'
@@ -160,6 +198,32 @@ function Get-LiveResource {
     return $json | ConvertFrom-Json
 }
 
+# Whether the squad's models stay on (ADR-051): the switches decide if given; otherwise they stay
+# on when the small chat deployment already exists, so a deploy that forgets -DeploySquadModels
+# can't delete them. A lookup that fails throws, rather than guessing "off".
+function Resolve-SquadModels {
+    if ($NoSquadModels) { return [pscustomobject]@{ On = $false; Why = 'off (-NoSquadModels)' } }
+    if ($DeploySquadModels) { return [pscustomobject]@{ On = $true; Why = 'on (-DeploySquadModels)' } }
+
+    $exists = az group exists --name $ResourceGroup
+    if ($LASTEXITCODE -ne 0) { throw "Could not check whether '$ResourceGroup' exists, so can't tell whether the squad models are deployed." }
+    if ($exists -ne 'true') { return [pscustomobject]@{ On = $false; Why = 'off (new resource group)' } }
+
+    $accounts = @(az resource list --resource-group $ResourceGroup --resource-type Microsoft.CognitiveServices/accounts --query "[].name" -o tsv)
+    if ($LASTEXITCODE -ne 0) { throw "Could not list the Foundry accounts in '$ResourceGroup', so can't tell whether the squad models are deployed." }
+
+    foreach ($account in $accounts | Where-Object { $_ }) {
+        $found = az cognitiveservices account deployment list --resource-group $ResourceGroup --name $account `
+            --query "[?name=='$SmallModelDeploymentName'].name" -o tsv
+        if ($LASTEXITCODE -ne 0) { throw "Could not list the deployments on '$account', so can't tell whether the squad models are deployed." }
+        if (-not [string]::IsNullOrWhiteSpace($found)) {
+            return [pscustomobject]@{ On = $true; Why = "on (kept: $SmallModelDeploymentName is deployed)" }
+        }
+    }
+
+    return [pscustomobject]@{ On = $false; Why = 'off (not deployed yet; pass -DeploySquadModels to add them)' }
+}
+
 function Get-TemplateParameterFile {
     param([Parameter(Mandatory)]$Deployer)
 
@@ -195,6 +259,15 @@ function Get-TemplateParameterFile {
         $values.budgetStartDate = ([datetime]$budgetStart).ToUniversalTime().ToString('yyyy-MM-dd')
     }
 
+    # The squad's models (ADR-051). A capacity left out takes the template's default.
+    $squad = Resolve-SquadModels
+    $values.deploySquadModels = $squad.On
+    if ($SmallModelCapacity) { $values.smallModelCapacity = $SmallModelCapacity }
+    if ($LargeModelCapacity) { $values.largeModelCapacity = $LargeModelCapacity }
+    $capacity = if ($squad.On) {
+        ", small $(if ($SmallModelCapacity) { "${SmallModelCapacity}K" } else { 'default' }), large $(if ($LargeModelCapacity) { "${LargeModelCapacity}K" } else { 'default' }) TPM"
+    } else { '' }
+
     # Keep the Search service once it exists: dropping the flag would remove the app settings.
     # A failed lookup must stop the run: treating it as "no service" would strip Search__Endpoint
     # from both apps. A group that doesn't exist yet (first deploy) has nothing to keep.
@@ -207,6 +280,7 @@ function Get-TemplateParameterFile {
     $values.deploySearch = if ($NoSearch) { $false } else { [bool]($DeploySearch -or (-not [string]::IsNullOrWhiteSpace($searchLive))) }
 
     Write-Host "  Deploying as: $($Deployer.Kind)" -ForegroundColor DarkGray
+    Write-Host "  Squad models: $($squad.Why)$capacity" -ForegroundColor DarkGray
     Write-Host "  Azure AI Search: $(if ($values.deploySearch) { 'deployed (about 2 pounds a day)' } else { 'not deployed' })" -ForegroundColor DarkGray
     Write-Host "  Match Centre image: $(if ($values.Contains('matchCentreImage')) { $values.matchCentreImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     Write-Host "  Simulator image: $(if ($values.Contains('simulatorImage')) { $values.simulatorImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray

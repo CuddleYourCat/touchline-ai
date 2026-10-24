@@ -248,12 +248,13 @@ public sealed partial class CommentaryWorkflow
                     new ChatOptions().ForAgent(SquadAgent.Commentator),
                     cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
+            ModelFailures.ThrowIfFiltered(response);
             return step with { Kind = StepKind.Draft, Attempt = attempt, Lines = Parse(response), UnknownNames = [] };
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             LogAgentFailed(SquadAgent.Commentator, English, MomentId(step), ex);
-            return step with { Kind = StepKind.Failed, Attempt = attempt, Lines = null };
+            return step with { Kind = StepKind.Failed, Attempt = attempt, Lines = null, FailureReason = ModelFailures.FallbackReason(ex) };
         }
     }
 
@@ -261,7 +262,7 @@ public sealed partial class CommentaryWorkflow
     {
         if (step is not { Kind: StepKind.Draft, Lines: { } lines })
         {
-            _metrics.RecordFallback(SquadAgent.Commentator, "failed");
+            _metrics.RecordFallback(SquadAgent.Commentator, step.FailureReason ?? ModelFailures.FailedReason);
             return Template(step);
         }
 
@@ -291,6 +292,7 @@ public sealed partial class CommentaryWorkflow
                     new ChatOptions().ForAgent(SquadAgent.Localiser),
                     cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
+            ModelFailures.ThrowIfFiltered(response);
             var lines = Parse(response);
 
             if (SameText(lines.Casual, step.Lines!.Casual) && SameText(lines.Analyst, step.Lines.Analyst))
@@ -313,7 +315,7 @@ public sealed partial class CommentaryWorkflow
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             LogAgentFailed(SquadAgent.Localiser, language, MomentId(step), ex);
-            _metrics.RecordFallback(SquadAgent.Localiser, "failed");
+            _metrics.RecordFallback(SquadAgent.Localiser, ModelFailures.FallbackReason(ex));
             return skipped;
         }
     }
@@ -481,7 +483,8 @@ public sealed partial class CommentaryWorkflow
         int Attempt,
         Lines? Lines,
         IReadOnlyList<string> UnknownNames,
-        string? Language);
+        string? Language,
+        string? FailureReason = null);
 
     private sealed record Lines(string Casual, string Analyst);
 

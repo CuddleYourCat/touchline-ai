@@ -15,7 +15,8 @@ namespace Touchline.EventProcessor;
 /// </summary>
 /// <remarks>
 /// An unreadable message is dead-lettered. A match that isn't stored at full time is abandoned
-/// until delivery <see cref="MaxNotFinishedDeliveries"/>, then dead-lettered. A recap
+/// until delivery <see cref="MaxNotFinishedDeliveries"/>, then dead-lettered. A recap whose model
+/// call failed transiently (ADR-052) abandons the message, so it's delivered again. A recap
 /// that couldn't be read or saved throws, so Service Bus redelivers the message; the recaps already
 /// stored are skipped on the retry, so it pays only for the missing ones.
 /// </remarks>
@@ -28,6 +29,14 @@ public sealed partial class RecapFunction(RecapWriter writer, ILogger<RecapFunct
 
     /// <summary>The subscription the trigger reads.</summary>
     public const string SubscriptionName = "recaps";
+
+    /// <summary>
+    /// The trigger's own connection name, separate from <see cref="CommentaryFunction.ConnectionName"/>
+    /// so each trigger's settings can change without the other. The AppHost references the Service
+    /// Bus namespace under this name too, and <c>infra/main.bicep</c> sets its
+    /// <c>servicebusrecaps__*</c> app settings to the processor identity.
+    /// </summary>
+    public const string ConnectionName = "servicebusrecaps";
 
     /// <summary>The dead-letter reason for a message that isn't a readable "match finished".</summary>
     public const string UnreadableReason = "UnreadableMatchFinished";
@@ -48,7 +57,7 @@ public sealed partial class RecapFunction(RecapWriter writer, ILogger<RecapFunct
     /// <returns>A task that completes once the message is settled.</returns>
     [Function(nameof(RecapFunction))]
     public async Task RunAsync(
-        [ServiceBusTrigger(TopicName, SubscriptionName, Connection = CommentaryFunction.ConnectionName, AutoCompleteMessages = false)]
+        [ServiceBusTrigger(TopicName, SubscriptionName, Connection = ConnectionName, AutoCompleteMessages = false)]
         ServiceBusReceivedMessage message,
         ServiceBusMessageActions actions,
         CancellationToken cancellationToken)
@@ -80,6 +89,16 @@ public sealed partial class RecapFunction(RecapWriter writer, ILogger<RecapFunct
             return;
         }
 
+        // A model that was throttled, erroring or timing out may answer later (ADR-052). The message
+        // is abandoned so Service Bus delivers it again, up to the subscription's max delivery count;
+        // the pairs stored meanwhile are skipped, so a retry pays only for the missing ones.
+        if (run.TransientFailures > 0)
+        {
+            LogTransient(logger, message.MessageId, run.TransientFailures, message.DeliveryCount);
+            await actions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
+            return;
+        }
+
         if (run.StoreFailures > 0)
         {
             throw new InvalidOperationException($"{run.StoreFailures} recap(s) for match {matchId} couldn't be read or saved; the message will be redelivered.");
@@ -104,6 +123,9 @@ public sealed partial class RecapFunction(RecapWriter writer, ILogger<RecapFunct
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Match-finished message {MessageId} found no finished match on delivery {DeliveryCount}; abandoned for redelivery")]
     private static partial void LogAbandoned(ILogger logger, string messageId, int deliveryCount);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Match-finished message {MessageId} had {Count} recap(s) fail on a transient model error on delivery {DeliveryCount}; abandoned for redelivery")]
+    private static partial void LogTransient(ILogger logger, string messageId, int count, int deliveryCount);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Match-finished message {MessageId} was dead-lettered: {Reason}")]
     private static partial void LogDeadLettered(ILogger logger, string messageId, string reason);

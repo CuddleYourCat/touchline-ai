@@ -43,7 +43,10 @@ public sealed partial class CommentaryFunction(
     /// <summary>The subscription the trigger reads.</summary>
     public const string SubscriptionName = "commentary";
 
-    /// <summary>The trigger's connection name, which Aspire's reference to the Service Bus namespace supplies.</summary>
+    /// <summary>
+    /// The trigger's connection name, which Aspire's reference to the Service Bus namespace supplies
+    /// locally and the <c>servicebus__*</c> app settings in <c>infra/main.bicep</c> supply in Azure.
+    /// </summary>
     public const string ConnectionName = "servicebus";
 
     /// <summary>The dead-letter reason for a message that isn't a readable key moment.</summary>

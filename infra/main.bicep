@@ -57,6 +57,21 @@ param matchCentreTraffic array = [
 @description('Create the Azure AI Search service (ADR-026, ADR-041). Off by default: Basic bills about 2 pounds a day while it exists. Flip it on for the retrieval work, and tear it down by the ADR-026 date.')
 param deploySearch bool = false
 
+// Global Standard capacity is a rate limit, in thousands of tokens per minute, not a reservation:
+// tokens are billed as used. A higher limit raises the most a runaway loop could spend in a
+// minute, so the defaults are the smallest that carry one live match. They're raised only for demo
+// days, with a redeploy, then lowered again (ADR-051).
+@description('Deploy the squad\'s chat models, their content filter and the Squad__* settings. Off by default, so a model quota failure can\'t hold up the rest of the template. deploy.ps1 keeps it on once the models exist (ADR-051).')
+param deploySquadModels bool = false
+
+@description('Tokens-per-minute limit, in thousands, for the small chat model (Commentator, Localiser).')
+@minValue(1)
+param smallModelCapacity int = 50
+
+@description('Tokens-per-minute limit, in thousands, for the large chat model (Analyst, Producer).')
+@minValue(1)
+param largeModelCapacity int = 30
+
 // ============================================================
 // Variables
 // ============================================================
@@ -83,6 +98,31 @@ var keyMomentsTopicName = 'key-moments'
 var matchFinishedTopicName = 'match-finished'
 var cosmosDatabaseName = 'touchline'
 var deploymentContainerName = 'deployment-package'
+
+// The two chat models (ADR-007). The deployment name is the model name, and the apps read it from
+// Squad__Deployments__Small and Squad__Deployments__Large, so changing a model is a redeploy.
+// Versions are the Global Standard ones listed for Sweden Central on 24 Oct.
+var smallModel = {
+  name: 'gpt-5.4-mini'
+  version: '2026-03-17'
+}
+var largeModel = {
+  name: 'gpt-5.5'
+  version: '2026-04-24'
+}
+
+// The Azure OpenAI v1 API host for the Foundry account. The squad's clients add /openai/v1/.
+var foundryOpenAiEndpoint = 'https://${foundryName}.openai.azure.com/'
+
+// The squad's model settings for both hosts (ADR-030), keyless: the identity named by
+// AZURE_CLIENT_ID signs in. Without them the hosts run on template lines and stand-in answers.
+var squadSettings = deploySquadModels
+  ? [
+      { name: 'Squad__FoundryEndpoint', value: foundryOpenAiEndpoint }
+      { name: 'Squad__Deployments__Small', value: smallModel.name }
+      { name: 'Squad__Deployments__Large', value: largeModel.name }
+    ]
+  : []
 
 var placeholderImage = 'mcr.microsoft.com/k8se/quickstart:latest'
 var isPlaceholder = matchCentreImage == placeholderImage
@@ -284,7 +324,75 @@ resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2
   }
 }
 
-// The chat model deployment arrives with ADR-007.
+// The chat models' content filter (ADR-044): the default harm categories at their default
+// thresholds, plus Prompt Shields on the prompt. Jailbreak catches a fan trying to talk the
+// Analyst out of its instructions; Indirect Attack catches instructions hidden in tool results
+// and other data the agents are handed. A blocked call throws, and every agent already falls
+// back to its template line or stand-in answer.
+resource squadContentFilter 'Microsoft.CognitiveServices/accounts/raiPolicies@2026-03-01' = if (deploySquadModels) {
+  parent: foundry
+  name: 'touchline-squad'
+  dependsOn: [embeddingDeployment] // one change at a time on the account, or it answers 409
+  properties: {
+    basePolicyName: 'Microsoft.DefaultV2'
+    mode: 'Default'
+    contentFilters: [
+      { name: 'Hate', blocking: true, enabled: true, severityThreshold: 'Medium', source: 'Prompt' }
+      { name: 'Hate', blocking: true, enabled: true, severityThreshold: 'Medium', source: 'Completion' }
+      { name: 'Sexual', blocking: true, enabled: true, severityThreshold: 'Medium', source: 'Prompt' }
+      { name: 'Sexual', blocking: true, enabled: true, severityThreshold: 'Medium', source: 'Completion' }
+      { name: 'Violence', blocking: true, enabled: true, severityThreshold: 'Medium', source: 'Prompt' }
+      { name: 'Violence', blocking: true, enabled: true, severityThreshold: 'Medium', source: 'Completion' }
+      { name: 'Selfharm', blocking: true, enabled: true, severityThreshold: 'Medium', source: 'Prompt' }
+      { name: 'Selfharm', blocking: true, enabled: true, severityThreshold: 'Medium', source: 'Completion' }
+      // Prompt Shields.
+      { name: 'Jailbreak', blocking: true, enabled: true, source: 'Prompt' }
+      { name: 'Indirect Attack', blocking: true, enabled: true, source: 'Prompt' }
+      { name: 'Protected Material Text', blocking: true, enabled: true, source: 'Completion' }
+      { name: 'Protected Material Code', blocking: false, enabled: true, source: 'Completion' }
+    ]
+  }
+}
+
+// Model deployments on one account can't change at the same time, so each waits for the one
+// before it.
+resource smallModelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-03-01' = if (deploySquadModels) {
+  parent: foundry
+  name: smallModel.name
+  dependsOn: [embeddingDeployment]
+  sku: {
+    name: 'GlobalStandard'
+    capacity: smallModelCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: smallModel.name
+      version: smallModel.version
+    }
+    raiPolicyName: squadContentFilter.name
+    versionUpgradeOption: 'OnceCurrentVersionExpired' // no silent model change mid-judging
+  }
+}
+
+resource largeModelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-03-01' = if (deploySquadModels) {
+  parent: foundry
+  name: largeModel.name
+  dependsOn: [smallModelDeployment]
+  sku: {
+    name: 'GlobalStandard'
+    capacity: largeModelCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: largeModel.name
+      version: largeModel.version
+    }
+    raiPolicyName: squadContentFilter.name
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+}
 
 // ============================================================
 // Container Apps (D1)
@@ -321,7 +429,8 @@ resource matchCentre 'Microsoft.App/containerApps@2024-03-01' = {
       '${appIdentity.id}': {}
     }
   }
-  dependsOn: [acrPullForApps] // the identity must be able to pull before the app is created
+  // The identity must be able to pull before the app is created, and the models it's pointed at must exist.
+  dependsOn: [acrPullForApps, largeModelDeployment]
   properties: {
     environmentId: containerAppsEnvironment.id
     workloadProfileName: 'Consumption'
@@ -363,6 +472,7 @@ resource matchCentre 'Microsoft.App/containerApps@2024-03-01' = {
             // Keyless and read-only, for the live read model (ADR-038), the same way as the simulator.
             { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
             ...(deploySearch ? [{ name: 'Search__Endpoint', value: searchEndpoint }] : []) // ADR-041
+            ...squadSettings // the Analyst's models (ADR-030), only when deploySquadModels is on
           ]
           // The placeholder image has no /alive or /health, so probes only apply to the real image.
           // The startup probe holds off liveness while a cold start from zero replicas
@@ -451,19 +561,29 @@ resource keyMomentsTopic 'Microsoft.ServiceBus/namespaces/topics@2024-01-01' = {
   }
 }
 
-resource keyMomentSubscriptions 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = [
-  for subscriptionName in ['commentary', 'highlights']: {
-    parent: keyMomentsTopic
-    name: subscriptionName
-    properties: {
-      maxDeliveryCount: 10
-      // Nothing reads these subscriptions until Stage 3's agents. Until then an unread moment
-      // simply expires after the topic's day, rather than piling up in the dead-letter queue
-      // as stale "failures". Stage 3 turns this on with its consumers.
-      deadLetteringOnMessageExpiration: false
-    }
+// Read by CommentaryFunction (ADR-030), with the receiver role below.
+resource commentarySubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: keyMomentsTopic
+  name: 'commentary'
+  properties: {
+    // Each delivery can make up to five model calls, so a failing moment gets three (ADR-052).
+    maxDeliveryCount: 3
+    // An expired moment is a day old, and commentary on it is no use to anyone, so it expires
+    // rather than piling up in the dead-letter queue.
+    deadLetteringOnMessageExpiration: false
   }
-]
+}
+
+// Nothing reads this yet. An unread moment simply expires after the topic's day, rather than
+// piling up in the dead-letter queue as stale "failures".
+resource highlightsSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: keyMomentsTopic
+  name: 'highlights'
+  properties: {
+    maxDeliveryCount: 10
+    deadLetteringOnMessageExpiration: false
+  }
+}
 
 // A match reaching full time (ADR-030, amended 23 Oct). The processor publishes one message per
 // match, with MessageId {matchId}:finished, so a republish after a redelivered batch is dropped.
@@ -627,7 +747,8 @@ resource processorApp 'Microsoft.Web/sites@2024-04-01' = {
     }
   }
   // The identity must reach its storage before the host first starts.
-  dependsOn: [storageOwnerForProcessor, deploymentContainer]
+  // The squad's models, when deployed, must exist before the settings point at them.
+  dependsOn: [storageOwnerForProcessor, deploymentContainer, largeModelDeployment]
   properties: {
     serverFarmId: processorPlan.id
     httpsOnly: true
@@ -646,12 +767,21 @@ resource processorApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'cosmos__accountEndpoint', value: cosmos.properties.documentEndpoint }
         { name: 'cosmos__credential', value: 'managedidentity' }
         { name: 'cosmos__clientId', value: processorIdentity.properties.clientId }
+        // The commentary trigger's connection (CommentaryFunction.ConnectionName, ADR-030).
+        { name: 'servicebus__fullyQualifiedNamespace', value: serviceBusHost }
+        { name: 'servicebus__credential', value: 'managedidentity' }
+        { name: 'servicebus__clientId', value: processorIdentity.properties.clientId }
+        // The recap trigger's own connection (RecapFunction.ConnectionName, ADR-030 amended 23 Oct).
+        { name: 'servicebusrecaps__fullyQualifiedNamespace', value: serviceBusHost }
+        { name: 'servicebusrecaps__credential', value: 'managedidentity' }
+        { name: 'servicebusrecaps__clientId', value: processorIdentity.properties.clientId }
         // Aspire's clients, keyless: DefaultAzureCredential picks the identity named by AZURE_CLIENT_ID.
         { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
         { name: 'Aspire__Azure__Messaging__ServiceBus__FullyQualifiedNamespace', value: serviceBusHost }
         { name: 'AZURE_CLIENT_ID', value: processorIdentity.properties.clientId }
         ...(deploySearch ? [{ name: 'Search__Endpoint', value: searchEndpoint }] : []) // ADR-041
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
+        ...squadSettings // the squad's models (ADR-030), only when deploySquadModels is on
       ]
     }
     functionAppConfig: {
@@ -948,6 +1078,17 @@ resource finishedSenderForProcessor 'Microsoft.Authorization/roleAssignments@202
   }
 }
 
+// The commentary function reads its own subscription only.
+resource commentaryReceiverForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(commentarySubscription.id, processorIdentity.id, roles.serviceBusDataReceiver)
+  scope: commentarySubscription
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.serviceBusDataReceiver)
+    principalId: processorIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // The recap function reads its own subscription only.
 resource recapsReceiverForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(recapsSubscription.id, processorIdentity.id, roles.serviceBusDataReceiver)
@@ -958,6 +1099,20 @@ resource recapsReceiverForProcessor 'Microsoft.Authorization/roleAssignments@202
     principalType: 'ServicePrincipal'
   }
 }
+
+// Call the squad's models for the commentary and the recaps (ADR-030). Inference only: it can't
+// list keys, change deployments or manage the account. The role can't be narrowed below the
+// account, so it covers the embedding deployment too.
+resource foundryUserForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(foundry.id, processorIdentity.id, roles.cognitiveServicesOpenAiUser)
+  scope: foundry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.cognitiveServicesOpenAiUser)
+    principalId: processorIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 resource storageOwnerForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(processorStorage.id, processorIdentity.id, roles.storageBlobDataOwner)
   scope: processorStorage
@@ -1113,6 +1268,9 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
 output matchCentreUrl string = 'https://${matchCentre.properties.configuration.ingress.fqdn}'
 output registryLoginServer string = registry.properties.loginServer
 output foundryEndpoint string = foundry.properties.endpoint
+output squadFoundryEndpoint string = deploySquadModels ? foundryOpenAiEndpoint : ''
+output smallModelDeployment string = deploySquadModels ? smallModel.name : ''
+output largeModelDeployment string = deploySquadModels ? largeModel.name : ''
 output keyVaultUri string = keyVault.properties.vaultUri
 output appIdentityClientId string = appIdentity.properties.clientId
 output ciIdentityClientId string = ciIdentity.properties.clientId

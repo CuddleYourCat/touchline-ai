@@ -163,7 +163,7 @@ public sealed partial class AnalystSquad : ISquad
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             LogAnalystFailed(matchId, ex);
-            return Fallback(UnavailableAnswer, viewer, ex is SquadBudgetExceededException ? "budget" : "failed");
+            return Fallback(UnavailableAnswer, viewer, ex is SquadBudgetExceededException ? "budget" : ModelFailures.FallbackReason(ex));
         }
     }
 
@@ -309,6 +309,7 @@ public sealed partial class AnalystSquad : ISquad
             }.ForAgent(SquadAgent.Analyst);
 
             var response = await _chatClient.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
+            ModelFailures.ThrowIfFiltered(response);
             messages.AddRange(response.Messages);
 
             List<FunctionCallContent> calls = [.. response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>()];

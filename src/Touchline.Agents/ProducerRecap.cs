@@ -26,7 +26,7 @@ namespace Touchline.Agents;
 /// <item>The roster guardrail checks the headline and text (ADR-044). On a miss the Producer
 /// writes once more with a corrective note, then falls back to the template recap.</item>
 /// <item>A model failure, or no models, gives the template recap, in English, marked as not from
-/// the model so the caller doesn't store it.</item>
+/// the model so the caller doesn't store it. A transient failure is marked as such (ADR-052).</item>
 /// </list>
 /// </remarks>
 public sealed partial class ProducerRecap
@@ -128,6 +128,7 @@ public sealed partial class ProducerRecap
             {
                 var response = await _chatClient.GetResponseAsync<RecapDraft>(messages, options, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
+                ModelFailures.ThrowIfFiltered(response);
                 var (headline, text) = Parse(response);
 
                 var unknown = RosterGuardrail.FindUnknownNames($"{headline}\n{text}", sheet.AllowedPlayerNames, sheet.OtherKnownNames);
@@ -148,7 +149,9 @@ public sealed partial class ProducerRecap
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             LogProducerFailed(matchId, ex);
-            _metrics.RecordFallback(SquadAgent.Producer, "failed");
+            var kind = ModelFailures.Classify(ex, cancellationToken);
+            _metrics.RecordFallback(SquadAgent.Producer, kind == ModelFailureKind.ContentFilter ? ModelFailures.ContentFilterReason : ModelFailures.FailedReason);
+            return new ProducedRecap(Template(sheet, moments, viewer), FromModel: false, TransientFailure: kind == ModelFailureKind.Transient);
         }
 
         return new ProducedRecap(Template(sheet, moments, viewer), FromModel: false);
@@ -252,4 +255,9 @@ public sealed partial class ProducerRecap
 /// <summary>A recap the Producer wrote, and whether the model wrote it.</summary>
 /// <param name="Recap">The recap.</param>
 /// <param name="FromModel">True for the model's recap; false for the template, which isn't worth storing.</param>
-public sealed record ProducedRecap(MatchRecap Recap, bool FromModel);
+/// <param name="TransientFailure">
+/// True when the template stands in because the model call failed in a way a later retry may fix
+/// (throttled, a server error or a timeout; ADR-052), so the caller can ask for redelivery instead of
+/// counting a fallback. False for a model recap, a guardrail miss, a content-filter block or any other failure.
+/// </param>
+public sealed record ProducedRecap(MatchRecap Recap, bool FromModel, bool TransientFailure = false);

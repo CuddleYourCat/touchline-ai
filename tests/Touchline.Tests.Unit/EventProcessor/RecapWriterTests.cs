@@ -97,6 +97,30 @@ public class RecapWriterTests
         _recaps.Stored.Should().HaveCount(5).And.NotContainKey((_matchId, ViewingMode.Casual, "en"));
     }
 
+    [TestCase(429)]
+    [TestCase(503)]
+    public async Task A_transient_model_error_is_counted_for_redelivery_and_not_on_the_attempt_marker(int status)
+    {
+        _chat.Throws(ModelFailuresTests.Failure(status));
+
+        var run = await Writer().WriteAsync(_matchId, CancellationToken.None);
+
+        run.Should().Be(new RecapRun(RecapRunStatus.Done, 5, 0, 0, 0, TransientFailures: 1));
+        _recaps.Stored.Should().HaveCount(5).And.NotContainKey((_matchId, ViewingMode.Casual, "en"));
+        _recaps.Attempts.Should().BeEmpty("the model never answered, so the redelivery gets a fair try");
+    }
+
+    [Test]
+    public async Task A_content_filter_block_is_a_permanent_fallback_on_the_attempt_marker()
+    {
+        _chat.Throws(ModelFailuresTests.Failure(400, """{"error":{"code":"content_filter"}}"""));
+
+        var run = await Writer().WriteAsync(_matchId, CancellationToken.None);
+
+        run.Should().Be(new RecapRun(RecapRunStatus.Done, 5, 0, 1, 0));
+        _recaps.Attempts.Should().ContainKey((_matchId, ViewingMode.Casual, "en"));
+    }
+
     [Test]
     public async Task A_failed_save_is_counted_and_the_rest_carry_on()
     {

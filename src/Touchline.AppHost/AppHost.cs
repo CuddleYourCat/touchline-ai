@@ -43,7 +43,10 @@ var eventProcessor = builder.AddAzureFunctionsProject<Projects.Touchline_EventPr
     .WithHostStorage(storage)
     .WithReference(eventHubs).WaitFor(eventHubs)
     .WithReference(cosmos).WaitFor(cosmos)
-    .WithReference(serviceBus).WaitFor(serviceBus);
+    .WithReference(serviceBus).WaitFor(serviceBus)
+    // The recap trigger has its own connection name (RecapFunction.ConnectionName), the same
+    // namespace under a second name, as in main.bicep.
+    .WithReference(serviceBus, connectionName: "servicebusrecaps");
 
 // The squad's model settings (ADR-043), passed through only when set in the AppHost's
 // configuration (user secrets or environment), so a machine with no Foundry still runs the

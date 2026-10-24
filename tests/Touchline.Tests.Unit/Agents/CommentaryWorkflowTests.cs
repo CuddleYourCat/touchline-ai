@@ -132,6 +132,43 @@ public sealed class CommentaryWorkflowTests
     }
 
     [Test]
+    public async Task A_content_filter_block_on_the_commentator_or_a_localiser_is_tagged_content_filter()
+    {
+        var reasons = new ConcurrentQueue<string>();
+        var factory = _provider.GetRequiredService<IMeterFactory>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Name == SquadMetrics.FallbackCounterName && ReferenceEquals(instrument.Meter.Scope, factory))
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            foreach (var pair in tags)
+            {
+                if (pair.Key == SquadMetrics.ReasonTag)
+                {
+                    reasons.Enqueue(pair.Value?.ToString() ?? "");
+                }
+            }
+        });
+        listener.Start();
+        var filtered = FakeChatClient.Reply(_spanishLines, 10, 2);
+        filtered.FinishReason = ChatFinishReason.ContentFilter;
+        _chat.Throws(ModelFailuresTests.Failure(400, """{"error":{"code":"content_filter"}}"""));
+
+        await Workflow("en").RunAsync(_moment, _context, CancellationToken.None);
+        _chat.Returns(_cleanLines).Returns(filtered);
+        await Workflow("es").RunAsync(_moment, _context, CancellationToken.None);
+
+        reasons.Should().Equal(ModelFailures.ContentFilterReason, ModelFailures.ContentFilterReason);
+    }
+
+    [Test]
     public async Task Regional_english_tags_are_not_sent_to_a_localiser()
     {
         _chat.Returns(_cleanLines);

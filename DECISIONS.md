@@ -972,6 +972,8 @@ Cost and latency follow call volume, and quality matters most where calls are fe
 - **Two deployments to keep in step** in Bicep, configuration and the AppHost.
 - **The model names will date.** They're configuration, not code, so changing a model is a redeploy, not a rebuild.
 
+**As built (lane D slice 6, 24 Oct):** `infra/main.bicep` deploys `gpt-5.4-mini` version `2026-03-17` and `gpt-5.5` version `2026-04-24` (the Global Standard versions listed on Microsoft Learn on 24 Oct), each named after its model, with `versionUpgradeOption: OnceCurrentVersionExpired` so the model doesn't change under the judges. Capacity (tokens per minute) and the `deploySquadModels` switch are ADR-051. Both share the `touchline-squad` content filter: Microsoft.DefaultV2's categories at Medium, with Prompt Shields (Jailbreak and Indirect Attack) blocking on the prompt (ADR-044). The processor identity gets Cognitive Services OpenAI User on the account, as the Match Centre identity already had, and, while `deploySquadModels` is on, both apps get `Squad__FoundryEndpoint` (`https://<account>.openai.azure.com/`) and `Squad__Deployments__*`, with no keys. The recap trigger gets its own connection, `servicebusrecaps`, and the `commentary` subscription gets the receiver role it was missing.
+
 ---
 
 ## ADR-008 — How to chunk a match timeline for retrieval
@@ -1338,6 +1340,45 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 
 ---
 
+## ADR-039 — How possessions get into the search index
+
+**Status:** Accepted · 24 Oct, lane C (builds on ADR-008 and ADR-026)
+
+**Decision**
+**Push from the Event Processor at full time.** A new function on the `match-finished` topic, with its own `search-index` subscription (the same shape as `RecapFunction`), builds the ADR-008 possession summaries, embeds them in one batch with `text-embedding-3-small`, and merges them into the index with `MergeOrUploadDocuments`. The document key is `{matchId}:{possessionId}`, so a redelivered message rewrites the same documents and the run is idempotent. The subscription is created whether or not Search is deployed, so the trigger always has something to bind to. Its `maxDeliveryCount` is 3, matching ADR-052 (consumers that call a model retry at most three times). **The trigger needs its own Service Bus connection name** (for example `servicebussearch`), with its own `__fullyQualifiedNamespace`, `__credential` and `__clientId` app settings, because every trigger must have a unique connection name.
+
+**Alternatives considered**
+- **Live, per possession.** Fans could search mid-match, but it means many small embedding calls and index writes per match, and a possession's summary isn't final until it ends.
+- **An indexer with integrated vectorisation over Cosmos DB.** Less code, but it can't compose the ADR-008 summaries, which are built from several events, so it would index raw events.
+
+---
+
+## ADR-040 — The possession index schema and how it is queried
+
+**Status:** Accepted · 24 Oct, lane C (builds on ADR-008, ADR-026 and ADR-039)
+
+**Decision**
+- **Schema** (`infra/search/possessions-index.json`): `id`, `matchId` (filterable), `possessionId`, `team`, `fromClock` and `toClock` with an integer `fromSeconds`, `players` (`Collection(String)`, searchable), `endedIn` (filterable), `summary` (searchable, English analyser) and `summaryVector` (1,536 dimensions, float32, HNSW with cosine, no compression). The semantic configuration uses `summary` as content and `players` as keywords.
+- **Query:** embed the question client-side, then send a `VectorizedQuery` plus the keyword text, filtered by `matchId`. Hybrid results are combined with RRF and re-ranked by the **semantic ranker on the free semantic plan only**. Standard semantic billing is never switched on without sign-off.
+- **Fallbacks, with a `search.fallback` counter tagged by reason:** the embedding call fails, so keyword only; the semantic ranker returns 429 or 503, so hybrid without it; Search is down, so an empty list. The whole query has a timeout of about 3 seconds, so a slow Search never stalls the Analyst.
+
+**Alternatives considered:** vector only (misses exact names and numbers); a vectorizer inside the index (the query then needs a Search-to-Foundry identity grant and the embedding failure can't fall back to keyword); scalar or binary quantisation (a saving that doesn't matter at a few thousand documents); semantic ranker on standard billing (cost without sign-off).
+
+---
+
+## ADR-041 — How the apps reach Azure AI Search
+
+**Status:** Accepted · 24 Oct, lane C (builds on ADR-024 and ADR-026)
+
+**Decision**
+- **Keyless:** the service has `disableLocalAuth: true`, so there are no admin or query keys. The Event Processor's identity gets **Search Index Data Contributor** and the Match Centre's gets **Search Index Data Reader**, both on the service. Each app reads its endpoint from `Search:Endpoint` (`Search__Endpoint` in app settings), and nothing is a secret. The processor's Foundry role (Cognitive Services OpenAI User, for embeddings) comes from lane D's model-deployments slice, not from this one.
+- **The index is created by `infra/deploy.ps1 -Action create-index`** (or the same call by hand), using the signed-in developer's token, so the processor never needs Search Service Contributor. The developer gets that role in the same deploy.
+- **The service is behind a `deploySearch` Bicep parameter, off by default.** Basic bills about £2 a day while it exists, so it is only created when switched on. Once it exists, `deploy.ps1` keeps it on for later deploys. Its teardown date is 15 November (ADR-026). To stop the bill early, `deploy.ps1 -Action teardown-search` deletes only the Search service, and `-NoSearch` makes a deploy leave Search (and its app settings) out even while the service exists.
+
+**Alternatives considered:** admin and query keys in Key Vault (secrets to leak and rotate); letting the processor create the index at start-up (a management role on a runtime identity); always deploying the service (a daily cost while nothing uses it).
+
+---
+
 ## ADR-042 — The squad's workflow for a key moment
 
 **Status:** Accepted · 22 Oct, lane D (builds on ADR-006)
@@ -1388,39 +1429,54 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 
 ---
 
-## ADR-039 — How possessions get into the search index
+## ADR-051 — Chat model capacity, and when the models deploy
 
-**Status:** Accepted · 24 Oct, lane C (builds on ADR-008 and ADR-026)
+**Status:** Accepted · 24 Oct, lane D slice 6 (builds on ADR-007)
+
+**Question**
+What tokens-per-minute (TPM) limit should each Global Standard chat deployment have, and how should the deployments ship without putting the rest of the template at risk?
 
 **Decision**
-**Push from the Event Processor at full time.** A new function on the `match-finished` topic, with its own `search-index` subscription (the same shape as `RecapFunction`), builds the ADR-008 possession summaries, embeds them in one batch with `text-embedding-3-small`, and merges them into the index with `MergeOrUploadDocuments`. The document key is `{matchId}:{possessionId}`, so a redelivered message rewrites the same documents and the run is idempotent. The subscription is created whether or not Search is deployed, so the trigger always has something to bind to. Its `maxDeliveryCount` is 3, matching ADR-052 (consumers that call a model retry at most three times). **The trigger needs its own Service Bus connection name** (for example `servicebussearch`), with its own `__fullyQualifiedNamespace`, `__credential` and `__clientId` app settings, because every trigger must have a unique connection name.
+- **Small by default: 50K TPM for `gpt-5.4-mini`, 30K for `gpt-5.5`** (`smallModelCapacity` and `largeModelCapacity` in `infra/main.bicep`, `-SmallModelCapacity` and `-LargeModelCapacity` on `deploy.ps1`).
+- **Raised only for demo days** (recording the video, and the judging period), with a redeploy, then **lowered again** with a redeploy that leaves the switches out:
+  - raise: `./infra/deploy.ps1 -Action deploy -SmallModelCapacity <n> -LargeModelCapacity <n>`
+  - lower: `./infra/deploy.ps1 -Action deploy`
+  - Record both dates in the resource ledger, like any other demo-day change.
+- **The models deploy behind a switch,** `deploySquadModels` (default false in the template). The content filter, both chat deployments and the `Squad__*` settings on both apps exist only when it's on. The Service Bus roles and trigger settings deploy either way, so a model quota failure can't block them. On a fresh group, run once without the models, then again with `-DeploySquadModels`.
+- **Once deployed, they stay on.** `deploy.ps1` keeps `deploySquadModels` true without the switch when the Foundry account already has the small chat deployment, so a deploy that forgets `-DeploySquadModels` can't delete them before judging. A lookup that fails throws rather than turning them off. `-NoSquadModels` forces them off (it deletes them), and can't be combined with `-DeploySquadModels`.
+
+**Rationale**
+Global Standard capacity is a **rate limit, not a reservation**: tokens are billed as used, so a higher limit costs nothing at rest. What it does set is the most a runaway loop (a redelivery storm, a retry bug, a scripted fan) can spend in a minute. A low limit everywhere else caps that worst case, and the cost of a demo-day raise is only the extra tokens the demo actually uses.
 
 **Alternatives considered**
-- **Live, per possession.** Fans could search mid-match, but it means many small embedding calls and index writes per match, and a possession's summary isn't final until it ends.
-- **An indexer with integrated vectorisation over Cosmos DB.** Less code, but it can't compose the ADR-008 summaries, which are built from several events, so it would index raw events.
+- **Minimal all the time.** The lowest ceiling, but a busy judging session would be throttled (429s) into template lines.
+- **Sized for two parallel matches all the time.** No throttling, but a runaway could spend several times faster for the whole fortnight.
+
+**Trade-offs**
+- **Two manual redeploys per demo window,** and the risk of forgetting to raise before judging or lower after. The ledger entry is the reminder.
+- **The `gpt-5.5` quota depends on the subscription's quota tier,** so a raise can fail at deploy. The switch keeps that failure away from the rest of the template.
 
 ---
 
-## ADR-040 — The possession index schema and how it is queried
+## ADR-052 — Retries that cost model calls
 
-**Status:** Accepted · 24 Oct, lane C (builds on ADR-008, ADR-026 and ADR-039)
+**Status:** Accepted · 24 Oct, lane D slice 6 (builds on ADR-030, ADR-044)
 
-**Decision**
-- **Schema** (`infra/search/possessions-index.json`): `id`, `matchId` (filterable), `possessionId`, `team`, `fromClock` and `toClock` with an integer `fromSeconds`, `players` (`Collection(String)`, searchable), `endedIn` (filterable), `summary` (searchable, English analyser) and `summaryVector` (1,536 dimensions, float32, HNSW with cosine, no compression). The semantic configuration uses `summary` as content and `players` as keywords.
-- **Query:** embed the question client-side, then send a `VectorizedQuery` plus the keyword text, filtered by `matchId`. Hybrid results are combined with RRF and re-ranked by the **semantic ranker on the free semantic plan only**. Standard semantic billing is never switched on without sign-off.
-- **Fallbacks, with a `search.fallback` counter tagged by reason:** the embedding call fails, so keyword only; the semantic ranker returns 429 or 503, so hybrid without it; Search is down, so an empty list. The whole query has a timeout of about 3 seconds, so a slow Search never stalls the Analyst.
-
-**Alternatives considered:** vector only (misses exact names and numbers); a vectorizer inside the index (the query then needs a Search-to-Foundry identity grant and the embedding failure can't fall back to keyword); scalar or binary quantisation (a saving that doesn't matter at a few thousand documents); semantic ranker on standard billing (cost without sign-off).
-
----
-
-## ADR-041 — How the apps reach Azure AI Search
-
-**Status:** Accepted · 24 Oct, lane C (builds on ADR-024 and ADR-026)
+**Question**
+A recap pair whose model call fails stores nothing and completes the message, so a short model outage at full time leaves the template recap for good. And a failing key moment is redelivered up to ten times, each delivery making up to five model calls. Which failures are worth paying to retry, and how often?
 
 **Decision**
-- **Keyless:** the service has `disableLocalAuth: true`, so there are no admin or query keys. The Event Processor's identity gets **Search Index Data Contributor** and the Match Centre's gets **Search Index Data Reader**, both on the service. Each app reads its endpoint from `Search:Endpoint` (`Search__Endpoint` in app settings), and nothing is a secret. The processor's Foundry role (Cognitive Services OpenAI User, for embeddings) comes from lane D's model-deployments slice, not from this one.
-- **The index is created by `infra/deploy.ps1 -Action create-index`** (or the same call by hand), using the signed-in developer's token, so the processor never needs Search Service Contributor. The developer gets that role in the same deploy.
-- **The service is behind a `deploySearch` Bicep parameter, off by default.** Basic bills about £2 a day while it exists, so it is only created when switched on. Once it exists, `deploy.ps1` keeps it on for later deploys. Its teardown date is 15 November (ADR-026). To stop the bill early, `deploy.ps1 -Action teardown-search` deletes only the Search service, and `-NoSearch` makes a deploy leave Search (and its app settings) out even while the service exists.
+- **A recap pair that falls back on a transient model error abandons the message,** so Service Bus delivers it again, up to the `recaps` subscription's max delivery count (5). The pairs stored meanwhile are skipped, so a retry pays only for the missing ones. A transient failure isn't counted on the pair's attempt marker.
+- **Transient** is a throttled call (429), a request timeout (408), a server error (5xx), or a timeout (`TimeoutException`, or a `TaskCanceledException` the host's cancellation token didn't ask for). `ModelFailures.Classify` in `Touchline.Agents` decides it.
+- **Permanent, as before:** a guardrail miss, a content-filter block (Prompt Shields or a harm category, HTTP 400 with the code `content_filter`, or a completion whose finish reason is `content_filter`), an unreadable reply, a budget stop, and anything unrecognised. These are completed and counted on the attempt marker.
+- **The `commentary` subscription's max delivery count drops from 10 to 3,** so a failing moment costs at most three runs of the workflow.
+- **A content-filter block is tagged `content_filter`** on the `touchline.agents.fallbacks` counter, for every agent, so blocks can be told apart from outages.
 
-**Alternatives considered:** admin and query keys in Key Vault (secrets to leak and rotate); letting the processor create the index at start-up (a management role on a runtime identity); always deploying the service (a daily cost while nothing uses it).
+**Alternatives considered**
+- **Leave it as it is.** No extra calls, but a short outage at full time leaves the template recap for good.
+- **A manual rerun command** for one match. It pays only when someone chooses to, but needs a person and an authorised trigger during judging.
+
+**Trade-offs**
+- **A longer outage costs repeated calls,** up to five deliveries of the missing pairs. Calls that fail with 429 or 5xx aren't billed for tokens, and the OpenAI SDK already retries them with backoff inside each delivery.
+- **The redelivery is immediate** (an explicit abandon), so five deliveries can pass during an outage of a few minutes. Scheduled redelivery would need a send-later, which isn't worth it here.
+- **A plain network failure with no HTTP status** is classed as permanent, because the decision names status codes and timeouts only.
