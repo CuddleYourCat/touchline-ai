@@ -23,6 +23,7 @@ WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
 COPY src/Touchline.Agents/Touchline.Agents.csproj src/Touchline.Agents/
 COPY src/Touchline.Domain/Touchline.Domain.csproj src/Touchline.Domain/
+COPY src/Touchline.Search/Touchline.Search.csproj src/Touchline.Search/
 COPY src/Touchline.ServiceDefaults/Touchline.ServiceDefaults.csproj src/Touchline.ServiceDefaults/
 COPY src/Touchline.Storage/Touchline.Storage.csproj src/Touchline.Storage/
 COPY src/Touchline.MatchCentre/Touchline.MatchCentre.csproj src/Touchline.MatchCentre/
