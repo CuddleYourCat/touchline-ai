@@ -160,7 +160,7 @@ The solution's shape changes between stages, and the first shared adapter means 
 **Status:** Accepted · Kick-off. The £30 budget is superseded by ADR-026 (£60, for Azure AI Search Basic).
 
 **Decision**
-Every touchline-ai resource lives in a new resource group, `rg-touchline-ai`, in **Sweden Central**. It's on the existing pay-as-you-go subscription, alongside other projects but separate from them. A budget alert at **£30 a month** is scoped to the resource group, and the app must stay within it through judging.
+Every touchline-ai resource lives in a new resource group, `rg-touchline-ai`, in **Sweden Central** (except Azure AI Search, which ADR-058 moves to UK South). It's on the existing pay-as-you-go subscription, alongside other projects but separate from them. A budget alert at **£30 a month** is scoped to the resource group, and the app must stay within it through judging.
 
 **Alternatives considered**
 - **A new subscription.** A clean billing boundary and its own free-tier allowances, but more setup, and the subscription-wide free tiers aren't worth it for an 11-day build.
@@ -1515,6 +1515,29 @@ A recap pair whose model call fails stores nothing and completes the message, so
 
 ---
 
+## ADR-058 — Azure AI Search lives in UK South
+
+**Status:** Accepted · 24 Oct, lane C (amends ADR-011 for Search only)
+
+**Question**
+The first deploy with `-DeploySearch` failed because Sweden Central had no capacity for new Search services (`InsufficientResourcesAvailable`). Where should the Search service go, given that every other resource reads the same `location` parameter?
+
+**Decision**
+- **A separate `searchLocation` parameter** in `infra/main.bicep`, used only by the Search service. It defaults to `uksouth`, so a direct deploy of the template avoids Sweden Central too.
+- **`deploy.ps1` passes `-SearchLocation`, default `uksouth`.** Every other resource stays in Sweden Central (ADR-011).
+- **Once the service exists, `deploy.ps1` keeps its live region** and warns if `-SearchLocation` differs. A Search service can't change region in place, so a mismatch would otherwise fail the whole deployment. Moving it means `-Action teardown-search` first.
+
+**Rationale**
+UK South is the closest region to the developer, and has Basic tier and the free semantic ranker plan. Search is priced per region, so check the Basic hourly rate on the pricing page and note it in the resource ledger when the service is created. Search is only reached over HTTPS with managed identity and a data role, so the region change needs no code or role changes. The endpoint is built from the service name, not the region.
+
+**Alternatives considered**
+- **Retry Sweden Central later.** No change, but capacity shortages can last days, and submission is 27 Oct.
+- **Move everything to another region.** One region again, but it would recreate the Foundry account, model deployments and data stores three days before submission.
+- **North Europe.** Equally good; kept as the fallback if UK South is also short.
+
+**Trade-offs**
+- **Each query crosses regions,** adding roughly 20 to 40 ms. Small next to a model call.
+- **Two regions to reason about** in the cost view and the resource ledger, though the resource group and budget are unchanged.
 ## ADR-056 — How a possession document is cut and summarised
 
 **Status:** Accepted · 24 Oct, lane C (builds on ADR-008, ADR-039, ADR-040 and ADR-052)

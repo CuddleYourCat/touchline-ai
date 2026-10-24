@@ -87,6 +87,12 @@
     '-Action teardown-search' so later deploys don't recreate the service.
     Cannot be combined with -DeploySearch.
 
+.PARAMETER SearchLocation
+    Region for the Azure AI Search service only (ADR-058). Defaults to uksouth,
+    because Sweden Central had no Search capacity. Once the service exists, the
+    script keeps its live region and warns if this value differs. Moving it to
+    another region means tearing it down first ('-Action teardown-search').
+
 .PARAMETER Force
     Skip the teardown confirmation. Intended for scripted use only.
 
@@ -127,6 +133,9 @@ param(
     [switch]$DeploySearch,
 
     [switch]$NoSearch,
+
+    [ValidateNotNullOrEmpty()]
+    [string]$SearchLocation = 'uksouth',
 
     [switch]$Force
 )
@@ -272,16 +281,27 @@ function Get-TemplateParameterFile {
     # A failed lookup must stop the run: treating it as "no service" would strip Search__Endpoint
     # from both apps. A group that doesn't exist yet (first deploy) has nothing to keep.
     $searchLive = $null
+    $searchRegion = $SearchLocation
     if (-not $NoSearch -and (az group exists --name $ResourceGroup) -eq 'true') {
-        $searchLive = az resource list --resource-group $ResourceGroup --resource-type Microsoft.Search/searchServices `
-            --query "[0].name" -o tsv
+        $searchRow = az resource list --resource-group $ResourceGroup --resource-type Microsoft.Search/searchServices `
+            --query "[0].[name, location]" -o tsv
         if ($LASTEXITCODE -ne 0) { throw "Could not check whether the Search service exists. Re-run, or pass -NoSearch to leave it out." }
+        if (-not [string]::IsNullOrWhiteSpace($searchRow)) {
+            $searchLive, $liveRegion = ($searchRow -split "`t").Trim()
+            # A Search service can't change region in place, so a different value would fail the
+            # whole deployment. Keep the live region; moving it needs teardown-search first (ADR-058).
+            if ($liveRegion -and $liveRegion -ne $SearchLocation) {
+                Write-Warning "Search service '$searchLive' lives in $liveRegion, not $SearchLocation. Keeping $liveRegion; run '-Action teardown-search' first to move it."
+                $searchRegion = $liveRegion
+            }
+        }
     }
     $values.deploySearch = if ($NoSearch) { $false } else { [bool]($DeploySearch -or (-not [string]::IsNullOrWhiteSpace($searchLive))) }
+    $values.searchLocation = $searchRegion # ADR-058
 
     Write-Host "  Deploying as: $($Deployer.Kind)" -ForegroundColor DarkGray
     Write-Host "  Squad models: $($squad.Why)$capacity" -ForegroundColor DarkGray
-    Write-Host "  Azure AI Search: $(if ($values.deploySearch) { 'deployed (about 2 pounds a day)' } else { 'not deployed' })" -ForegroundColor DarkGray
+    Write-Host "  Azure AI Search: $(if ($values.deploySearch) { "deployed in $searchRegion (about 2 pounds a day)" } else { 'not deployed' })" -ForegroundColor DarkGray
     Write-Host "  Match Centre image: $(if ($values.Contains('matchCentreImage')) { $values.matchCentreImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     Write-Host "  Simulator image: $(if ($values.Contains('simulatorImage')) { $values.simulatorImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     if ($values.Contains('matchCentreTraffic')) {

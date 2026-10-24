@@ -21,6 +21,9 @@ targetScope = 'resourceGroup'
 @description('Region for every resource. Sweden Central gets new Foundry models early (ADR-011).')
 param location string = resourceGroup().location
 
+@description('Region for the Azure AI Search service only. Sweden Central had no Search capacity on 24 Oct, so Search lives in UK South (ADR-058). Defaults to UK South, so a direct deploy of this template avoids Sweden Central too.')
+param searchLocation string = 'uksouth'
+
 @description('Short environment label stamped on every resource tag.')
 @allowed(['dev', 'prod'])
 param environment string = 'dev'
@@ -892,7 +895,7 @@ resource simulatorJob 'Microsoft.App/jobs@2024-03-01' = {
 
 resource search 'Microsoft.Search/searchServices@2025-05-01' = if (deploySearch) {
   name: searchName
-  location: location
+  location: searchLocation // ADR-058
   tags: tags
   sku: { name: 'basic' }
   properties: {
