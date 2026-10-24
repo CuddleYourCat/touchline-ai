@@ -17,6 +17,7 @@ export const routes = [
       { path: '/matches/:id', element: <MatchPage /> },
       { path: '/matches/:id/recap', element: <RecapPage /> },
       { path: '/teams', element: <TeamsPage /> },
+      { path: '/teams/new', element: <TeamEditPage /> },
       { path: '/teams/:id/edit', element: <TeamEditPage /> },
       { path: '/kickoff', element: <KickoffPage /> },
       { path: '*', element: <NotFoundPage /> },

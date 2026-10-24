@@ -1515,6 +1515,55 @@ A recap pair whose model call fails stores nothing and completes the message, so
 
 ---
 
+## ADR-053 — Edit keys in the browser
+
+**Status:** Accepted · 24 Oct, lane A (builds on ADR-031)
+
+**Question**
+Creating a fan team returns its edit key once (ADR-031). Where does the UI keep it, so the fan can edit the team again, without turning a bearer secret into a leak?
+
+**Decision**
+- **`localStorage`, keyed by team ID:** `touchline.editKeys` holds `{ teamId: key }`. Reading it is storage-safe, like the viewer (ADR-027): a parse that throws, a blocked store or a malformed entry falls back to "no key", and only entries shaped like a team ID and a base64url key are kept.
+- **A one-time reveal after create:** the key in a read-only field with a Copy button, and a line saying this browser remembers it (or that it couldn't, so copy it now). Leaving the page drops it from the screen for good.
+- **The edit page offers "Enter an edit key"** to unlock the team on another device, and **"Forget this key on this device"**. A `403` with the title "Wrong edit key" forgets the stored key and asks for it again, keeping the fan's unsaved changes.
+- **The key only ever travels in the `Touchline-Edit-Key` header.** Never in a URL, a query string, router state or a log. Links carry team IDs only (`/kickoff?home=`, `/teams/:id/edit`).
+- **A stored key is pruned when its team 404s** (a deleted team's key is no use). The Teams page lists "Your teams" as the fan teams this browser holds a key for, and offers Edit only on those.
+
+**Alternatives considered**
+- **`sessionStorage`.** Gone when the tab closes, so a returning fan finds their own team read-only.
+- **Show once only, never stored.** Every edit needs a paste, which most fans won't have kept.
+
+**Trade-offs**
+- **Anything with script access to the origin can read the key.** The app renders all server and fan text as text (never as HTML) and loads no third-party scripts, which keeps that surface small. A demo league's teams aren't worth more than that.
+- **Clearing site data loses the key.** The reveal says to copy it, and "Enter an edit key" restores it.
+
+**Review fixes (24 Oct)**
+- **No silent deletion.** Both known 403 titles are matched explicitly ("Read-only team", "Wrong edit key"); any other 403 is a generic "couldn't verify the edit key" notice that changes nothing. A wrong key is cleared from the page's state and the enter-key panel shows, but the stored key stays until the fan presses "Forget this key on this device". This replaces the earlier rule that a wrong-key 403 forgot the stored key.
+- **A pasted key is held unverified.** "Enter an edit key" keeps the key in the page's state only. It's stored after the first successful save, and never overwrites a stored key before then. A successful delete forgets the team's key either way.
+
+---
+
+## ADR-054 — The kick-off sheet
+
+**Status:** Accepted · 24 Oct, lane A (builds on ADR-032)
+
+**Question**
+How does the kick-off page let a fan pick a line-up for either side without making a quick match a chore?
+
+**Decision**
+- **"Engine picks" per side, on by default.** A side left to the engine sends no sheet, and the engine picks its default eleven (ADR-032).
+- **Turned off, the fan picks:** each player in the squad is Not picked, Starting or Bench, grouped by position (from `PlayerSummary.position`, because `archetype` is null for built-in players). Live counts show the eleven (exactly 11), the goalkeepers (exactly 1) and the bench (0 to 7). The formation is derived from the starters' positions (`4-4-2`). **Auto-pick** fills a valid 4-4-2 by lowest shirt number, a short position borrowing from the other outfield players, with a spare goalkeeper first on the bench.
+- **The client checks the sheet before sending, and the server checks it again.** A `400` is mapped onto the side it names.
+- **`POST /api/matches` sends a fresh `Idempotency-Key` per submit** (`crypto.randomUUID`), and the button is disabled while a request is in flight. `202` opens the match. **`503` is not an error:** a calm banner says fan matches go live when the match pipeline is switched on and the teams and line-up are valid, and the selections stay. `429` uses `Retry-After`; `409` says a team can't play itself; `404` says a team no longer exists.
+- **Build order:** the team list, then create, then kick-off, then edit and delete, so the slice's cut is whatever has landed by the deadline.
+
+**Alternatives considered**
+- **Always pick the sheet.** Full control, but twenty-odd choices before every match.
+- **Drag and drop onto a pitch.** Looks great, but it's hard to make keyboard accessible and slow to build five days out.
+
+**Trade-offs**
+- **The bench is chosen but not yet used** (ADR-032): the UI shows it as named substitutes.
+- **The sheet rules live in two places**, the client check and `MatchdaySheetRules`. The server stays the authority, and its messages reach the page.
 ## ADR-055 — Shaping overlay cards and minor restarts for each viewer
 
 **Status:** Accepted · 24 Oct, lane E (builds on ADR-046, ADR-047)

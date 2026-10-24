@@ -974,3 +974,422 @@ code,
     animation: none;
   }
 }
+
+/* Teams list (ADR-031) */
+.teams-page,
+.builder,
+.kickoff-page,
+.kickoff {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.teams-intro,
+.builder-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+
+.teams-intro p,
+.builder-head p {
+  margin: 0;
+}
+
+.team-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+
+.team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.team-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.team-crest {
+  flex: none;
+}
+
+.team-card-names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.team-card-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.team-card-actions,
+.builder-actions,
+.kickoff-actions,
+.builder-head-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+a.button {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.button-ghost {
+  background: transparent;
+  color: var(--accent);
+}
+
+.button-small {
+  padding: 3px 10px;
+  font-size: 0.8rem;
+}
+
+.button-danger {
+  background: var(--card-red);
+  border-color: var(--card-red);
+  color: #ffffff;
+}
+
+.pill-ok {
+  border-color: var(--highlight);
+  color: var(--highlight);
+}
+
+.pill-bad {
+  border-color: var(--card-red);
+  color: var(--card-red);
+}
+
+/* Team builder (ADR-031, ADR-053) */
+.builder-form {
+  padding: 16px;
+}
+
+.builder-lock {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.builder-group {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.builder-legend {
+  padding: 0 6px;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+
+.builder-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
+.builder-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: min(100%, 200px);
+  flex: 1 1 200px;
+}
+
+.builder-colour {
+  flex: 0 1 140px;
+  min-width: 120px;
+}
+
+.builder-colour input[type='color'] {
+  width: 100%;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.name-row,
+.key-row {
+  display: flex;
+  gap: 8px;
+}
+
+.name-row .input,
+.key-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.input {
+  font: inherit;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  min-width: 0;
+}
+
+.input:focus-visible,
+.button:focus-visible,
+.builder-colour input:focus-visible,
+.toggle input:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 1px;
+}
+
+.input[aria-invalid='true'],
+.select[aria-invalid='true'] {
+  border-color: var(--card-red);
+}
+
+.field-error {
+  color: var(--card-red);
+  font-size: 0.85rem;
+}
+
+.builder-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.builder-alert p {
+  margin: 0;
+}
+
+.builder-status:empty {
+  display: none;
+}
+
+.error-summary {
+  margin: 0;
+  padding: 12px 12px 12px 32px;
+  border-color: var(--card-red);
+}
+
+.crest-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.crest-picker .builder-fields {
+  flex: 1 1 300px;
+}
+
+.crest-preview {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.rule-chips {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.squad-scroll {
+  overflow-x: auto;
+}
+
+.squad-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 520px;
+}
+
+.squad-table th {
+  text-align: left;
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 4px;
+}
+
+.squad-table td {
+  padding: 4px;
+  vertical-align: top;
+}
+
+.squad-table td .input,
+.squad-table td .select {
+  width: 100%;
+}
+
+.squad-table td .field-error {
+  display: block;
+}
+
+.squad-number {
+  width: 4.5em;
+}
+
+.squad-table td:first-child {
+  width: 5em;
+}
+
+.key-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.key-reveal p {
+  margin: 0;
+}
+
+.key-reveal-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.key-value {
+  user-select: all;
+}
+
+.key-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.key-entry p {
+  margin: 0;
+}
+
+/* Kick-off (ADR-032, ADR-054) */
+.kickoff-sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 16px;
+}
+
+.kickoff-side {
+  align-self: start;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.kickoff-side .builder-field {
+  flex: none;
+}
+
+.kickoff-team {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sheet-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sheet .button-small {
+  align-self: flex-start;
+}
+
+.sheet-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.sheet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sheet-player {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sheet-player label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sheet-player .select {
+  flex: none;
+}
+
+.sheet-problems {
+  margin: 0;
+  padding-left: 18px;
+}
