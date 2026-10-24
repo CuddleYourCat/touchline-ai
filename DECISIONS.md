@@ -1385,3 +1385,42 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 **Alternatives considered:** on demand with a cache (the first viewer of each language waits); English only (`Viewer.Language` half-used).
 
 **Note:** the Event Processor needs `Microsoft.Azure.Functions.Worker.Extensions.ServiceBus` for the live commentary trigger (lane D, slice 3).
+
+---
+
+## ADR-039 — How possessions get into the search index
+
+**Status:** Accepted · 24 Oct, lane C (builds on ADR-008 and ADR-026)
+
+**Decision**
+**Push from the Event Processor at full time.** A new function on the `match-finished` topic, with its own `search-index` subscription (the same shape as `RecapFunction`), builds the ADR-008 possession summaries, embeds them in one batch with `text-embedding-3-small`, and merges them into the index with `MergeOrUploadDocuments`. The document key is `{matchId}:{possessionId}`, so a redelivered message rewrites the same documents and the run is idempotent. The subscription is created whether or not Search is deployed, so the trigger always has something to bind to. Its `maxDeliveryCount` is 3, matching ADR-052 (consumers that call a model retry at most three times). **The trigger needs its own Service Bus connection name** (for example `servicebussearch`), with its own `__fullyQualifiedNamespace`, `__credential` and `__clientId` app settings, because every trigger must have a unique connection name.
+
+**Alternatives considered**
+- **Live, per possession.** Fans could search mid-match, but it means many small embedding calls and index writes per match, and a possession's summary isn't final until it ends.
+- **An indexer with integrated vectorisation over Cosmos DB.** Less code, but it can't compose the ADR-008 summaries, which are built from several events, so it would index raw events.
+
+---
+
+## ADR-040 — The possession index schema and how it is queried
+
+**Status:** Accepted · 24 Oct, lane C (builds on ADR-008, ADR-026 and ADR-039)
+
+**Decision**
+- **Schema** (`infra/search/possessions-index.json`): `id`, `matchId` (filterable), `possessionId`, `team`, `fromClock` and `toClock` with an integer `fromSeconds`, `players` (`Collection(String)`, searchable), `endedIn` (filterable), `summary` (searchable, English analyser) and `summaryVector` (1,536 dimensions, float32, HNSW with cosine, no compression). The semantic configuration uses `summary` as content and `players` as keywords.
+- **Query:** embed the question client-side, then send a `VectorizedQuery` plus the keyword text, filtered by `matchId`. Hybrid results are combined with RRF and re-ranked by the **semantic ranker on the free semantic plan only**. Standard semantic billing is never switched on without sign-off.
+- **Fallbacks, with a `search.fallback` counter tagged by reason:** the embedding call fails, so keyword only; the semantic ranker returns 429 or 503, so hybrid without it; Search is down, so an empty list. The whole query has a timeout of about 3 seconds, so a slow Search never stalls the Analyst.
+
+**Alternatives considered:** vector only (misses exact names and numbers); a vectorizer inside the index (the query then needs a Search-to-Foundry identity grant and the embedding failure can't fall back to keyword); scalar or binary quantisation (a saving that doesn't matter at a few thousand documents); semantic ranker on standard billing (cost without sign-off).
+
+---
+
+## ADR-041 — How the apps reach Azure AI Search
+
+**Status:** Accepted · 24 Oct, lane C (builds on ADR-024 and ADR-026)
+
+**Decision**
+- **Keyless:** the service has `disableLocalAuth: true`, so there are no admin or query keys. The Event Processor's identity gets **Search Index Data Contributor** and the Match Centre's gets **Search Index Data Reader**, both on the service. Each app reads its endpoint from `Search:Endpoint` (`Search__Endpoint` in app settings), and nothing is a secret. The processor's Foundry role (Cognitive Services OpenAI User, for embeddings) comes from lane D's model-deployments slice, not from this one.
+- **The index is created by `infra/deploy.ps1 -Action create-index`** (or the same call by hand), using the signed-in developer's token, so the processor never needs Search Service Contributor. The developer gets that role in the same deploy.
+- **The service is behind a `deploySearch` Bicep parameter, off by default.** Basic bills about £2 a day while it exists, so it is only created when switched on. Once it exists, `deploy.ps1` keeps it on for later deploys. Its teardown date is 15 November (ADR-026). To stop the bill early, `deploy.ps1 -Action teardown-search` deletes only the Search service, and `-NoSearch` makes a deploy leave Search (and its app settings) out even while the service exists.
+
+**Alternatives considered:** admin and query keys in Key Vault (secrets to leak and rotate); letting the processor create the index at start-up (a management role on a runtime identity); always deploying the service (a daily cost while nothing uses it).

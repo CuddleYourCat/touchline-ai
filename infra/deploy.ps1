@@ -29,6 +29,17 @@
               Foundry account it held, so their names are released.
               Destructive; asks for confirmation unless -Force is supplied.
     principal Print who the deployment would run as, then exit.
+    teardown-search
+              Delete only the Azure AI Search service (the roughly 2 pounds a day
+              resource), leaving everything else. Asks for confirmation unless
+              -Force is supplied. Follow it with '-Action deploy -NoSearch' so the
+              apps lose their Search__Endpoint setting and a deploy doesn't
+              recreate the service.
+    create-index
+              Create or update the Azure AI Search index from
+              infra/search/possessions-index.json (ADR-040). Needs the Search
+              service (deploy with -DeploySearch first) and the Search Service
+              Contributor role, which the deploy grants to the signed-in user.
 
 .PARAMETER ResourceGroup
     Target resource group (ADR-011).
@@ -45,6 +56,17 @@
     Optional. Where budget alerts go. Defaults to the signed-in user's email;
     required (or BUDGET_ALERT_EMAIL) when signed in as a service principal.
 
+.PARAMETER DeploySearch
+    Create the Azure AI Search service (Basic, about 2 pounds a day, ADR-026).
+    Off by default. Once the service exists, later deploys keep it without the
+    switch, so a redeploy never drops the Search__Endpoint app settings.
+
+.PARAMETER NoSearch
+    Force deploySearch off, even when the Search service exists, so the deploy
+    leaves the Search__Endpoint app settings out. Run it after
+    '-Action teardown-search' so later deploys don't recreate the service.
+    Cannot be combined with -DeploySearch.
+
 .PARAMETER Force
     Skip the teardown confirmation. Intended for scripted use only.
 
@@ -58,7 +80,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('whatif', 'deploy', 'teardown', 'principal')]
+    [ValidateSet('whatif', 'deploy', 'teardown', 'principal', 'create-index', 'teardown-search')]
     [string]$Action,
 
     [string]$ResourceGroup = 'rg-touchline-ai',
@@ -69,11 +91,17 @@ param(
 
     [string]$OwnerEmail,
 
+    [switch]$DeploySearch,
+
+    [switch]$NoSearch,
+
     [switch]$Force
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ($DeploySearch -and $NoSearch) { throw "-DeploySearch and -NoSearch contradict each other." }
 
 $TemplateFile = Join-Path $PSScriptRoot 'main.bicep'
 
@@ -82,6 +110,11 @@ $MatchCentreAppName = 'ca-matchcentre'
 $SimulatorJobName = 'job-simulator'
 $BudgetName = 'budget-touchline-ai'
 $BudgetApiVersion = '2023-11-01'
+
+# Azure AI Search (ADR-040, ADR-041). The index definition is committed beside this script.
+$SearchIndexFile = Join-Path $PSScriptRoot 'search/possessions-index.json'
+$SearchIndexName = 'possessions'
+$SearchDataApiVersion = '2024-07-01'
 
 # ── Who is deploying ──────────────────────────────────────────────────────────
 
@@ -162,7 +195,19 @@ function Get-TemplateParameterFile {
         $values.budgetStartDate = ([datetime]$budgetStart).ToUniversalTime().ToString('yyyy-MM-dd')
     }
 
+    # Keep the Search service once it exists: dropping the flag would remove the app settings.
+    # A failed lookup must stop the run: treating it as "no service" would strip Search__Endpoint
+    # from both apps. A group that doesn't exist yet (first deploy) has nothing to keep.
+    $searchLive = $null
+    if (-not $NoSearch -and (az group exists --name $ResourceGroup) -eq 'true') {
+        $searchLive = az resource list --resource-group $ResourceGroup --resource-type Microsoft.Search/searchServices `
+            --query "[0].name" -o tsv
+        if ($LASTEXITCODE -ne 0) { throw "Could not check whether the Search service exists. Re-run, or pass -NoSearch to leave it out." }
+    }
+    $values.deploySearch = if ($NoSearch) { $false } else { [bool]($DeploySearch -or (-not [string]::IsNullOrWhiteSpace($searchLive))) }
+
     Write-Host "  Deploying as: $($Deployer.Kind)" -ForegroundColor DarkGray
+    Write-Host "  Azure AI Search: $(if ($values.deploySearch) { 'deployed (about 2 pounds a day)' } else { 'not deployed' })" -ForegroundColor DarkGray
     Write-Host "  Match Centre image: $(if ($values.Contains('matchCentreImage')) { $values.matchCentreImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     Write-Host "  Simulator image: $(if ($values.Contains('simulatorImage')) { $values.simulatorImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     if ($values.Contains('matchCentreTraffic')) {
@@ -256,6 +301,58 @@ function Invoke-Deploy {
     az deployment group show --resource-group $ResourceGroup --name main --query properties.outputs
 }
 
+function Invoke-CreateIndex {
+    $endpoint = az deployment group show --resource-group $ResourceGroup --name main `
+        --query properties.outputs.searchEndpoint.value -o tsv
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($endpoint)) {
+        throw "No search endpoint in the deployment outputs. Run '-Action deploy -DeploySearch' first."
+    }
+    $endpoint = $endpoint.Trim()
+
+    # The service has local auth off, so the data plane takes an Entra ID token, never an API key.
+    $token = az account get-access-token --resource https://search.azure.com --query accessToken -o tsv
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) { throw "Could not get a Search access token." }
+    $headers = @{ Authorization = "Bearer $($token.Trim())" }
+
+    Write-Host "`nCreating or updating index '$SearchIndexName' on $endpoint..." -ForegroundColor Cyan
+    $body = Get-Content -Path $SearchIndexFile -Raw
+    Invoke-RestMethod -Method Put -Uri "$endpoint/indexes/${SearchIndexName}?api-version=$SearchDataApiVersion" `
+        -Body $body -ContentType 'application/json' -Headers $headers | Out-Null
+
+    $stats = Invoke-RestMethod -Method Get -Uri "$endpoint/indexes/${SearchIndexName}/stats?api-version=$SearchDataApiVersion" `
+        -Headers $headers
+    Write-Host "Index ready. Documents: $($stats.documentCount)" -ForegroundColor Green
+}
+
+function Invoke-TeardownSearch {
+    $names = @(az resource list --resource-group $ResourceGroup --resource-type Microsoft.Search/searchServices --query "[].name" -o tsv)
+    if ($LASTEXITCODE -ne 0) { throw "Could not list the Search service." }
+    $names = @($names | Where-Object { $_ })
+    if ($names.Count -eq 0) {
+        Write-Host "`nNo Search service in '$ResourceGroup'. Nothing to delete.`n" -ForegroundColor Green
+        return
+    }
+
+    Write-Host "`nAbout to delete the Search service '$($names -join ', ')' and its indexes." -ForegroundColor Yellow
+    Write-Host "Everything else in '$ResourceGroup' is kept. The index can be rebuilt by redeploying and re-indexing."
+
+    if (-not $Force) {
+        $confirm = (Read-Host "Type the resource group name to confirm").Trim()
+        if ($confirm -ne $ResourceGroup) {
+            Write-Host "`nCancelled. No changes made." -ForegroundColor Green
+            return
+        }
+    }
+
+    foreach ($name in $names) {
+        Write-Host "  Deleting '$name'..." -ForegroundColor Cyan
+        az resource delete --resource-group $ResourceGroup --resource-type Microsoft.Search/searchServices --name $name
+        if ($LASTEXITCODE -ne 0) { throw "Could not delete '$name'." }
+    }
+
+    Write-Host "`nSearch deleted. Run '-Action deploy -NoSearch' next, and record the date in the resource ledger.`n" -ForegroundColor Green
+}
+
 function Invoke-Teardown {
     # Read the soft-deleting resources' names before the group disappears.
     $keyVaults = @(az resource list --resource-group $ResourceGroup --resource-type Microsoft.KeyVault/vaults --query "[].name" -o tsv)
@@ -309,4 +406,6 @@ switch ($Action) {
     'deploy'    { Invoke-Deploy }
     'teardown'  { Invoke-Teardown }
     'principal' { Show-Principal }
+    'create-index' { Invoke-CreateIndex }
+    'teardown-search' { Invoke-TeardownSearch }
 }

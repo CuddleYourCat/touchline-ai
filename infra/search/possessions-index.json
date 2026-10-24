@@ -1,0 +1,47 @@
+{
+  "name": "possessions",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true, "retrievable": true },
+    { "name": "matchId", "type": "Edm.String", "filterable": true, "retrievable": true },
+    { "name": "possessionId", "type": "Edm.String", "retrievable": true },
+    { "name": "team", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true },
+    { "name": "fromClock", "type": "Edm.String", "retrievable": true },
+    { "name": "toClock", "type": "Edm.String", "retrievable": true },
+    { "name": "fromSeconds", "type": "Edm.Int32", "filterable": true, "sortable": true, "retrievable": true },
+    { "name": "players", "type": "Collection(Edm.String)", "searchable": true, "retrievable": true, "analyzer": "standard.lucene" },
+    { "name": "endedIn", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true },
+    { "name": "summary", "type": "Edm.String", "searchable": true, "retrievable": true, "analyzer": "en.microsoft" },
+    {
+      "name": "summaryVector",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "retrievable": false,
+      "dimensions": 1536,
+      "vectorSearchProfile": "possessions-hnsw-profile"
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "possessions-hnsw",
+        "kind": "hnsw",
+        "hnswParameters": { "metric": "cosine", "m": 4, "efConstruction": 400, "efSearch": 500 }
+      }
+    ],
+    "profiles": [
+      { "name": "possessions-hnsw-profile", "algorithm": "possessions-hnsw" }
+    ]
+  },
+  "semantic": {
+    "defaultConfiguration": "possessions-semantic",
+    "configurations": [
+      {
+        "name": "possessions-semantic",
+        "prioritizedFields": {
+          "contentFields": [ { "fieldName": "summary" } ],
+          "keywordsFields": [ { "fieldName": "players" } ]
+        }
+      }
+    ]
+  }
+}

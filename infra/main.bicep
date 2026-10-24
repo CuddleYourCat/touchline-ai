@@ -54,6 +54,9 @@ param matchCentreTraffic array = [
   }
 ]
 
+@description('Create the Azure AI Search service (ADR-026, ADR-041). Off by default: Basic bills about 2 pounds a day while it exists. Flip it on for the retrieval work, and tear it down by the ADR-026 date.')
+param deploySearch bool = false
+
 // ============================================================
 // Variables
 // ============================================================
@@ -103,7 +106,16 @@ var roles = {
   storageBlobDataOwner: 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
   websiteContributor: 'de139f84-1756-47ae-9be6-808fbbe84772'
   containerAppsJobsContributor: '4e3d2b60-56ae-4dc6-a233-09c8e5a82e68'
+  searchIndexDataContributor: '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
+  searchIndexDataReader: '1407120a-92aa-4202-b7e9-c0e197c71c8f'
+  searchServiceContributor: '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
 }
+
+// Azure AI Search (ADR-026, ADR-040, ADR-041).
+var searchName = 'srch-touchline-${suffix}'
+var searchIndexName = 'possessions'
+var searchSubscriptionName = 'search-index'
+var searchEndpoint = 'https://${searchName}.search.windows.net'
 
 // Cosmos DB's data-plane roles are its own, not Azure RBAC (ADR-024).
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
@@ -350,6 +362,7 @@ resource matchCentre 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_CLIENT_ID', value: appIdentity.properties.clientId }
             // Keyless and read-only, for the live read model (ADR-038), the same way as the simulator.
             { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
+            ...(deploySearch ? [{ name: 'Search__Endpoint', value: searchEndpoint }] : []) // ADR-041
           ]
           // The placeholder image has no /alive or /health, so probes only apply to the real image.
           // The startup probe holds off liveness while a cold start from zero replicas
@@ -472,6 +485,19 @@ resource recapsSubscription 'Microsoft.ServiceBus/namespaces/topics/subscription
     deadLetteringOnMessageExpiration: true
   }
 }
+
+// The search indexer function (ADR-039) reads its own subscription, like the recaps function.
+// Created even when Search isn't deployed, so the trigger always has a subscription to bind to.
+// Unread messages expire after the topic's day without piling up in the dead-letter queue.
+resource searchIndexSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: matchFinishedTopic
+  name: searchSubscriptionName
+  properties: {
+    maxDeliveryCount: 3 // model-calling consumers retry at most 3 times (ADR-052)
+    deadLetteringOnMessageExpiration: false
+  }
+}
+
 // The trigger, the producer and the Service Bus client all want the bare host name.
 var eventHubsHost = split(split(eventHubs.properties.serviceBusEndpoint, '//')[1], ':')[0]
 var serviceBusHost = split(split(serviceBus.properties.serviceBusEndpoint, '//')[1], ':')[0]
@@ -624,6 +650,7 @@ resource processorApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
         { name: 'Aspire__Azure__Messaging__ServiceBus__FullyQualifiedNamespace', value: serviceBusHost }
         { name: 'AZURE_CLIENT_ID', value: processorIdentity.properties.clientId }
+        ...(deploySearch ? [{ name: 'Search__Endpoint', value: searchEndpoint }] : []) // ADR-041
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
       ]
     }
@@ -717,6 +744,84 @@ resource simulatorJob 'Microsoft.App/jobs@2024-03-01' = {
         }
       ]
     }
+  }
+}
+
+// ============================================================
+// Azure AI Search (ADR-026, ADR-039, ADR-040, ADR-041)
+// ============================================================
+// Basic, one replica, one partition: about 2 pounds a day while it exists, so it's behind
+// deploySearch. Keyless: with local auth off there are no admin or query keys at all, so every
+// caller needs a data role. The free semantic plan caps semantic queries at 1,000 a month;
+// standard billing needs sign-off. The index itself is created from
+// infra/search/possessions-index.json by deploy.ps1 (-Action create-index).
+
+resource search 'Microsoft.Search/searchServices@2025-05-01' = if (deploySearch) {
+  name: searchName
+  location: location
+  tags: tags
+  sku: { name: 'basic' }
+  properties: {
+    replicaCount: 1
+    partitionCount: 1
+    disableLocalAuth: true
+    semanticSearch: 'free'
+    publicNetworkAccess: 'enabled'
+  }
+}
+
+// Processor identity: write documents (merge or upload). It never creates the index.
+resource searchContributorForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deploySearch) {
+  name: guid(search.id, processorIdentity.id, roles.searchIndexDataContributor)
+  scope: search
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.searchIndexDataContributor)
+    principalId: processorIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Match Centre identity: query only.
+resource searchReaderForMatchCentre 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deploySearch) {
+  name: guid(search.id, appIdentity.id, roles.searchIndexDataReader)
+  scope: search
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.searchIndexDataReader)
+    principalId: appIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Developer: query from a local run, and create the index (a management operation, so it also
+// needs Search Service Contributor). Skipped when CI deploys.
+resource searchContributorForDeveloper 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deploySearch && !empty(principalId)) {
+  name: guid(search.id, principalId, roles.searchIndexDataContributor)
+  scope: search
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.searchIndexDataContributor)
+    principalId: principalId
+    principalType: 'User'
+  }
+}
+
+resource searchServiceContributorForDeveloper 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deploySearch && !empty(principalId)) {
+  name: guid(search.id, principalId, roles.searchServiceContributor)
+  scope: search
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.searchServiceContributor)
+    principalId: principalId
+    principalType: 'User'
+  }
+}
+
+// Processor identity: read its own search-index subscription only.
+resource searchIndexReceiverForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(searchIndexSubscription.id, processorIdentity.id, roles.serviceBusDataReceiver)
+  scope: searchIndexSubscription
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.serviceBusDataReceiver)
+    principalId: processorIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
@@ -1017,3 +1122,5 @@ output simulatorJobName string = simulatorJob.name
 output cosmosEndpoint string = cosmos.properties.documentEndpoint
 output eventHubsNamespace string = eventHubs.name
 output serviceBusNamespace string = serviceBus.name
+output searchEndpoint string = deploySearch ? searchEndpoint : ''
+output searchIndexName string = searchIndexName
