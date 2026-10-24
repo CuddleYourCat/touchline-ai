@@ -16,6 +16,8 @@ public sealed class PossessionSearchOptionsTests
         options.IndexName.Should().Be("possessions");
         options.EmbeddingDeployment.Should().Be("text-embedding-3-small");
         options.QueryTimeoutSeconds.Should().Be(3);
+        options.EmbeddingTimeout.Should().Be(TimeSpan.FromSeconds(1));
+        options.MaxQueryCharacters.Should().Be(500);
         options.MaxModelSummariesPerMatch.Should().Be(20);
         PossessionSearchOptions.SectionName.Should().Be("Search");
     }

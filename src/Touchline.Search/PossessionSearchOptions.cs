@@ -22,7 +22,16 @@ public sealed class PossessionSearchOptions
     public string EmbeddingDeployment { get; set; } = "text-embedding-3-small";
 
     /// <summary>The whole-query timeout in seconds, so a slow Search never stalls the Analyst (ADR-040).</summary>
-    public int QueryTimeoutSeconds { get; set; } = 3;
+    public double QueryTimeoutSeconds { get; set; } = 3;
+
+    /// <summary>
+    /// The sub-budget for embedding the query. When it runs out the query runs keyword only inside
+    /// the remaining <see cref="QueryTimeoutSeconds"/> instead of timing out whole (ADR-040).
+    /// </summary>
+    public TimeSpan EmbeddingTimeout { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>The longest query text sent to Search and the embedder, in characters. A cost and abuse cap on the fan's words.</summary>
+    public int MaxQueryCharacters { get; set; } = 500;
 
     /// <summary>The most possession summaries per match the small chat model writes (ADR-056); the rest use the template.</summary>
     public int MaxModelSummariesPerMatch { get; set; } = 20;

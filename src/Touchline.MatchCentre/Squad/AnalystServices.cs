@@ -1,5 +1,6 @@
 using Touchline.Agents;
 using Touchline.Domain.Squad;
+using Touchline.Search;
 
 namespace Touchline.MatchCentre.Squad;
 
@@ -24,6 +25,7 @@ public static class AnalystServices
 
         services.AddSingleton<IMatchFacts, MatchFactsAdapter>();
         services.AddSingleton<RecapReader>();
+        services.AddPossessionSearch(configuration);
         return services.AddAnalystQa(configuration);
     }
 }

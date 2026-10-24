@@ -8,6 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Touchline.Agents\Touchline.Agents.csproj" />
     <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
+    <ProjectReference Include="..\Touchline.Search\Touchline.Search.csproj" />
     <ProjectReference Include="..\Touchline.ServiceDefaults\Touchline.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Touchline.Storage\Touchline.Storage.csproj" />
   </ItemGroup>
