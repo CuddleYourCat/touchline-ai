@@ -60,6 +60,21 @@ public static class LiveCommentaryServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Adds <see cref="CosmosRecapStore"/> as <see cref="IRecapStore"/> and the <see cref="RecapWriter"/>
+    /// behind the recap function (ADR-030, amended 23 Oct). Needs <see cref="AddLiveCommentary"/> for the
+    /// models and options, and an <see cref="IMatchStore"/>.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection, for chaining.</returns>
+    public static IServiceCollection AddFullTimeRecaps(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.TryAddSingleton<IRecapStore, CosmosRecapStore>();
+        services.TryAddSingleton<RecapWriter>();
+        return services;
+    }
+
     /// <summary>Whether <c>Squad:FoundryEndpoint</c> has a value.</summary>
     /// <param name="configuration">The configuration.</param>
     /// <returns>True if the real model clients should be registered.</returns>

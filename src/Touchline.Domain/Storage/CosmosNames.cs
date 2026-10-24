@@ -26,6 +26,9 @@ public static class CosmosNames
     /// <summary>Each key moment's commentary lines, partitioned by <c>/matchId</c> (ADR-029).</summary>
     public const string Commentary = "commentary";
 
+    /// <summary>Each finished match's recaps, one per mode and language, partitioned by <c>/matchId</c> (ADR-030).</summary>
+    public const string Recaps = "recaps";
+
     /// <summary>The change feed trigger's checkpoints, partitioned by <c>/id</c>.</summary>
     public const string Leases = "leases";
 }

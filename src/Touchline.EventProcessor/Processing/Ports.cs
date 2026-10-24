@@ -95,6 +95,16 @@ public interface ISeasonStore
     Task UpsertPlayerSeasonAsync(PlayerSeason season, CancellationToken cancellationToken);
 }
 
+/// <summary>Where "match finished" goes: the Service Bus match-finished topic (ADR-030, amended 23 Oct).</summary>
+public interface IMatchFinishedPublisher
+{
+    /// <summary>Says a match has reached full time, so its recaps can be written.</summary>
+    /// <param name="matchId">The match.</param>
+    /// <param name="cancellationToken">Stops the publish.</param>
+    /// <returns>A task that completes once the message is accepted.</returns>
+    Task PublishAsync(string matchId, CancellationToken cancellationToken);
+}
+
 /// <summary>Where key moments go: the Service Bus key-moments topic (ADR-004, ADR-023).</summary>
 public interface IKeyMomentPublisher
 {

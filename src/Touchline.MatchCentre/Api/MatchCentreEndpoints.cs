@@ -8,6 +8,7 @@ using Touchline.Domain.Season;
 using Touchline.Domain.Squad;
 using Touchline.MatchCentre.Demo;
 using Touchline.MatchCentre.Live;
+using Touchline.MatchCentre.Squad;
 
 namespace Touchline.MatchCentre.Api;
 
@@ -252,7 +253,7 @@ internal static partial class MatchCentreEndpoints
         [AsParameters] ViewerQuery query,
         ITeamStore teams,
         IMatchReadModel matches,
-        ISquad squad,
+        RecapReader recaps,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
@@ -277,7 +278,7 @@ internal static partial class MatchCentreEndpoints
 
         try
         {
-            return TypedResults.Ok(await squad.RecapAsync(matchId, viewer, cancellationToken));
+            return TypedResults.Ok(await recaps.GetAsync(matchId, viewer, cancellationToken));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

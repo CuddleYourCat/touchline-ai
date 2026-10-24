@@ -9,7 +9,8 @@ namespace Touchline.MatchCentre.Squad;
 public static class AnalystServices
 {
     /// <summary>
-    /// Adds <see cref="IMatchFacts"/> over the registered read model and, when Foundry is
+    /// Adds <see cref="IMatchFacts"/> over the registered read model, the <see cref="RecapReader"/>
+    /// behind the recap endpoint, and, when Foundry is
     /// configured, the Analyst in place of the stand-in squad (<see cref="AnalystServiceCollectionExtensions.AddAnalystQa"/>).
     /// Call it after the read model and the stand-in squad are registered.
     /// </summary>
@@ -22,6 +23,7 @@ public static class AnalystServices
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddSingleton<IMatchFacts, MatchFactsAdapter>();
+        services.AddSingleton<RecapReader>();
         return services.AddAnalystQa(configuration);
     }
 }

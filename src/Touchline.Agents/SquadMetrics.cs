@@ -35,9 +35,16 @@ public sealed class SquadMetrics
     /// <summary>The tag saying how an answer was produced: <c>model</c> or <c>fallback</c>.</summary>
     public const string OutcomeTag = "touchline.answer.outcome";
 
+    /// <summary>The recap counter's name: every full-time recap the Producer wrote, by outcome.</summary>
+    public const string RecapCounterName = "touchline.agents.recaps";
+
+    /// <summary>The tag saying how a recap was written: <c>model</c>, <c>fallback</c>, or <c>skipped</c> when one was already stored.</summary>
+    public const string RecapOutcomeTag = "touchline.recap.outcome";
+
     private readonly Counter<long> _tokens;
     private readonly Counter<long> _fallbacks;
     private readonly Counter<long> _answers;
+    private readonly Counter<long> _recaps;
 
     /// <summary>Creates the squad's meter from the host's meter factory.</summary>
     /// <param name="meterFactory">The host's meter factory, which owns the meter's lifetime.</param>
@@ -57,7 +64,19 @@ public sealed class SquadMetrics
             AnswerCounterName,
             unit: "{answer}",
             description: "Fan questions answered, by agent and whether the model's answer or a safe fallback was sent.");
+        _recaps = meter.CreateCounter<long>(
+            RecapCounterName,
+            unit: "{recap}",
+            description: "Full-time recaps, by whether the model wrote it, the template stood in, or one was already stored.");
     }
+
+    /// <summary>Records one recap the Producer wrote, or skipped.</summary>
+    /// <param name="outcome"><c>model</c>, <c>fallback</c> or <c>skipped</c>.</param>
+    public void RecordRecap(string outcome) =>
+        _recaps.Add(
+            1,
+            new KeyValuePair<string, object?>(AgentTag, nameof(SquadAgent.Producer)),
+            new KeyValuePair<string, object?>(RecapOutcomeTag, outcome));
 
     /// <summary>Records one answer to a fan's question.</summary>
     /// <param name="agent">The agent that answered.</param>

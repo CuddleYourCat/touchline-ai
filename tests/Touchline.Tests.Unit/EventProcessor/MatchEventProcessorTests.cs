@@ -315,6 +315,12 @@ public class MatchEventProcessorTests
         calls.Should().Equal("get match", "upsert events", "publish", "upsert match");
     }
 
+    [Test]
+    public void The_processor_no_longer_announces_finished_matches_the_change_feed_does()
+    {
+        typeof(MatchEventProcessor).GetConstructors().SelectMany(c => c.GetParameters())
+            .Should().NotContain(p => p.ParameterType == typeof(IMatchFinishedPublisher));
+    }
     private sealed class RecordingPublisher : IKeyMomentPublisher
     {
         public List<KeyMoment> Published { get; } = [];

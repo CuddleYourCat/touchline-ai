@@ -12,6 +12,11 @@ var keyMoments = serviceBus.AddServiceBusTopic("key-moments");
 keyMoments.AddServiceBusSubscription("key-moments-commentary", subscriptionName: "commentary");
 keyMoments.AddServiceBusSubscription("key-moments-highlights", subscriptionName: "highlights");
 
+// A match reaching full time, which the recap function reads (ADR-030, amended 23 Oct). "recaps"
+// is also a Cosmos DB container, so the subscription gets a prefixed resource name too.
+var matchFinished = serviceBus.AddServiceBusTopic("match-finished");
+matchFinished.AddServiceBusSubscription("match-finished-recaps", subscriptionName: "recaps");
+
 // The Cosmos DB emulator, with its Data Explorer, so stored events can be browsed locally.
 var cosmos = builder.AddAzureCosmosDB("cosmos").RunAsEmulator(emulator => emulator.WithDataExplorer());
 var database = cosmos.AddCosmosDatabase("touchline");
@@ -26,6 +31,9 @@ database.AddContainer("leases", "/id");
 
 // The agents' commentary, which the Match Centre follows on the change feed (ADR-029).
 database.AddContainer("commentary", "/matchId");
+
+// Each finished match's recaps, written once by the processor and read by the Match Centre.
+database.AddContainer("recaps", "/matchId");
 
 // The Functions host's own storage (AzureWebJobsStorage), which also holds the Event Hubs
 // trigger's checkpoints.

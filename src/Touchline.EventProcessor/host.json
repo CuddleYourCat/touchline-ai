@@ -8,7 +8,8 @@
     },
     "serviceBus": {
       "maxConcurrentCalls": 4,
-      "prefetchCount": 0
+      "prefetchCount": 0,
+      "maxAutoLockRenewalDuration": "00:10:00"
     }
   },
   "logging": {

@@ -77,6 +77,7 @@ var processorAppName = 'func-touchline-${suffix}'
 // Must match the names in the code and the AppHost (ADR-023).
 var matchEventsHubName = 'match-events'
 var keyMomentsTopicName = 'key-moments'
+var matchFinishedTopicName = 'match-finished'
 var cosmosDatabaseName = 'touchline'
 var deploymentContainerName = 'deployment-package'
 
@@ -98,6 +99,7 @@ var roles = {
   eventHubsDataSender: '2b629674-e913-4c01-ae53-ef4638d8f975'
   eventHubsDataReceiver: 'a638d3c7-ab3a-418d-83e6-5f17a39d4fde'
   serviceBusDataSender: '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39'
+  serviceBusDataReceiver: '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0'
   storageBlobDataOwner: 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
   websiteContributor: 'de139f84-1756-47ae-9be6-808fbbe84772'
   containerAppsJobsContributor: '4e3d2b60-56ae-4dc6-a233-09c8e5a82e68'
@@ -450,6 +452,26 @@ resource keyMomentSubscriptions 'Microsoft.ServiceBus/namespaces/topics/subscrip
   }
 ]
 
+// A match reaching full time (ADR-030, amended 23 Oct). The processor publishes one message per
+// match, with MessageId {matchId}:finished, so a republish after a redelivered batch is dropped.
+resource matchFinishedTopic 'Microsoft.ServiceBus/namespaces/topics@2024-01-01' = {
+  parent: serviceBus
+  name: matchFinishedTopicName
+  properties: {
+    requiresDuplicateDetection: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    defaultMessageTimeToLive: 'P1D'
+  }
+}
+
+resource recapsSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2024-01-01' = {
+  parent: matchFinishedTopic
+  name: 'recaps'
+  properties: {
+    maxDeliveryCount: 5
+    deadLetteringOnMessageExpiration: true
+  }
+}
 // The trigger, the producer and the Service Bus client all want the bare host name.
 var eventHubsHost = split(split(eventHubs.properties.serviceBusEndpoint, '//')[1], ':')[0]
 var serviceBusHost = split(split(serviceBus.properties.serviceBusEndpoint, '//')[1], ':')[0]
@@ -500,6 +522,8 @@ var cosmosContainerDefinitions = [
   { name: 'leases', partitionKey: '/id' }
   // The agents' commentary, which the Match Centre follows on the change feed (ADR-029).
   { name: 'commentary', partitionKey: '/matchId' }
+  // Each finished match's recaps, written once by the processor at full time (ADR-030, amended 23 Oct).
+  { name: 'recaps', partitionKey: '/matchId' }
 ]
 
 resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = [
@@ -809,6 +833,26 @@ resource topicSenderForProcessor 'Microsoft.Authorization/roleAssignments@2022-0
   }
 }
 
+resource finishedSenderForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(matchFinishedTopic.id, processorIdentity.id, roles.serviceBusDataSender)
+  scope: matchFinishedTopic
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.serviceBusDataSender)
+    principalId: processorIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// The recap function reads its own subscription only.
+resource recapsReceiverForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(recapsSubscription.id, processorIdentity.id, roles.serviceBusDataReceiver)
+  scope: recapsSubscription
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.serviceBusDataReceiver)
+    principalId: processorIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
 resource storageOwnerForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(processorStorage.id, processorIdentity.id, roles.storageBlobDataOwner)
   scope: processorStorage
@@ -843,10 +887,10 @@ resource cosmosReaderForSimulator 'Microsoft.DocumentDB/databaseAccounts/sqlRole
   }
 }
 
-// Match Centre identity: read the match store, the season cards and the commentary (ADR-038).
+// Match Centre identity: read the match store, the season cards, the commentary and the recaps (ADR-038).
 // Read-only, with one assignment per container, so it can't see the season projection's
 // working set or the leases, let alone write anything.
-var matchCentreReadContainers = ['matches', 'events', playerSeasonsContainerName, 'commentary']
+var matchCentreReadContainers = ['matches', 'events', playerSeasonsContainerName, 'commentary', 'recaps']
 
 resource cosmosReaderForMatchCentre 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = [
   for container in matchCentreReadContainers: {

@@ -16,7 +16,7 @@ namespace Touchline.MatchCentre.Storage;
 internal static class CosmosServices
 {
     /// <summary>
-    /// Serves matches, events, moments with their commentary, momentum and season cards from Cosmos DB, through a
+    /// Serves matches, events, moments with their commentary, recaps, momentum and season cards from Cosmos DB, through a
     /// keyless Aspire client (the <c>cosmos</c> connection). The read model is keyed
     /// <see cref="MatchSources.Cosmos"/>, for the router to serve every non-demo ID (ADR-036).
     /// </summary>
@@ -28,6 +28,7 @@ internal static class CosmosServices
         // outage would take every replica out of rotation and the demo fallback with it.
         builder.AddAzureCosmosClient("cosmos", settings => settings.DisableHealthChecks = true);
         builder.Services.AddSingleton<ICommentaryStore, CosmosCommentaryStore>();
+        builder.Services.AddSingleton<IRecapStore, CosmosRecapStore>();
         builder.Services.AddKeyedSingleton<IMatchReadModel, CosmosMatchReadModel>(MatchSources.Cosmos);
         return builder;
     }
