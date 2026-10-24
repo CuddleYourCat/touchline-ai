@@ -20,6 +20,77 @@ export type MilestoneView = Schemas['MilestoneView'];
 export type MomentumReading = Schemas['MomentumReading'];
 /** A timecoded overlay card. */
 export type OverlayCard = Schemas['OverlayCard'];
+/** The modelled positions of every player on the pitch after one event (ADR-035). Not tracking data. */
+export type ShapeView = Schemas['ShapeView'];
+/** A point on the pitch, in metres. */
+export type PitchPosition = Schemas['PitchPosition'];
+
+/**
+ * Where the ball went in one event, ready to draw. A pass arcs, a carry runs straight and a shot heads for goal;
+ * anything else leaves the ball still where it started.
+ */
+export interface BallPath {
+  sequence: number;
+  kind: 'pass' | 'carry' | 'shot' | 'still';
+  team: MatchEvent['team'];
+  from: PitchPosition;
+  to: PitchPosition;
+}
+
+/** The pitch is 105 m long and 68 m wide. The home side attacks the goal at X = 105. */
+export const pitchLength = 105;
+/** The pitch width in metres. */
+export const pitchWidth = 68;
+
+/** Half the goal's width in metres: the posts are 7.32 m apart. */
+const halfGoal = 3.66;
+
+/**
+ * Where a shot's ball ends up, by its outcome. A goal goes to its end point or the goal's centre. A save stops on the
+ * goal line between the posts. A block stops at its end point, or about 2 m on towards goal. A miss goes to its end
+ * point, or wide of the near post on the goal line. A shot with no detail goes to its end point or the goal's centre.
+ */
+export function shotTarget(event: MatchEvent): PitchPosition {
+  const goalX = event.team === 'Home' ? pitchLength : 0;
+  const centre = { x: goalX, y: pitchWidth / 2 };
+  const end = event.end ?? null;
+  switch (event.shot?.outcome) {
+    case 'Saved': {
+      const y = end?.y ?? centre.y;
+      return { x: goalX, y: Math.min(Math.max(y, centre.y - halfGoal), centre.y + halfGoal) };
+    }
+    case 'Blocked': {
+      if (end) return end;
+      const dx = centre.x - event.start.x;
+      const dy = centre.y - event.start.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const step = Math.min(2, length);
+      return { x: event.start.x + (dx / length) * step, y: event.start.y + (dy / length) * step };
+    }
+    case 'OffTarget': {
+      if (end) return end;
+      const side = event.start.y >= centre.y ? 1 : -1;
+      return { x: goalX, y: centre.y + side * (halfGoal + 2) };
+    }
+    default:
+      return end ?? centre;
+  }
+}
+
+/** The ball path for an event. A shot's end depends on how it ended (see {@link shotTarget}). */
+export function ballPathOf(event: MatchEvent): BallPath {
+  const base = { sequence: event.sequence, team: event.team, from: event.start };
+  switch (event.type) {
+    case 'Pass':
+      return event.end ? { ...base, kind: 'pass', to: event.end } : { ...base, kind: 'still', to: event.start };
+    case 'Carry':
+      return event.end ? { ...base, kind: 'carry', to: event.end } : { ...base, kind: 'still', to: event.start };
+    case 'Shot':
+      return { ...base, kind: 'shot', to: shotTarget(event) };
+    default:
+      return { ...base, kind: 'still', to: event.start };
+  }
+}
 
 /** How many recent events the live view keeps; older ones fall off the front. */
 export const maxEvents = 200;
@@ -34,6 +105,7 @@ export type StreamMessage =
   | { type: 'milestone'; data: MilestoneView }
   | { type: 'momentum'; data: MomentumReading }
   | { type: 'overlay'; data: OverlayCard }
+  | { type: 'shape'; data: ShapeView }
   | { type: 'fulltime'; data: LiveState };
 
 /** The stream event names the hook listens for, heartbeat included. */
@@ -46,6 +118,7 @@ export const streamEventNames = [
   'milestone',
   'momentum',
   'overlay',
+  'shape',
   'fulltime',
   'heartbeat',
 ] as const;
@@ -63,6 +136,10 @@ export interface LiveMatch {
   milestones: MilestoneView[];
   momentum: MomentumReading[];
   overlays: OverlayCard[];
+  /** The latest modelled positions, or null before the first `shape` message. */
+  shape: ShapeView | null;
+  /** Where the ball went in the latest event, or null before the first event. */
+  ballPath: BallPath | null;
   fullTime: boolean;
   /** The viewer's language (a BCP 47 tag such as `es-ES`), which ranks competing lines. */
   language: string;
@@ -80,6 +157,8 @@ export function initialLiveMatch(detail: MatchDetail, moments: MomentView[], lan
     milestones: [],
     momentum: [],
     overlays: [],
+    shape: null,
+    ballPath: null,
     fullTime: detail.state.fullTime,
     language,
   };
@@ -143,7 +222,11 @@ export function applyMessage(live: LiveMatch, message: StreamMessage): LiveMatch
       return { ...live, state: message.data, fullTime: true };
     case 'event': {
       const events = [...live.events, message.data];
-      return { ...live, events: events.length > maxEvents ? events.slice(-maxEvents) : events };
+      return {
+        ...live,
+        events: events.length > maxEvents ? events.slice(-maxEvents) : events,
+        ballPath: ballPathOf(message.data),
+      };
     }
     case 'moment':
       return addMoment(live, message.data);
@@ -157,6 +240,9 @@ export function applyMessage(live: LiveMatch, message: StreamMessage): LiveMatch
       return { ...live, momentum: upsert(live.momentum, message.data, (m) => `${m.period}:${m.fromMinute}`) };
     case 'overlay':
       return { ...live, overlays: upsert(live.overlays, message.data, (o) => o.id) };
+    case 'shape':
+      // A replay after a reconnect can resend an older shape, so the view never steps backwards.
+      return live.shape && live.shape.sequence > message.data.sequence ? live : { ...live, shape: message.data };
     default:
       return live;
   }

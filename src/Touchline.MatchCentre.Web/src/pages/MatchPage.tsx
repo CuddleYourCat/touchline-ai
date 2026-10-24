@@ -2,6 +2,8 @@ import { memo, useMemo } from 'react';
 import { Link, useParams } from 'react-router';
 import type { CommentaryLine, LiveMatch, MomentAnalysis, MomentView } from '../live/matchStreamReducer';
 import { lineModeFor, useMatchStream } from '../live/useMatchStream';
+import { MomentumBars } from '../pitch/MomentumBars';
+import { Pitch } from '../pitch/Pitch';
 
 /** `PenaltyAwarded` becomes `Penalty awarded`. */
 function kindLabel(kind: string): string {
@@ -139,6 +141,23 @@ export function MatchPage() {
               </button>
             </div>
           )}
+          <div className="match-visuals">
+            <Pitch
+              shape={state.match.shape}
+              ballPath={state.match.ballPath}
+              events={state.match.events}
+              homeLineup={state.match.detail.homeLineup}
+              awayLineup={state.match.detail.awayLineup}
+              overlays={state.match.overlays}
+              homeName={state.match.detail.summary.home.name}
+              awayName={state.match.detail.summary.away.name}
+            />
+            <MomentumBars
+              readings={state.match.momentum}
+              homeName={state.match.detail.summary.home.name}
+              awayName={state.match.detail.summary.away.name}
+            />
+          </div>
           <Timeline match={state.match} viewerMode={lineModeFor(viewer.mode)} />
         </div>
       );

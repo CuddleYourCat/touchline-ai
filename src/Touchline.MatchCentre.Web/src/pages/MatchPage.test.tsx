@@ -7,6 +7,15 @@ import { staleAfterMs, useMatchStream } from '../live/useMatchStream';
 import { FakeEventSource } from '../test/FakeEventSource';
 import { MatchPage } from './MatchPage';
 
+/** Counts the pitch's renders: it calls this hook once per render. */
+const pitchRenders = vi.hoisted(() => ({ count: 0 }));
+vi.mock('../pitch/useReducedMotion', () => ({
+  useReducedMotion: () => {
+    pitchRenders.count++;
+    return false;
+  },
+}));
+
 function liveState(overrides: Partial<LiveState> = {}): LiveState {
   return {
     matchId: 'm1',
@@ -332,6 +341,72 @@ describe('MatchPage', () => {
 
     act(() => FakeEventSource.latest().emit('commentary', { ...line(30, 'Model', 'Ocasión clarísima'), language: 'es-ES' }));
     expect(screen.getByText('Ocasión clarísima')).toBeInTheDocument();
+  });
+
+  it('puts the pitch and momentum between the scoreboard and the timeline, and draws streamed shapes, events and momentum', async () => {
+    stubApi(found(detail()));
+
+    renderPage();
+    const scoreboard = await screen.findByRole('region', { name: /^Live/ });
+    const pitch = screen.getByRole('region', { name: 'Pitch' });
+    const momentum = screen.getByRole('region', { name: 'Momentum' });
+    const timeline = screen.getByRole('region', { name: 'Moments' });
+    expect(scoreboard.compareDocumentPosition(pitch) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(pitch.compareDocumentPosition(momentum) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(momentum.compareDocumentPosition(timeline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(pitch).getByText('Modelled positions, not tracking data')).toBeInTheDocument();
+    expect(within(pitch).queryAllByTestId('player-dot')).toHaveLength(0);
+
+    const positions = (['Home', 'Away'] as const).flatMap((team) =>
+      Array.from({ length: 11 }, (_, i) => ({ playerId: `${team}${i}`, team, x: 10 + i * 8, y: 34 })),
+    );
+    const source = FakeEventSource.latest();
+    act(() => {
+      source.emit('shape', { sequence: 41, positions });
+      source.emit('event', {
+        sequence: 41,
+        matchId: 'm1',
+        possessionId: 3,
+        time: { period: 'FirstHalf', clock: '12:06' },
+        type: 'Carry',
+        team: 'Home',
+        start: { x: 30, y: 20 },
+        end: { x: 40, y: 20 },
+      });
+      source.emit('momentum', { period: 'FirstHalf', fromMinute: 10, toMinute: 15, value: 0.4 });
+    });
+
+    expect(within(pitch).getAllByTestId('player-dot')).toHaveLength(22);
+    expect(within(pitch).getByTestId('ball-path')).toHaveAttribute('d', 'M 30 48 L 40 48');
+    expect(within(momentum).getAllByTestId('momentum-bar')).toHaveLength(1);
+
+    act(() => source.emit('shape', { sequence: 40, positions: positions.map((p) => ({ ...p, x: 0 })) }));
+    expect(within(pitch).getAllByTestId('player-dot')[0]!.style.transform).toBe('translate(10px, 34px)');
+  });
+
+  it('does not re-render the pitch for a commentary line', async () => {
+    stubApi(found(detail()), [moment(30, { commentary: line(30, 'Template', 'Template text') })]);
+
+    renderPage();
+    await screen.findByText('Template text');
+    const before = pitchRenders.count;
+
+    act(() => FakeEventSource.latest().emit('commentary', line(30, 'Model', 'Model text')));
+
+    expect(screen.getByText('Model text')).toBeInTheDocument();
+    expect(pitchRenders.count).toBe(before);
+
+    act(() => FakeEventSource.latest().emit('event', {
+      sequence: 41,
+      matchId: 'm1',
+      possessionId: 3,
+      time: { period: 'FirstHalf', clock: '12:06' },
+      type: 'Pass',
+      team: 'Home',
+      start: { x: 30, y: 20 },
+      end: { x: 40, y: 20 },
+    }));
+    expect(pitchRenders.count).toBeGreaterThan(before);
   });
 
   it('tags a line only when it was written for the other mode', async () => {

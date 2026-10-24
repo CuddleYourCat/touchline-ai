@@ -417,3 +417,220 @@ code,
   font-size: 0.7rem;
   color: var(--muted);
 }
+
+/* Pitch, momentum and overlays (ADR-035). One column at every width: scoreboard, pitch, momentum, timeline. */
+.match-visuals {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.match-visuals > .match-section {
+  margin-top: 0;
+}
+
+.pitch-figure {
+  margin: 0;
+}
+
+.pitch-frame {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px;
+}
+
+.pitch {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 111 / 74;
+}
+
+.pitch-lines rect,
+.pitch-lines circle,
+.pitch-lines line {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 0.3;
+}
+
+.pitch-lines .pitch-spot {
+  fill: var(--line);
+}
+
+.player {
+  transition: transform 0.6s ease-in-out;
+}
+
+.player circle {
+  stroke: var(--bg);
+  stroke-width: 0.3;
+}
+
+.player text {
+  font-family: var(--font-data);
+  font-size: 1.7px;
+  font-weight: 700;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.player-home circle {
+  fill: var(--accent);
+}
+
+.player-home text {
+  fill: var(--on-accent);
+}
+
+.player-away circle {
+  fill: var(--highlight);
+}
+
+.player-away text {
+  fill: var(--bg);
+}
+
+.ball {
+  fill: var(--text);
+  stroke: var(--bg);
+  stroke-width: 0.25;
+}
+
+.ball-trail {
+  fill: var(--text);
+}
+
+.ball-path {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 0.35;
+  stroke-dasharray: 1 0.8;
+  opacity: 0.7;
+}
+
+.ball-path-shot {
+  stroke: var(--accent);
+  stroke-dasharray: none;
+}
+
+.marker-foul {
+  stroke: var(--muted);
+  stroke-width: 0.4;
+}
+
+.marker-yellow {
+  fill: #f2c919;
+}
+
+.marker-red {
+  fill: #e5484d;
+}
+
+.pitch-caption {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-family: var(--font-data);
+}
+
+.overlay-toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  max-width: calc(100% - 24px);
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+  opacity: 1;
+  transition: opacity 0.4s ease;
+}
+
+.overlay-away {
+  border-color: var(--highlight);
+}
+
+.overlay-fading {
+  opacity: 0;
+}
+
+.overlay-clock {
+  color: var(--highlight);
+  font-size: 0.8rem;
+}
+
+.overlay-title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.momentum-chart {
+  display: block;
+  width: 100%;
+  height: 120px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.momentum-zero,
+.momentum-half {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.momentum-half {
+  stroke-dasharray: 4 4;
+}
+
+.momentum-home {
+  fill: var(--accent);
+}
+
+.momentum-away {
+  fill: var(--highlight);
+}
+
+.momentum-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+  font-size: 0.8rem;
+}
+
+.momentum-key::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.momentum-key-home::before {
+  background: var(--accent);
+}
+
+.momentum-key-away::before {
+  background: var(--highlight);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player,
+  .overlay-toast {
+    transition: none;
+  }
+}
