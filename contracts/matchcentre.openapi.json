@@ -2575,7 +2575,7 @@
             "$ref": "#/components/schemas/ClockReading"
           },
           "team": {
-            "description": "The team the triggering event belongs to.",
+            "description": "The side the moment is about: who scored, was awarded the corner or penalty, or was carded.",
             "$ref": "#/components/schemas/TeamSide"
           },
           "playerId": {
@@ -2583,7 +2583,7 @@
               "null",
               "string"
             ],
-            "description": "The main player, if there is one."
+            "description": "The main player on that side, if there is one."
           },
           "reason": {
             "type": "string",

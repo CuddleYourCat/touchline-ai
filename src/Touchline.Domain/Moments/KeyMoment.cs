@@ -50,4 +50,21 @@ public sealed record KeyMoment(
     string Reason,
     int? GoalLineMarginCm = null,
     int? HomeScore = null,
-    int? AwayScore = null);
+    int? AwayScore = null)
+{
+    /// <summary>
+    /// The side the moment is about, the rule every moment and card follows: the shooting side
+    /// for a goal, a big chance, a saved or missed penalty and a clearance off the line (the
+    /// chance is the shooter's, and so is the featured player); the side awarded the penalty
+    /// (the opposite of the fouling side that triggered it); the carded side for a red card.
+    /// </summary>
+    public TeamSide Side => Kind == KeyMomentKind.PenaltyAwarded
+        ? (Trigger.Team == TeamSide.Home ? TeamSide.Away : TeamSide.Home)
+        : Trigger.Team;
+
+    /// <summary>
+    /// The player the moment features, who belongs to <see cref="Side"/>: the fouled player for
+    /// a penalty awarded (null if the foul named none), otherwise the trigger's player.
+    /// </summary>
+    public string? FeaturedPlayerId => Kind == KeyMomentKind.PenaltyAwarded ? Trigger.FouledPlayerId : Trigger.PlayerId;
+}

@@ -87,7 +87,8 @@ public class CosmosLiveFeedTests
             sent.Add(message);
         }
 
-        sent.Should().Equal(expected);
+        sent.Where(m => m.Event != StreamEvents.Commentary).Should().Equal(expected);
+        sent.Count(m => m.Event == StreamEvents.Commentary).Should().Be(16, "one template line per notable moment, the best for the viewer");
         sent[^1].Event.Should().Be(StreamEvents.FullTime);
     }
 
@@ -142,6 +143,33 @@ public class CosmosLiveFeedTests
         (await CommentaryThrough(mexican)).Should().Equal(["Golazo."], "English is worse than Spanish for them");
         (await CommentaryThrough(french)).Should().Equal("What a goal.");
         (await CommentaryThrough(analysis)).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task With_the_commentary_store_down_the_stream_still_delivers_overlay_cards_and_template_lines()
+    {
+        var store = new Mock<ICommentaryStore>();
+        store.Setup(s => s.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CosmosException("Service unavailable", HttpStatusCode.ServiceUnavailable, 0, "activity", 0));
+        var hubs = Hubs(buffer: 4096, store: store);
+        await using var stream = Follow(hubs, after: null, Viewer.Default);
+        var snapshot = await Next(stream);
+
+        foreach (var matchEvent in _events.Skip(100).Take(300))
+        {
+            hubs.Dispatch(matchEvent);
+        }
+
+        var live = await Through(stream, 400);
+        var cards = live.Where(m => m.Event == StreamEvents.Overlay).Select(m => (OverlayCard)m.Data).ToList();
+        var lines = live.Where(m => m.Event == StreamEvents.Commentary).Select(m => (CommentaryLine)m.Data).ToList();
+
+        snapshot.Event.Should().Be(StreamEvents.State);
+        cards.Should().NotBeEmpty().And.OnlyContain(c => c.Id.EndsWith(":overlay", StringComparison.Ordinal));
+        cards.Select(c => c.Id).Should().OnlyHaveUniqueItems();
+        lines.Should().NotBeEmpty().And.OnlyContain(l => l.Source == CommentarySource.Template && l.Tier == MomentTier.Notable);
+        live.Count(m => m.Event == StreamEvents.Moment).Should().BeGreaterThanOrEqualTo(cards.Count);
+        store.Verify(s => s.GetAsync(_matchId, It.IsAny<CancellationToken>()), Times.Once());
     }
 
     [Test]
@@ -445,12 +473,16 @@ public class CosmosLiveFeedTests
         starts[1].Should().NotBeSameAs(starts[0]);
     }
 
-    private LiveMatchHubs Hubs(int buffer = LiveMatchHubs.DefaultBuffer, bool started = true, ILogger<LiveMatchHubs>? logger = null)
+    private LiveMatchHubs Hubs(int buffer = LiveMatchHubs.DefaultBuffer, bool started = true, ILogger<LiveMatchHubs>? logger = null, Mock<ICommentaryStore>? store = null)
     {
         var client = new Mock<CosmosClient>();
         client.Setup(c => c.GetContainer(CosmosNames.Database, CosmosNames.Events)).Returns(_eventsContainer.Object);
-        var commentary = new Mock<ICommentaryStore>();
-        commentary.Setup(s => s.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var commentary = store ?? new Mock<ICommentaryStore>();
+        if (store is null)
+        {
+            commentary.Setup(s => s.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        }
+
         var hubs = new LiveMatchHubs(client.Object, commentary.Object, _detector, _time, logger ?? NullLogger<LiveMatchHubs>.Instance, buffer);
         if (started)
         {

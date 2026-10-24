@@ -33,6 +33,9 @@ builder.Services.AddSingleton(TeamProfileCatalog.LoadEmbedded());
 builder.Services.AddMatchCentreRateLimits();
 builder.Services.AddSingleton(provider =>
     new KeyMomentDetector(teams: provider.GetRequiredService<IReadOnlyDictionary<string, TeamProfile>>().Values));
+builder.Services.AddSingleton(provider => new NotableMomentDetector(
+    provider.GetRequiredService<KeyMomentDetector>(),
+    provider.GetRequiredService<IReadOnlyDictionary<string, TeamProfile>>().Values));
 
 // Matches are routed by ID (ADR-036): demo-* IDs from the recording, every other ID from Cosmos DB
 // when a cosmos connection is configured. Without one (tests, a plain dotnet run) the app is

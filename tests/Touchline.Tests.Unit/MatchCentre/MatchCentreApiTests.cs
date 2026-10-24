@@ -109,9 +109,9 @@ public class MatchCentreApiTests
     {
         var moments = await _client.GetFromJsonAsync<JsonElement>(Url($"/api/matches/{_match}/moments?mode=Analyst"));
 
-        moments.GetArrayLength().Should().Be(9);
-        moments[0].GetProperty("commentary").GetProperty("mode").GetString().Should().Be("Analyst");
-        moments[0].GetProperty("tier").GetString().Should().Be("Key");
+        moments.GetArrayLength().Should().Be(25);
+        var key = moments.EnumerateArray().First(m => m.GetProperty("tier").GetString() == "Key");
+        key.GetProperty("commentary").GetProperty("mode").GetString().Should().Be("Analyst");
     }
 
     [Test]
@@ -191,7 +191,7 @@ public class MatchCentreApiTests
         var messages = await ReadStream(_client, $"/api/matches/{_match}/stream?after=0");
 
         messages.Count(m => m.EventType == StreamEvents.Event).Should().Be(DemoRecording.Events.Count);
-        messages.Count(m => m.EventType == StreamEvents.Moment).Should().Be(9);
+        messages.Count(m => m.EventType == StreamEvents.Moment).Should().Be(25);
         messages[^1].EventType.Should().Be(StreamEvents.FullTime);
         messages[^1].EventId.Should().Be(DemoRecording.Events.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }

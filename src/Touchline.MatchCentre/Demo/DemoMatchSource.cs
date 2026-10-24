@@ -10,6 +10,7 @@ using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Live;
+using Touchline.MatchCentre.Storage;
 using Touchline.MatchCentre.TeamBuilding;
 
 namespace Touchline.MatchCentre.Demo;
@@ -28,8 +29,9 @@ namespace Touchline.MatchCentre.Demo;
 /// match. Every endpoint and every stream agrees on how far a lap has got.
 /// </para>
 /// <para>
-/// Commentary and overlays here are stand-ins (the detector's reason, and a plain card) until
-/// the agent and moment-tier lanes supply the real ones.
+/// Overlay cards come from the projector (ADR-047), the same as on the Cosmos DB path. Key-moment
+/// commentary here is a stand-in (the detector's reason) until the agents supply the real one;
+/// a notable moment's line is its template line (ADR-046), as on the live path.
 /// </para>
 /// </remarks>
 internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
@@ -37,14 +39,14 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
     /// <summary>Every demo match ID starts with this.</summary>
     public const string IdPrefix = "demo-";
 
-    /// <summary>How long an overlay card shows for.</summary>
-    public const int OverlayDurationMs = 6000;
-
     private readonly IReadOnlyList<MatchEvent> _events;
     private readonly TimeSpan[] _offsets;
     private readonly MatchState[] _states;
     private readonly List<(int Index, KeyMoment Moment)> _moments = [];
     private readonly KeyMoment?[] _momentAt;
+    private readonly List<(int Index, NotableMoment Moment)> _notables = [];
+    private readonly NotableMoment?[] _notableAt;
+    private readonly NotableMomentDetector _notableDetector;
     private readonly Dictionary<string, IReadOnlyList<LiveMessage>[]> _projections = new(StringComparer.Ordinal);
     private readonly MatchMetadata _metadata;
     private readonly IReadOnlyList<PlayerSummary> _homeLineup;
@@ -61,12 +63,14 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
     /// <param name="detector">The key-moment detector.</param>
     /// <param name="options">The replay speed and the gap between laps.</param>
     /// <param name="time">The clock.</param>
+    /// <param name="notable">The notable-moment detector, or null for one over <paramref name="detector"/> and <paramref name="teams"/>.</param>
     public DemoMatchSource(
         IReadOnlyList<MatchEvent> events,
         IReadOnlyDictionary<string, TeamProfile> teams,
         KeyMomentDetector detector,
         IOptions<DemoOptions> options,
-        TimeProvider time)
+        TimeProvider time,
+        NotableMomentDetector? notable = null)
     {
         if (events is not [{ Metadata: { } metadata }, ..] || events.Where((e, i) => e.Sequence != i + 1).Any())
         {
@@ -86,6 +90,8 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
 
         _states = new MatchState[events.Count];
         _momentAt = new KeyMoment?[events.Count];
+        _notableAt = new NotableMoment?[events.Count];
+        _notableDetector = notable ?? new NotableMomentDetector(detector, teams.Values);
         var state = MatchState.KickOff(events[0].MatchId);
         for (var i = 0; i < events.Count; i++)
         {
@@ -93,6 +99,11 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
             {
                 _moments.Add((i, moment));
                 _momentAt[i] = moment;
+            }
+            else if (_notableDetector.DetectAfterKey(events[i], state) is { IsMinor: false } notableMoment)
+            {
+                _notables.Add((i, notableMoment));
+                _notableAt[i] = notableMoment;
             }
 
             state = state.Apply(events[i]);
@@ -157,7 +168,10 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
 
         IReadOnlyList<MomentView> moments =
         [
-            .. MomentsOf(lap).Select(moment => MomentViews.From(moment, matchId, Commentary(moment, matchId, viewer)))
+            .. _moments.Where(m => m.Index < lap.Played).Select(m => (m.Index, View: MomentViews.From(m.Moment, matchId, Commentary(m.Moment, matchId, viewer))))
+                .Concat(_notables.Where(n => n.Index < lap.Played).Select(n => (n.Index, View: MomentViews.From(n.Moment, matchId, Template(n.Moment, matchId, viewer)))))
+                .OrderBy(entry => entry.Index)
+                .Select(entry => entry.View)
         ];
         return Task.FromResult<IReadOnlyList<MomentView>?>(moments);
     }
@@ -252,9 +266,11 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
 
         if (_momentAt[index] is { } moment)
         {
-            var id = LiveMessage.IdFor(moment.Trigger.Sequence);
-            yield return new LiveMessage(StreamEvents.Commentary, id, Commentary(moment, matchId, viewer));
-            yield return new LiveMessage(StreamEvents.Overlay, id, Overlay(moment, matchId));
+            yield return new LiveMessage(StreamEvents.Commentary, LiveMessage.IdFor(moment.Trigger.Sequence), Commentary(moment, matchId, viewer));
+        }
+        else if (_notableAt[index] is { } notable && Template(notable, matchId, viewer) is { } line)
+        {
+            yield return new LiveMessage(StreamEvents.Commentary, LiveMessage.IdFor(notable.Trigger.Sequence), line);
         }
     }
 
@@ -306,24 +322,9 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
             viewer.Mode,
             "en");
 
-    private static OverlayCard Overlay(KeyMoment moment, string matchId) =>
-        new($"{MomentIds.For(matchId, moment.Trigger.Sequence)}:overlay",
-            ClockReading.From(moment.Trigger.Time),
-            moment.Kind.ToString().ToLowerInvariant(),
-            OverlayDurationMs,
-            new OverlayPayload(Title(moment.Kind), null, moment.Trigger.Team, moment.Trigger.PlayerId));
-
-    private static string Title(KeyMomentKind kind) => kind switch
-    {
-        KeyMomentKind.Goal => "GOAL",
-        KeyMomentKind.BigChance => "BIG CHANCE",
-        KeyMomentKind.PenaltyAwarded => "PENALTY",
-        KeyMomentKind.RedCard => "RED CARD",
-        KeyMomentKind.PenaltySaved => "PENALTY SAVED",
-        KeyMomentKind.PenaltyMissed => "PENALTY MISSED",
-        KeyMomentKind.ClearedOffLine => "OFF THE LINE",
-        _ => kind.ToString().ToUpperInvariant()
-    };
+    // A notable moment's template line in the viewer's mode and language (English when there is none).
+    private static CommentaryLine? Template(NotableMoment moment, string matchId, Viewer viewer) =>
+        CommentarySelection.Pick(NotableLines.For(moment, matchId), viewer.Mode, viewer.Language);
 
     // The stream messages for each event of a lap, built once for all its followers. Only the
     // two newest laps are kept: the live one and the one just finished.
@@ -336,7 +337,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
                 return cached;
             }
 
-            var projector = new MatchStreamProjector(matchId, _detector, _teams);
+            var projector = new MatchStreamProjector(matchId, _detector, _teams, notable: _notableDetector);
             var projected = _events.Select(e => projector.Apply(Relabel(e, matchId)).Messages).ToArray();
             _projections[matchId] = projected;
 

@@ -48,7 +48,8 @@ public class DemoRecordingTests
         moments.Count(m => m.Trigger.Time.Period == MatchPeriod.FirstHalf).Should().BeGreaterThanOrEqualTo(4);
         moments.Count(m => m.Trigger.Time.Period == MatchPeriod.SecondHalf).Should().BeGreaterThanOrEqualTo(4);
         moments.Should().Contain(m => m.Kind == KeyMomentKind.PenaltyAwarded && m.Trigger.Time.Clock >= TimeSpan.FromMinutes(90));
-        projections.SelectMany(p => p.Messages).Count(m => m.Event == StreamEvents.Moment).Should().Be(moments.Count);
+        projections.SelectMany(p => p.Messages).Count(m => m.Event == StreamEvents.Moment)
+            .Should().Be(moments.Count + projections.Count(p => p.Notable is { IsMinor: false }));
     }
 
     [Test]

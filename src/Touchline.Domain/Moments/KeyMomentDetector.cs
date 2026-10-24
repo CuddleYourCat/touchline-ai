@@ -31,7 +31,7 @@ public sealed class KeyMomentDetector
     /// <summary>How close to the line, in centimetres, a call has to be to count as close (ADR-022).</summary>
     public const int CloseCallCm = 5;
 
-    private readonly IReadOnlyDictionary<string, (Player Player, TeamProfile Team)> _players;
+    private readonly PlayerNames _names;
 
     /// <summary>
     /// Creates a detector.
@@ -53,9 +53,7 @@ public sealed class KeyMomentDetector
         }
 
         BigChanceThreshold = bigChanceThreshold;
-        _players = (teams ?? TeamProfileCatalog.LoadEmbedded().Values)
-            .SelectMany(team => team.Squad.Select(player => (Player: player, Team: team)))
-            .ToDictionary(entry => entry.Player.Id);
+        _names = new PlayerNames(teams);
     }
 
     /// <summary>The xG at or above which a missed shot counts as a big chance.</summary>
@@ -155,10 +153,7 @@ public sealed class KeyMomentDetector
             : string.Empty;
     }
 
-    private string Describe(string? playerId) =>
-        playerId is not null && _players.TryGetValue(playerId, out var entry)
-            ? $"{entry.Player.Name} ({entry.Team.ShortName})"
-            : playerId ?? "unknown player";
+    private string Describe(string? playerId) => _names.Describe(playerId);
 
     private string On(string? fouledPlayerId) => fouledPlayerId is null ? string.Empty : $" on {Describe(fouledPlayerId)}";
 

@@ -831,9 +831,9 @@ export interface components {
             sequence: number;
             /** @description When it happened. */
             clock: components["schemas"]["ClockReading"];
-            /** @description The team the triggering event belongs to. */
+            /** @description The side the moment is about: who scored, was awarded the corner or penalty, or was carded. */
             team: components["schemas"]["TeamSide"];
-            /** @description The main player, if there is one. */
+            /** @description The main player on that side, if there is one. */
             playerId: null | string;
             /** @description The detector's factual reason, such as `xG 0.41 from 11 m`. */
             reason: string;

@@ -1429,6 +1429,38 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 
 ---
 
+## ADR-046 — Notable-moment tier
+
+**Status:** Accepted · 24 Oct, lane E (builds on ADR-004, ADR-038)
+
+**Decision**
+- **Notable means a yellow card, a corner, or a shot off the woodwork** that isn't already a key moment. A throw-in or a goal kick is *minor*: the detector reports it with a flag, and it produces no card and no line unless the viewer is the Analyst (the viewer filter is slice E2; in E1 the flag is only carried). Substitutions are deferred, because the simulator emits none.
+- **A pure `NotableMomentDetector` sits beside `KeyMomentDetector`** with the same `Detect(event, before)` shape. A key moment beats a notable one, and one event yields at most one moment: the detector asks the key detector first.
+- **Lines are templates only, with no model call,** from a small domain catalogue keyed by moment kind and language (English, Spanish and French, as ADR-045), falling back to English for any other language.
+- **Lines are computed in the projector's output, not persisted.** They are deterministic, cost no RUs, and still go out when the commentary store is down. A player no squad has is never printed as an ID: the line says "a player" (`un jugador`, `un joueur`) with no club in brackets. Callers that have already run the key detector use `NotableMomentDetector.DetectAfterKey`, which doesn't ask it again; `Detect` stays the self-checking version.
+
+**Alternatives considered:** a model line for every notable moment (about 40 more calls a match, for little value); persisting template lines through `ICommentaryStore` (RUs and a write path for text that can be recomputed, and nothing on screen if the store is down); folding notable moments into `KeyMomentKind` (they would wake the agents and the Service Bus topic, which ADR-004 exists to prevent).
+
+**Trade-offs:** a template line reads flatter than a model line, and the catalogue is one more place that needs a reviewer's eye for the roster rule (it uses roster names only).
+
+---
+
+## ADR-047 — Overlay card builder
+
+**Status:** Accepted · 24 Oct, lane E (builds on ADR-027, ADR-029)
+
+**Decision**
+- **A pure `OverlayCardBuilder`** is called by `MatchStreamProjector` for every key and notable moment. It builds a neutral card: the type is the moment kind, then a title, the team and the player. A key card shows for 6 s and a notable card for 3 s. The ID is moment-based (`{momentId}:overlay`), so a replay after a reconnect can be de-duplicated by the client.
+- **This gives the Cosmos live path its toasts,** which it never had: only the demo source made cards. `DemoMatchSource` drops its private helper and uses the builder, so there's one source of truth.
+- **Viewer shaping belongs to slice E2, not here:** Casual gets a plain title and no minor cards; Analyst gets a metric subtitle (xG for shots, or the favourite metric) and minor cards at low priority. It's done per subscriber in the hub, so the shared projection stays viewer-neutral.
+- **No card clash, decided on the server:** the projector skips a notable moment's card when a key moment's card went out in the last 3 events (`MatchStreamProjector.NotableCardQuietEvents`, counted in events rather than clock time so every replay speed decides the same way). The notable moment still gets its moment message and its template line. A key card is never skipped.
+- **One rule for the team: "the side the moment is about"** (`KeyMoment.Side`, `NotableMoment.Team`), used by `MomentView.Team` and `OverlayPayload.Team`. A goal, big chance, saved or missed penalty and a clearance off the line are about the shooting side; a penalty awarded is about the side awarded it (the opposite of the fouling side that triggers it); a card is about the carded side; a corner, throw-in or goal kick is about the side that takes it. A clearance off the line is the shooter's because the chance, the xG and the featured player are the shooter's, and a card whose team and player disagreed would be wrong on screen. The featured player is on the same side: for a penalty awarded it is the fouled player, not the fouler. This changes what `MomentView.Team` means for penalties (it was the fouling side); the doc comments and the OpenAPI document say so.
+- **A seam for milestones:** when a milestone fires on the same event (the first booking, say), its card replaces the notable card. The projector builds the card in one place so that can be added later; milestones themselves are not built yet.
+
+**Alternatives considered:** cards built in the hub per subscriber (the work repeats for every viewer, and the demo and Cosmos paths could drift); cards built by the UI from the moment message (every client re-implements durations and titles).
+
+---
+
 ## ADR-051 — Chat model capacity, and when the models deploy
 
 **Status:** Accepted · 24 Oct, lane D slice 6 (builds on ADR-007)

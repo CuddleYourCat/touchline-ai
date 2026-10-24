@@ -32,13 +32,20 @@ namespace Touchline.MatchCentre.Storage;
 /// <param name="detector">Finds the key moments in the stored events.</param>
 /// <param name="commentary">The commentary the agents have written.</param>
 /// <param name="logger">Logs a failed commentary read, after which the moments go out without it.</param>
+/// <param name="notable">
+/// Finds the notable moments (ADR-046), whose template lines are worked out here and not stored.
+/// Null for one over <paramref name="detector"/> and <paramref name="teams"/>.
+/// </param>
 public sealed partial class CosmosMatchReadModel(
     CosmosClient client,
     IReadOnlyDictionary<string, TeamProfile> teams,
     KeyMomentDetector detector,
     ICommentaryStore commentary,
-    ILogger<CosmosMatchReadModel> logger) : IMatchReadModel
+    ILogger<CosmosMatchReadModel> logger,
+    NotableMomentDetector? notable = null) : IMatchReadModel
 {
+    private readonly NotableMomentDetector _notable = notable ?? new NotableMomentDetector(detector, teams.Values);
+
     /// <summary>Every match and event is labelled as generated (CLAUDE.md club and IP rules).</summary>
     private const string _dataSource = "synthetic";
 
@@ -163,6 +170,12 @@ public sealed partial class CosmosMatchReadModel(
             {
                 var line = CommentarySelection.Pick(lines[MomentIds.For(matchId, matchEvent.Sequence)], viewer.Mode, viewer.Language);
                 moments.Add(MomentViews.From(moment, matchId, line));
+            }
+            else if (_notable.DetectAfterKey(matchEvent, state) is { IsMinor: false } notableMoment)
+            {
+                // A notable moment's line is a template worked out here, so it needs no stored commentary.
+                var line = CommentarySelection.Pick(NotableLines.For(notableMoment, matchId), viewer.Mode, viewer.Language);
+                moments.Add(MomentViews.From(notableMoment, matchId, line));
             }
 
             state = state.Apply(matchEvent);

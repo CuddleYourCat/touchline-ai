@@ -72,12 +72,13 @@ internal sealed partial class LiveMatchHub
     /// The match metadata from the stored match, so shapes start even when the metadata event
     /// is never seen; or null to wait for that event.
     /// </param>
+    /// <param name="notable">The notable-moment detector, or null for one over <paramref name="detector"/>.</param>
     public LiveMatchHub(
         string matchId, KeyMomentDetector detector, TimeProvider time, int buffer, EventBackfill backfill, ILogger logger,
-        IReadOnlyDictionary<string, TeamProfile>? teams = null, MatchMetadata? lineups = null)
+        IReadOnlyDictionary<string, TeamProfile>? teams = null, MatchMetadata? lineups = null, NotableMomentDetector? notable = null)
     {
         MatchId = matchId;
-        _projector = new MatchStreamProjector(matchId, detector, teams, lineups, logger);
+        _projector = new MatchStreamProjector(matchId, detector, teams, lineups, logger, notable);
         _time = time;
         _buffer = buffer;
         _backfill = backfill;
@@ -477,7 +478,7 @@ internal sealed partial class LiveMatchHub
     }
 
     // Projects an event the hub hasn't had, or returns null for a repeat.
-    private IReadOnlyList<LiveMessage>? Project(MatchEvent matchEvent)
+    private Projected? Project(MatchEvent matchEvent)
     {
         var last = _projector.State.LastSequence;
         if (matchEvent.MatchId != MatchId || matchEvent.Sequence <= last)
@@ -496,19 +497,33 @@ internal sealed partial class LiveMatchHub
         }
 
         var wasFullTime = _projector.State.FullTime;
-        var messages = _projector.Apply(matchEvent).Messages;
+        var projection = _projector.Apply(matchEvent);
+        var messages = projection.Messages;
         _history.Add((matchEvent.Sequence, messages));
         if (_projector.State.FullTime && !wasFullTime)
         {
             _fullTimeAt = _time.GetUtcNow();
         }
 
-        return messages;
+        // A notable moment's template lines are worked out here, from the event alone: nothing is
+        // stored, so they go out even when the commentary store is down (ADR-046). They join the
+        // commentary the hub holds, so a reconnect replays the right one for its viewer.
+        IReadOnlyList<CommentaryLine> lines = [];
+        if (projection.Notable is { IsMinor: false } notable)
+        {
+            lines = NotableLines.For(notable, MatchId);
+            foreach (var line in lines)
+            {
+                _commentary[CosmosCommentaryStore.DocumentId(line)] = new Arrival(line, matchEvent.Sequence);
+            }
+        }
+
+        return new Projected(messages, lines);
     }
 
-    private void Broadcast(long sequence, IReadOnlyList<LiveMessage>? messages)
+    private void Broadcast(long sequence, Projected? projected)
     {
-        if (messages is null)
+        if (projected is null)
         {
             return;
         }
@@ -522,13 +537,15 @@ internal sealed partial class LiveMatchHub
                 continue;
             }
 
-            foreach (var message in messages)
+            var wrote = projected.Messages.All(message => subscriber.Channel.Writer.TryWrite(message));
+            if (wrote && subscriber.Choose(projected.Lines) is { } line)
             {
-                if (!subscriber.Channel.Writer.TryWrite(message))
-                {
-                    (overflowed ??= []).Add(subscriber);
-                    break;
-                }
+                wrote = subscriber.Channel.Writer.TryWrite(new LiveMessage(StreamEvents.Commentary, LiveMessage.IdFor(sequence), line));
+            }
+
+            if (!wrote)
+            {
+                (overflowed ??= []).Add(subscriber);
             }
         }
 
@@ -596,6 +613,10 @@ internal sealed partial class LiveMatchHub
 
     private readonly record struct Gap(long After, long Before);
 
+    // What one event projected to: the shared messages, and the template lines (if any) from
+    // which each subscriber is sent the one that suits its viewer.
+    private sealed record Projected(IReadOnlyList<LiveMessage> Messages, IReadOnlyList<CommentaryLine> Lines);
+
     // A commentary line and the hub's sequence when it arrived.
     private sealed record Arrival(CommentaryLine Line, long Sequence);
 
@@ -609,6 +630,10 @@ internal sealed partial class LiveMatchHub
         public Dictionary<string, int> Sent { get; } = [];
 
         public int? Rank(CommentaryLine line) => CommentarySelection.Rank(line, viewer.Mode, viewer.Language);
+
+        // The one of a moment's lines that suits this viewer, recorded as sent; null if none does.
+        public CommentaryLine? Choose(IReadOnlyList<CommentaryLine> lines) =>
+            lines.Count > 0 && CommentarySelection.Pick(lines, viewer.Mode, viewer.Language) is { } line && Offer(line) ? line : null;
 
         // Records and allows a line no worse than the best already sent for its moment.
         public bool Offer(CommentaryLine line)

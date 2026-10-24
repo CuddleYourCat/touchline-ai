@@ -66,8 +66,9 @@ public class DemoMatchSourceTests
         match!.Summary.Status.Should().Be(MatchStatus.FullTime);
         match.State.Score.Should().Be(new Score(3, 3));
         match.State.LastSequence.Should().Be(DemoRecording.Events.Count);
-        moments.Should().HaveCount(9);
-        moments!.Should().OnlyContain(m => m.Commentary!.Source == CommentarySource.Template && m.Id.StartsWith("demo-1:", StringComparison.Ordinal));
+        moments.Should().HaveCount(25, "nine key moments and sixteen notable ones");
+        moments!.Count(m => m.Tier == MomentTier.Key).Should().Be(9);
+        moments.Should().OnlyContain(m => m.Commentary!.Source == CommentarySource.Template && m.Id.StartsWith("demo-1:", StringComparison.Ordinal));
     }
 
     [Test]
@@ -179,7 +180,7 @@ public class DemoMatchSourceTests
             .Should().Equal(Enumerable.Range(101, DemoRecording.Events.Count - 100).Select(i => (long)i));
         var moments = messages.Count(m => m.Event == StreamEvents.Moment);
         messages.Count(m => m.Event == StreamEvents.Commentary).Should().Be(moments);
-        messages.Count(m => m.Event == StreamEvents.Overlay).Should().Be(moments);
+        messages.Count(m => m.Event == StreamEvents.Overlay).Should().Be(moments - 2, "two notable cards are held back behind a key card");
         messages.Should().ContainSingle(m => m.Event == StreamEvents.FullTime);
     }
 

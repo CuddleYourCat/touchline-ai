@@ -4,6 +4,7 @@ using Microsoft.Extensions.Time.Testing;
 using Touchline.Domain.Analytics;
 using Touchline.Domain.Matches;
 using Touchline.Domain.Moments;
+using Touchline.Domain.Squad;
 using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
 using Touchline.MatchCentre.Api;
@@ -40,7 +41,8 @@ public class MatchStreamProjectorTests
     {
         var moments = ProjectWholeMatch().Where(m => m.Event == StreamEvents.Moment).Select(m => (MomentView)m.Data).ToList();
 
-        moments.Should().HaveCount(9);
+        moments.Count(m => m.Tier == MomentTier.Key).Should().Be(9);
+        moments.Count(m => m.Tier == MomentTier.Notable).Should().Be(16);
         moments.Count(m => m.Kind == nameof(KeyMomentKind.Goal)).Should().Be(6);
         moments.Should().OnlyContain(m => m.Id == $"{DemoRecording.Events[0].MatchId}:{m.Sequence}");
     }

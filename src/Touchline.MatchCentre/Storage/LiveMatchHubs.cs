@@ -26,6 +26,7 @@ namespace Touchline.MatchCentre.Storage;
 /// defaults. Every parameter resolves from DI, so the container builds this class without a factory.
 /// </param>
 /// <param name="teams">The team profiles, for the shape model, or null to send no shapes.</param>
+/// <param name="notable">The notable-moment detector, or null for one over <paramref name="detector"/>.</param>
 internal sealed partial class LiveMatchHubs(
     CosmosClient client,
     ICommentaryStore commentary,
@@ -34,7 +35,8 @@ internal sealed partial class LiveMatchHubs(
     ILogger<LiveMatchHubs> logger,
     int buffer = LiveMatchHubs.DefaultBuffer,
     IOptions<LiveFeedOptions>? options = null,
-    IReadOnlyDictionary<string, TeamProfile>? teams = null)
+    IReadOnlyDictionary<string, TeamProfile>? teams = null,
+    NotableMomentDetector? notable = null)
 {
     /// <summary>The default per-stream buffer: several minutes of a busy match.</summary>
     public const int DefaultBuffer = 256;
@@ -114,7 +116,7 @@ internal sealed partial class LiveMatchHubs(
             {
                 // Line-ups are null until the B-lane wiring reads them from the stored match
                 // document; until then shapes start with the metadata event (sequence 1).
-                hub = new LiveMatchHub(matchId, detector, time, buffer, BackfillAsync, logger, teams, lineups: null);
+                hub = new LiveMatchHub(matchId, detector, time, buffer, BackfillAsync, logger, teams, lineups: null, notable);
                 hub.Ready = LoadAsync(hub);
                 _hubs[matchId] = hub;
             }

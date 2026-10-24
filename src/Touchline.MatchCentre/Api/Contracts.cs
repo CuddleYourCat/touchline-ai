@@ -198,8 +198,8 @@ public sealed record EventPage(IReadOnlyList<MatchEvent> Events, long? NextAfter
 /// <param name="Kind">What happened, as a key-moment or notable-moment kind name, such as <c>Goal</c>.</param>
 /// <param name="Sequence">The triggering event.</param>
 /// <param name="Clock">When it happened.</param>
-/// <param name="Team">The team the triggering event belongs to.</param>
-/// <param name="PlayerId">The main player, if there is one.</param>
+/// <param name="Team">The side the moment is about: who scored, was awarded the corner or penalty, or was carded.</param>
+/// <param name="PlayerId">The main player on that side, if there is one.</param>
 /// <param name="Reason">The detector's factual reason, such as <c>xG 0.41 from 11 m</c>.</param>
 /// <param name="Commentary">The commentary line for the viewer's mode and language, or null if none is written yet.</param>
 public sealed record MomentView(
@@ -248,7 +248,7 @@ public sealed record MilestoneView(string Id, string Kind, long Sequence, ClockR
 /// </summary>
 /// <param name="Title">The main line, such as <c>GOAL</c>.</param>
 /// <param name="Subtitle">A second line, or null.</param>
-/// <param name="Team">The team it's about, or null.</param>
+/// <param name="Team">The side the card is about (the same rule as a moment's team), or null.</param>
 /// <param name="PlayerId">The player it's about, or null.</param>
 public sealed record OverlayPayload(string Title, string? Subtitle, TeamSide? Team, string? PlayerId);
 

@@ -16,7 +16,12 @@ namespace Touchline.MatchCentre.Live;
 /// <param name="Messages">The stream messages, in the order to send them.</param>
 /// <param name="Moment">The key moment the event triggered, or null.</param>
 /// <param name="State">The match state after the event.</param>
-internal sealed record Projection(IReadOnlyList<LiveMessage> Messages, KeyMoment? Moment, MatchState State);
+/// <param name="Notable">
+/// The notable moment the event triggered (ADR-046), or null. A minor one (a throw-in or goal
+/// kick) is reported here but puts no moment, card or line on the stream until the viewer
+/// filter (slice E2) decides who sees it.
+/// </param>
+internal sealed record Projection(IReadOnlyList<LiveMessage> Messages, KeyMoment? Moment, MatchState State, NotableMoment? Notable = null);
 
 /// <summary>
 /// Turns a match's events, fed in order, into live stream messages: the event itself, the
@@ -25,12 +30,15 @@ internal sealed record Projection(IReadOnlyList<LiveMessage> Messages, KeyMoment
 /// produce identical streams from identical events.
 /// </summary>
 /// <remarks>
-/// Commentary, analysis, milestones and overlays come from elsewhere (the agents and the
-/// moment tiers) and are merged in by the feed.
+/// Key and notable moments (ADR-046) each come with an overlay card (ADR-047). Model commentary,
+/// analysis and milestones come from elsewhere and are merged in by the feed, and a notable
+/// moment's template line is chosen per viewer by the feed, so this projection stays the same
+/// for every viewer.
 /// </remarks>
 internal sealed partial class MatchStreamProjector
 {
     private readonly KeyMomentDetector _detector;
+    private readonly NotableMomentDetector _notable;
     private readonly IReadOnlyDictionary<string, TeamProfile>? _teams;
     private readonly ILogger _logger;
     private readonly List<MatchEvent> _events = [];
@@ -39,6 +47,14 @@ internal sealed partial class MatchStreamProjector
     private (ShapeTeam Home, ShapeTeam Away)? _shapeTeams;
     private MatchState _state;
     private (MatchPeriod Period, int FromMinute)? _openWindow;
+    private long _lastKeyCard = long.MinValue / 2;
+
+    /// <summary>
+    /// A notable moment gets no overlay card if a key moment's card went out this many events or
+    /// fewer before it (ADR-047), so the two never clash on screen. By event count, not by clock,
+    /// so a replay at any speed decides the same way.
+    /// </summary>
+    public const int NotableCardQuietEvents = 3;
 
     /// <summary>Starts a projection at kick-off.</summary>
     /// <param name="matchId">The match.</param>
@@ -52,14 +68,20 @@ internal sealed partial class MatchStreamProjector
     /// event (sequence 1) is never fed in. The metadata event replaces it when it arrives.
     /// </param>
     /// <param name="logger">Logs a team given default tendencies, once per team.</param>
+    /// <param name="notable">
+    /// The notable-moment detector. Defaults to one over <paramref name="detector"/> and the given
+    /// team profiles (or the embedded ones).
+    /// </param>
     public MatchStreamProjector(
         string matchId,
         KeyMomentDetector detector,
         IReadOnlyDictionary<string, TeamProfile>? teams = null,
         MatchMetadata? lineups = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        NotableMomentDetector? notable = null)
     {
         _detector = detector;
+        _notable = notable ?? new NotableMomentDetector(detector, teams?.Values);
         _teams = teams;
         _logger = logger ?? NullLogger.Instance;
         _state = MatchState.KickOff(matchId);
@@ -99,6 +121,7 @@ internal sealed partial class MatchStreamProjector
         _openWindow = window;
 
         var moment = _detector.Detect(matchEvent, _state);
+        var notable = moment is null ? _notable.DetectAfterKey(matchEvent, _state) : null;
         _state = _state.Apply(matchEvent);
         _events.Add(matchEvent);
 
@@ -111,6 +134,15 @@ internal sealed partial class MatchStreamProjector
         if (moment is not null)
         {
             messages.Add(new LiveMessage(StreamEvents.Moment, id, MomentViews.From(moment, _state.MatchId, commentary: null)));
+        }
+        else if (notable is { IsMinor: false })
+        {
+            messages.Add(new LiveMessage(StreamEvents.Moment, id, MomentViews.From(notable, _state.MatchId, commentary: null)));
+        }
+
+        if (OverlayFor(moment, notable) is { } card)
+        {
+            messages.Add(new LiveMessage(StreamEvents.Overlay, id, card));
         }
 
         var state = LiveState.From(_state);
@@ -126,7 +158,26 @@ internal sealed partial class MatchStreamProjector
             messages.Add(new LiveMessage(StreamEvents.FullTime, id, state));
         }
 
-        return new Projection(messages, moment, _state);
+        return new Projection(messages, moment, _state, notable);
+    }
+
+    // The one place a moment becomes a card (ADR-047). A minor moment has no card yet. When
+    // milestones exist (skill shot 3), a milestone reached on this event replaces the notable
+    // card here, so a first booking shows as a milestone and not as a plain yellow card.
+    // A notable card is skipped when a key card went out within NotableCardQuietEvents events,
+    // so a corner straight after a big chance doesn't cover the key card; the notable moment
+    // still has its Moment message and template line.
+    private OverlayCard? OverlayFor(KeyMoment? key, NotableMoment? notable)
+    {
+        if (key is not null)
+        {
+            _lastKeyCard = key.Trigger.Sequence;
+            return OverlayCardBuilder.For(key, _state.MatchId);
+        }
+
+        return notable is { IsMinor: false } n && !(n.Trigger.Sequence - _lastKeyCard <= NotableCardQuietEvents)
+            ? OverlayCardBuilder.For(n, _state.MatchId)
+            : null;
     }
 
     // The shape model runs once the metadata has named both teams. A red card takes its player
@@ -200,8 +251,24 @@ internal static class MomentViews
             moment.Kind.ToString(),
             moment.Trigger.Sequence,
             ClockReading.From(moment.Trigger.Time),
-            moment.Trigger.Team,
-            moment.Trigger.PlayerId,
+            moment.Side,
+            moment.FeaturedPlayerId,
+            moment.Reason,
+            commentary);
+
+    /// <summary>The view of a notable moment.</summary>
+    /// <param name="moment">The moment.</param>
+    /// <param name="matchId">The match, which may differ from the trigger's (a demo lap).</param>
+    /// <param name="commentary">Its template line for the viewer, or null.</param>
+    /// <returns>The view. Its team is the side the moment is about, which for a corner is the side that wins it.</returns>
+    public static MomentView From(NotableMoment moment, string matchId, CommentaryLine? commentary) =>
+        new(MomentIds.For(matchId, moment.Trigger.Sequence),
+            MomentTier.Notable,
+            moment.Kind.ToString(),
+            moment.Trigger.Sequence,
+            ClockReading.From(moment.Trigger.Time),
+            moment.Team,
+            moment.FeaturedPlayerId,
             moment.Reason,
             commentary);
 }

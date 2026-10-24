@@ -55,15 +55,15 @@ public class CosmosMatchReadModelTests
         Store(stored);
         _events.Setup(c => c.GetItemQueryStreamIterator(It.IsAny<QueryDefinition>(), It.IsAny<string>(), It.IsAny<QueryRequestOptions>()))
             .Returns(() => Pages(_match));
-        var first = (await _readModel.GetMomentsAsync(stored.MatchId, Viewer.Default, CancellationToken.None))![0];
+        var first = (await _readModel.GetMomentsAsync(stored.MatchId, Viewer.Default, CancellationToken.None))!.First(m => m.Tier == MomentTier.Key);
         first.Commentary.Should().BeNull("nothing is written yet");
         var line = new CommentaryLine(stored.MatchId, first.Id, first.Sequence, MomentTier.Key, CommentarySource.Model, "What a strike.", ViewingMode.Casual, "en");
         _commentary.Setup(s => s.GetAsync(stored.MatchId, It.IsAny<CancellationToken>())).ReturnsAsync([line]);
 
         var moments = await _readModel.GetMomentsAsync(stored.MatchId, Viewer.Default, CancellationToken.None);
 
-        moments![0].Commentary.Should().Be(line);
-        moments.Skip(1).Should().OnlyContain(m => m.Commentary == null);
+        moments!.Single(m => m.Id == first.Id).Commentary.Should().Be(line);
+        moments!.Where(m => m.Tier == MomentTier.Key && m.Id != first.Id).Should().OnlyContain(m => m.Commentary == null);
         _commentary.Verify(s => s.GetAsync(stored.MatchId, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
@@ -80,7 +80,27 @@ public class CosmosMatchReadModelTests
         var moments = await _readModel.GetMomentsAsync(stored.MatchId, Viewer.Default, CancellationToken.None);
 
         moments.Should().NotBeNullOrEmpty();
-        moments.Should().OnlyContain(m => m.Commentary == null);
+        moments!.Where(m => m.Tier == MomentTier.Key).Should().OnlyContain(m => m.Commentary == null);
+        var notable = moments!.Where(m => m.Tier == MomentTier.Notable).ToList();
+        notable.Should().HaveCount(19, "template lines are worked out from the events, so the store being down doesn't touch them");
+        notable.Should().OnlyContain(m => m.Commentary!.Source == CommentarySource.Template && m.Commentary.Language == "en");
+    }
+
+    [Test]
+    public async Task A_notable_moment_is_read_in_the_viewers_language_and_falls_back_to_english()
+    {
+        var stored = Stored(_match.Count);
+        Store(stored);
+        _events.Setup(c => c.GetItemQueryStreamIterator(It.IsAny<QueryDefinition>(), It.IsAny<string>(), It.IsAny<QueryRequestOptions>()))
+            .Returns(() => Pages(_match));
+        var (spanish, _) = Viewer.Create(ViewingMode.Casual, "es-MX", null, null, null, _ => true, _ => true);
+        var (german, _) = Viewer.Create(ViewingMode.Casual, "de", null, null, null, _ => true, _ => true);
+
+        var inSpanish = await _readModel.GetMomentsAsync(stored.MatchId, spanish!, CancellationToken.None);
+        var inGerman = await _readModel.GetMomentsAsync(stored.MatchId, german!, CancellationToken.None);
+
+        inSpanish!.Where(m => m.Tier == MomentTier.Notable).Should().OnlyContain(m => m.Commentary!.Language == "es");
+        inGerman!.Where(m => m.Tier == MomentTier.Notable).Should().OnlyContain(m => m.Commentary!.Language == "en");
     }
 
     [Test]
