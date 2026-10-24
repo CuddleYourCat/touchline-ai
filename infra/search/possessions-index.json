@@ -38,8 +38,8 @@
       {
         "name": "possessions-semantic",
         "prioritizedFields": {
-          "contentFields": [ { "fieldName": "summary" } ],
-          "keywordsFields": [ { "fieldName": "players" } ]
+          "prioritizedContentFields": [ { "fieldName": "summary" } ],
+          "prioritizedKeywordsFields": [ { "fieldName": "players" } ]
         }
       }
     ]

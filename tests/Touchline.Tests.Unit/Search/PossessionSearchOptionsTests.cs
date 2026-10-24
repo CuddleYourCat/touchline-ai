@@ -25,6 +25,35 @@ public sealed class PossessionSearchOptionsTests
     [Test]
     public void SemanticConfigurationName_MatchesTheIndexSchema()
     {
+        using var schema = LoadIndexSchema();
+        var names = schema.RootElement.GetProperty("semantic").GetProperty("configurations").EnumerateArray()
+            .Select(c => c.GetProperty("name").GetString());
+
+        names.Should().Contain(new PossessionSearchOptions().SemanticConfigurationName);
+    }
+
+    [Test]
+    public void SemanticConfiguration_UsesTheRestApiPropertyNames()
+    {
+        // The REST API (2024-07-01) names these prioritizedContentFields and prioritizedKeywordsFields;
+        // contentFields and keywordsFields are the .NET SDK's names, and the service rejects them.
+        using var schema = LoadIndexSchema();
+        var searchable = schema.RootElement.GetProperty("fields").EnumerateArray()
+            .Where(f => f.TryGetProperty("searchable", out var s) && s.GetBoolean())
+            .Select(f => f.GetProperty("name").GetString())
+            .ToHashSet();
+        var prioritized = schema.RootElement.GetProperty("semantic").GetProperty("configurations")[0].GetProperty("prioritizedFields");
+
+        prioritized.EnumerateObject().Select(p => p.Name).Should()
+            .BeSubsetOf(["titleField", "prioritizedContentFields", "prioritizedKeywordsFields"]);
+        prioritized.GetProperty("prioritizedContentFields").EnumerateArray()
+            .Concat(prioritized.GetProperty("prioritizedKeywordsFields").EnumerateArray())
+            .Select(f => f.GetProperty("fieldName").GetString())
+            .Should().OnlyContain(name => searchable.Contains(name));
+    }
+
+    private static JsonDocument LoadIndexSchema()
+    {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "infra", "search", "possessions-index.json")))
         {
@@ -32,11 +61,7 @@ public sealed class PossessionSearchOptionsTests
         }
 
         directory.Should().NotBeNull();
-        using var schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory!.FullName, "infra", "search", "possessions-index.json")));
-        var names = schema.RootElement.GetProperty("semantic").GetProperty("configurations").EnumerateArray()
-            .Select(c => c.GetProperty("name").GetString());
-
-        names.Should().Contain(new PossessionSearchOptions().SemanticConfigurationName);
+        return JsonDocument.Parse(File.ReadAllText(Path.Combine(directory!.FullName, "infra", "search", "possessions-index.json")));
     }
 
     [Test]
