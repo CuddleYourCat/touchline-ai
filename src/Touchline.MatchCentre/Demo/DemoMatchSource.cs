@@ -199,6 +199,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
 
         // A reconnect replays what has already happened with only the latest shape in it.
         var played = Math.Min(lap.Played, _events.Count);
+        var fullTimeSent = false;
         if (after is not null && from < played)
         {
             var replay = new List<LiveMessage>();
@@ -209,6 +210,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
 
             foreach (var message in ReplayShapes.LatestOnly(replay))
             {
+                fullTimeSent |= message.Event == StreamEvents.FullTime;
                 yield return message;
             }
 
@@ -225,8 +227,17 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
 
             foreach (var message in MessagesAt(i, projected, matchId, viewer))
             {
+                fullTimeSent |= message.Event == StreamEvents.FullTime;
                 yield return message;
             }
+        }
+
+        // A follower who joins at or after the final whistle still hears it, so the client
+        // knows the match is over and stops reconnecting.
+        if (!fullTimeSent)
+        {
+            var final = _states[^1] with { MatchId = matchId };
+            yield return new LiveMessage(StreamEvents.FullTime, LiveMessage.IdFor(final.LastSequence), LiveState.From(final));
         }
     }
 

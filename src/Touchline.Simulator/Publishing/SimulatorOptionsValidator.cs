@@ -35,7 +35,7 @@ public sealed class SimulatorOptionsValidator : IValidateOptions<SimulatorOption
             {
                 // Building the simulator checks the teams, the referee and the kind of match,
                 // without playing anything.
-                _ = plan.CreateSimulator();
+                _ = plan.CreateSimulator(TimeProvider.System);
             }
             catch (ArgumentException ex)
             {

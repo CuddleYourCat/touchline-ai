@@ -52,13 +52,28 @@ public sealed class MatchPlan
     public double Speed { get; set; } = 10;
 
     /// <summary>
+    /// The kick-off time in the match's metadata, or null for the default. When null, an
+    /// exhibition kicks off now by the wall clock; a fixture or replay keeps the engine's
+    /// <see cref="MatchSimulator.DefaultKickOffUtc"/>.
+    /// </summary>
+    /// <remarks>
+    /// Repeatability: an exhibition with no kick-off set gets different metadata on every run,
+    /// while its match ID stays the same. A stored match keeps the kick-off from its first run.
+    /// Pin this value wherever output must be exactly repeatable.
+    /// </remarks>
+    public DateTimeOffset? KickOff { get; set; }
+
+    /// <summary>
     /// Builds the simulator for this plan, from the embedded team and referee profiles.
     /// </summary>
+    /// <param name="time">The clock that gives an exhibition's kick-off time when <see cref="KickOff"/> is unset.</param>
     /// <param name="unavailable">Players suspended for this round (ADR-025), or null for none.</param>
     /// <returns>A simulator ready to play.</returns>
     /// <exception cref="ArgumentException">A team or referee ID isn't in the catalog, or the plan describes an invalid match.</exception>
-    public MatchSimulator CreateSimulator(IReadOnlySet<string>? unavailable = null)
+    public MatchSimulator CreateSimulator(TimeProvider time, IReadOnlySet<string>? unavailable = null)
     {
+        ArgumentNullException.ThrowIfNull(time);
+
         var teams = TeamProfileCatalog.LoadEmbedded();
         TeamProfile Team(string id) => teams.TryGetValue(id, out var team)
             ? team
@@ -70,6 +85,7 @@ public sealed class MatchPlan
 
         return new MatchSimulator(Team(Home), Team(Away), Seed, new MatchOptions
         {
+            KickOffUtc = KickOff ?? (Kind == MatchKind.Exhibition ? time.GetUtcNow() : null),
             Kind = Kind,
             Season = Season,
             Round = Round,

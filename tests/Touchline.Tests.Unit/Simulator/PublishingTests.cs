@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using simulator::Touchline.Simulator.Engine;
 using simulator::Touchline.Simulator.Publishing;
@@ -23,6 +24,51 @@ public class PublishingTests
 
     private static List<MatchEvent> Match(int seed = 42) =>
         [.. new MatchSimulator(_teams["north-bank-fc"], _teams["thames-valley-united"], seed).Play()];
+
+    // Kick-off time
+
+    [Test]
+    public void An_exhibition_without_a_kick_off_time_kicks_off_at_the_clock_s_now()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 10, 23, 18, 30, 0, TimeSpan.Zero));
+
+        var metadata = new MatchPlan { Seed = 42 }.CreateSimulator(time).Play().First().Metadata!;
+
+        metadata.KickOffUtc.Should().Be(time.GetUtcNow());
+    }
+
+    [TestCase(MatchKind.Fixture, null)]
+    [TestCase(MatchKind.Replay, "match-original")]
+    public void A_fixture_or_replay_without_a_kick_off_time_keeps_the_engine_s_default(MatchKind kind, string? replayOf)
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 10, 23, 18, 30, 0, TimeSpan.Zero));
+        var plan = new MatchPlan { Seed = 42, Kind = kind, Season = "2026-27", Round = 3, ReplayOf = replayOf };
+
+        var metadata = plan.CreateSimulator(time).Play().First().Metadata!;
+
+        metadata.KickOffUtc.Should().Be(MatchSimulator.DefaultKickOffUtc);
+    }
+
+    [Test]
+    public void A_fixture_with_a_kick_off_time_keeps_it()
+    {
+        var kickOff = new DateTimeOffset(2026, 11, 1, 15, 0, 0, TimeSpan.Zero);
+        var plan = new MatchPlan { Seed = 42, Kind = MatchKind.Fixture, Season = "2026-27", Round = 3, KickOff = kickOff };
+
+        var metadata = plan.CreateSimulator(new FakeTimeProvider()).Play().First().Metadata!;
+
+        metadata.KickOffUtc.Should().Be(kickOff);
+    }
+
+    [Test]
+    public void A_plan_with_a_kick_off_time_keeps_it()
+    {
+        var kickOff = new DateTimeOffset(2026, 11, 1, 15, 0, 0, TimeSpan.Zero);
+
+        var metadata = new MatchPlan { Seed = 42, KickOff = kickOff }.CreateSimulator(new FakeTimeProvider()).Play().First().Metadata!;
+
+        metadata.KickOffUtc.Should().Be(kickOff);
+    }
 
     // Pacing
 
@@ -120,7 +166,7 @@ public class PublishingTests
     {
         var sender = new RecordingSender();
         var time = new InstantTimeProvider();
-        var plan = new MatchPlan { Seed = 42, Speed = 10 };
+        var plan = new MatchPlan { Seed = 42, Speed = 10, KickOff = MatchSimulator.DefaultKickOffUtc };
         var publisher = new MatchPublisher(Options.Create(new SimulatorOptions()), sender, time, new FakeSeason(), new RecordingLifetime(), NullLogger<MatchPublisher>.Instance);
 
         await publisher.PlayAsync(plan, CancellationToken.None);
@@ -269,8 +315,8 @@ public class PublishingTests
     [Test]
     public void A_plan_with_an_unknown_team_or_referee_is_rejected()
     {
-        new Action(() => new MatchPlan { Home = "no-such-fc" }.CreateSimulator()).Should().Throw<ArgumentException>().WithMessage("*no-such-fc*");
-        new Action(() => new MatchPlan { RefereeId = "ref-nobody" }.CreateSimulator()).Should().Throw<ArgumentException>().WithMessage("*ref-nobody*");
+        new Action(() => new MatchPlan { Home = "no-such-fc" }.CreateSimulator(TimeProvider.System)).Should().Throw<ArgumentException>().WithMessage("*no-such-fc*");
+        new Action(() => new MatchPlan { RefereeId = "ref-nobody" }.CreateSimulator(TimeProvider.System)).Should().Throw<ArgumentException>().WithMessage("*ref-nobody*");
     }
 
     [Test]

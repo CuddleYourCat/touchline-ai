@@ -119,9 +119,53 @@ public class DemoMatchSourceTests
 
         var messages = await _source.FollowAsync("demo-1", null, Viewer.Default, CancellationToken.None).ToListAsync();
 
-        messages.Should().ContainSingle();
-        messages[0].Event.Should().Be(StreamEvents.State);
+        messages.Select(m => m.Event).Should().Equal(StreamEvents.State, StreamEvents.FullTime);
         ((LiveState)messages[0].Data).FullTime.Should().BeTrue();
+    }
+
+    [TestCase(null)]
+    [TestCase(100L)]
+    [TestCase(5000L)]
+    [TestCase(long.MaxValue)]
+    public async Task Following_a_finished_lap_always_ends_with_the_final_whistle(long? after)
+    {
+        _time.Advance(MatchLength);
+        var last = DemoRecording.Events[^1].Sequence;
+
+        var messages = await _source.FollowAsync("demo-1", after, Viewer.Default, CancellationToken.None).ToListAsync();
+
+        var fullTime = messages.Should().ContainSingle(m => m.Event == StreamEvents.FullTime).Subject;
+        messages[^1].Should().BeSameAs(fullTime);
+        ShouldCarryTheHighestId(messages, fullTime, last);
+        var state = (LiveState)fullTime.Data;
+        state.FullTime.Should().BeTrue();
+        state.LastSequence.Should().Be(last);
+        state.MatchId.Should().Be("demo-1");
+    }
+
+    [Test]
+    public async Task A_live_follower_hears_the_final_whistle_when_the_lap_ends()
+    {
+        _time.Advance(MatchLength - TimeSpan.FromMinutes(2));
+        var following = _source.FollowAsync("demo-1", null, Viewer.Default, CancellationToken.None).ToListAsync().AsTask();
+        following.IsCompleted.Should().BeFalse("the lap is still being played");
+
+        _time.Advance(TimeSpan.FromMinutes(3));
+        var messages = await following;
+
+        var fullTime = messages.Should().ContainSingle(m => m.Event == StreamEvents.FullTime).Subject;
+        messages[^1].Should().BeSameAs(fullTime);
+        ShouldCarryTheHighestId(messages, fullTime, DemoRecording.Events[^1].Sequence);
+        ((LiveState)fullTime.Data).FullTime.Should().BeTrue();
+    }
+
+    // The client resumes from the last ID it saw, so full time must not carry an ID below one already sent.
+    private static void ShouldCarryTheHighestId(IReadOnlyList<LiveMessage> messages, LiveMessage fullTime, long lastSequence)
+    {
+        var ids = messages.Where(m => m.Id is not null)
+            .Select(m => long.Parse(m.Id!, System.Globalization.CultureInfo.InvariantCulture)).ToList();
+        fullTime.Id.Should().Be(LiveMessage.IdFor(lastSequence));
+        ids.Max().Should().Be(lastSequence);
     }
 
     [Test]

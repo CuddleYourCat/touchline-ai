@@ -13,7 +13,7 @@ namespace Touchline.Domain.Moments;
 /// Rules, most specific first, so one event is never two moments:
 /// <list type="bullet">
 /// <item>a foul inside the fouling team's own penalty area;</item>
-/// <item>a goal at any xG;</item>
+/// <item>a goal at any xG, with a penalty goal saying it came from the spot;</item>
 /// <item>a penalty saved, or missed (ADR-022);</item>
 /// <item>a shot cleared off the line (ADR-022);</item>
 /// <item>any other shot that didn't go in, at or above <see cref="BigChanceThreshold"/>;</item>
@@ -86,6 +86,8 @@ public sealed class KeyMomentDetector
         {
             { Type: MatchEventType.Foul } when PitchDimensions.IsInPenaltyArea(matchEvent.Start, matchEvent.Team)
                 => Moment(KeyMomentKind.PenaltyAwarded, matchEvent, $"{matchEvent.Time}: Penalty. Foul{On(matchEvent.FouledPlayerId)} by {who} inside their own area."),
+            { Shot: { Situation: ShotSituation.Penalty, Outcome: ShotOutcome.Goal } shot }
+                => Moment(KeyMomentKind.Goal, matchEvent, $"{matchEvent.Time}: GOAL! {who} scores from the penalty spot{WrongWay(shot)}. {ScoreAfterGoal(before, matchEvent.Team)}.{GoalLineCall(margin)}", margin),
             { Shot.Outcome: ShotOutcome.Goal }
                 => Moment(KeyMomentKind.Goal, matchEvent, $"{matchEvent.Time}: GOAL! {who} scores{AssistedBy(matchEvent.AssistPlayerId)}. {ScoreAfterGoal(before, matchEvent.Team)}.{GoalLineCall(margin)}", margin),
             { Shot: { Situation: ShotSituation.Penalty, Outcome: ShotOutcome.Saved } shot }
@@ -135,6 +137,23 @@ public sealed class KeyMomentDetector
         DiveDirection.Right => "dived to the taker's right",
         _ => "stayed in the middle"
     };
+
+    // A penalty that goes to one side while the keeper dives to the other. Both are from the
+    // taker's point of view, so a left-hand zone against a dive right is the wrong way.
+    private static string WrongWay(ShotDetail shot)
+    {
+        if (shot is not { GoalMouth: { } goalMouth, KeeperDive: { } dive })
+        {
+            return string.Empty;
+        }
+
+        var zone = GoalFrame.ZoneOf(goalMouth);
+        var wentLeft = zone is GoalZone.LowLeft or GoalZone.HighLeft;
+        var wentRight = zone is GoalZone.LowRight or GoalZone.HighRight;
+        return (wentLeft && dive == DiveDirection.Right) || (wentRight && dive == DiveDirection.Left)
+            ? ", sending the keeper the wrong way"
+            : string.Empty;
+    }
 
     private string Describe(string? playerId) =>
         playerId is not null && _players.TryGetValue(playerId, out var entry)

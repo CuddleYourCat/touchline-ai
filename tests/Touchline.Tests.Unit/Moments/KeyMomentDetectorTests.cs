@@ -290,6 +290,20 @@ public class KeyMomentDetectorTests
         moment.Reason.Should().Contain("Penalty saved").And.Contain("dived to the taker's left");
     }
 
+    [TestCase(2.5, ", sending the keeper the wrong way")]
+    [TestCase(-2.5, "")]
+    [TestCase(0.2, "")]
+    public void A_penalty_goal_says_it_came_from_the_spot(double across, string wrongWay)
+    {
+        var penalty = Penalty(ShotOutcome.Goal, new GoalMouthPosition(across, 0.5)) with { End = TestEvents.EndFor(ShotOutcome.Goal, TeamSide.Home) };
+
+        var moment = _detector.Detect(penalty, KickOff);
+
+        moment!.Kind.Should().Be(KeyMomentKind.Goal);
+        moment.Reason.Should().StartWith("63:12").And.Contain("GOAL! ")
+            .And.EndWith($" scores from the penalty spot{wrongWay}. 1–0.");
+    }
+
     [Test]
     public void A_missed_penalty_says_whether_it_hit_the_woodwork()
     {

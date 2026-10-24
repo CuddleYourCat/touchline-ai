@@ -69,7 +69,7 @@ public sealed partial class MatchPublisher(
             ? (await ReadSeasonForAsync(fixtureSeason, round, cancellationToken)).BannedFor(round)
             : null;
 
-        var simulator = plan.CreateSimulator(banned);
+        var simulator = plan.CreateSimulator(time, banned);
         LogKickOff(logger, simulator.MatchId, plan.Seed, plan.Speed);
         if (banned is { Count: > 0 })
         {
