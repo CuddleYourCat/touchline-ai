@@ -9,7 +9,7 @@ import {
   type ShapeView,
 } from '../live/matchStreamReducer';
 import { OverlayToast } from './OverlayToast';
-import { ballPathD, ballTrail, incidentMarkers, isReplayed, toSvg, unknownPlayerLabel } from './pitchGeometry';
+import { ballPathD, ballTrail, incidentMarkers, isReplayed, toSvg, trailLayers, unknownPlayerLabel } from './pitchGeometry';
 import { useReducedMotion } from './useReducedMotion';
 
 type Player = MatchDetail['homeLineup'][number];
@@ -62,6 +62,32 @@ const Markings = memo(function Markings() {
   );
 });
 
+/** The key to the pitch markers, drawn with the same shapes and classes as the markers themselves. */
+const PitchLegend = memo(function PitchLegend() {
+  return (
+    <ul className="pitch-legend" aria-label="Pitch key">
+      <li>
+        <svg viewBox="-1.2 -1.2 2.4 2.4" width="12" height="12" aria-hidden="true">
+          <path className="marker-foul" d="M -0.9 -0.9 L 0.9 0.9 M 0.9 -0.9 L -0.9 0.9" />
+        </svg>
+        Foul
+      </li>
+      <li>
+        <svg viewBox="-1.2 -1.2 2.4 2.4" width="12" height="12" aria-hidden="true">
+          <rect className="marker-card marker-yellow" x={-0.6} y={-0.9} width={1.2} height={1.8} />
+        </svg>
+        Yellow card
+      </li>
+      <li>
+        <svg viewBox="-1.2 -1.2 2.4 2.4" width="12" height="12" aria-hidden="true">
+          <rect className="marker-card marker-red" x={-0.6} y={-0.9} width={1.2} height={1.8} />
+        </svg>
+        Red card
+      </li>
+    </ul>
+  );
+});
+
 /**
  * The live pitch (ADR-035): player dots from the server's shape model, the ball's latest path with a short fading
  * trail, and markers for fouls and cards. Home attacks left to right. Positions are modelled, not tracked.
@@ -78,7 +104,8 @@ export const Pitch = memo(function Pitch({
 }: PitchProps) {
   const reducedMotion = useReducedMotion();
   const players = useMemo(() => new Map([...homeLineup, ...awayLineup].map((p) => [p.id, p])), [homeLineup, awayLineup]);
-  const trail = useMemo(() => ballTrail(events), [events]);
+  const trailFrom = ballPath?.from;
+  const trail = useMemo(() => trailLayers(trailFrom ? [...ballTrail(events), trailFrom] : ballTrail(events)), [events, trailFrom]);
   const markers = useMemo(() => incidentMarkers(events), [events]);
   const d = ballPath ? ballPathD(ballPath) : null;
   const ballAt = ballPath ? toSvg(ballPath.to) : null;
@@ -144,20 +171,13 @@ export const Pitch = memo(function Pitch({
               })}
             </g>
             <g className="pitch-ball">
-              {trail.map((p, i) => {
-                const at = toSvg(p);
-                return (
-                  <circle
-                    key={i}
-                    data-testid="ball-trail"
-                    className="ball-trail"
-                    cx={at.x}
-                    cy={at.y}
-                    r={0.5}
-                    opacity={((i + 1) / (trail.length + 1)) * 0.6}
-                  />
-                );
-              })}
+              {trail.length > 0 && (
+                <g data-testid="ball-trail" className="ball-trail">
+                  {trail.map((layer, i) => (
+                    <path key={i} data-testid="ball-trail-layer" d={layer} />
+                  ))}
+                </g>
+              )}
               {ballPath && d && (
                 <path key={`p${ballPath.sequence}`} data-testid="ball-path" data-kind={ballPath.kind} className={`ball-path ball-path-${ballPath.kind}`} d={d} />
               )}
@@ -173,7 +193,10 @@ export const Pitch = memo(function Pitch({
           </svg>
           {overlays && <OverlayToast overlays={overlays} homeName={homeName} awayName={awayName} />}
         </div>
-        <figcaption className="pitch-caption muted">Modelled positions, not tracking data</figcaption>
+        <figcaption className="pitch-caption muted">
+          <span>Modelled positions, not tracking data</span>
+          <PitchLegend />
+        </figcaption>
       </figure>
     </section>
   );

@@ -4,6 +4,10 @@ import type { CommentaryLine, LiveMatch, MomentAnalysis, MomentView } from '../l
 import { useMatchStream } from '../live/useMatchStream';
 import { MomentumBars } from '../pitch/MomentumBars';
 import { Pitch } from '../pitch/Pitch';
+import { momentAnchor } from '../questions/askQuestion';
+import { FanQuestions } from '../questions/FanQuestions';
+import { useViewer } from '../viewer/viewer';
+import { ViewerSettings } from '../viewer/ViewerSettings';
 
 /** `PenaltyAwarded` becomes `Penalty awarded`. */
 function kindLabel(kind: string): string {
@@ -55,7 +59,7 @@ interface MomentItemProps {
 const MomentItem = memo(function MomentItem({ moment, line, analysis, viewerMode }: MomentItemProps) {
   const otherMode = line !== undefined && line.mode !== viewerMode;
   return (
-    <li className="moment">
+    <li className="moment" id={momentAnchor(moment.id)} tabIndex={-1}>
       <span className="moment-clock data">{moment.clock.display}</span>
       <div className="moment-body">
         <div className="moment-tags">
@@ -97,7 +101,10 @@ function Timeline({ match, viewerMode }: { match: LiveMatch; viewerMode: Comment
 /** `/matches/:id`: one match, live or finished. */
 export function MatchPage() {
   const { id = '' } = useParams();
-  const { state, retry, retryMoments, viewer } = useMatchStream(id);
+  const [saved, setSaved] = useViewer();
+  const { state, retry, retryMoments, viewer } = useMatchStream(id, saved);
+  const moments = state.kind === 'ready' ? state.match.moments : undefined;
+  const momentIds = useMemo(() => new Set(moments ? Object.keys(moments) : []), [moments]);
 
   switch (state.kind) {
     case 'loading':
@@ -133,6 +140,17 @@ export function MatchPage() {
             </p>
           )}
           <Scoreboard match={state.match} />
+          {state.match.fullTime && (
+            <Link to={`/matches/${encodeURIComponent(id)}/recap`} className="panel recap-teaser">
+              <span className="pill">Full time</span>
+              <span>Read the full-time recap</span>
+            </Link>
+          )}
+          <ViewerSettings
+            viewer={saved}
+            onChange={setSaved}
+            clubs={[state.match.detail.summary.home, state.match.detail.summary.away].map(({ id: clubId, name }) => ({ id: clubId, name }))}
+          />
           {state.momentsFailed && (
             <div className="banner">
               <p>Earlier moments couldn't be loaded.</p>
@@ -158,6 +176,8 @@ export function MatchPage() {
               awayName={state.match.detail.summary.away.name}
             />
           </div>
+          {/* Keyed by match: a new match mounts a new box, which aborts the old question and starts an empty list. */}
+          <FanQuestions key={id} matchId={id} viewer={viewer} momentIds={momentIds} />
           <Timeline match={state.match} viewerMode={viewer.mode} />
         </div>
       );

@@ -53,7 +53,7 @@ public class CosmosRecapStoreTests
     [Test]
     public async Task A_recap_is_stored_by_match_mode_and_language_and_read_back()
     {
-        var recap = new MatchRecap(_matchId, "Headline", "Text.", ViewingMode.Analyst, "es");
+        var recap = new MatchRecap(_matchId, "Headline", "Text.", ViewingMode.Analyst, "es", CommentarySource.Model);
 
         var saved = await _store.SaveAsync(recap, CancellationToken.None);
         var read = await _store.GetAsync(_matchId, ViewingMode.Analyst, "ES", CancellationToken.None);
@@ -66,9 +66,9 @@ public class CosmosRecapStoreTests
     [Test]
     public async Task A_second_save_keeps_the_recap_already_stored()
     {
-        await _store.SaveAsync(new MatchRecap(_matchId, "First", "Text.", ViewingMode.Casual, "en"), CancellationToken.None);
+        await _store.SaveAsync(new MatchRecap(_matchId, "First", "Text.", ViewingMode.Casual, "en", CommentarySource.Model), CancellationToken.None);
 
-        var saved = await _store.SaveAsync(new MatchRecap(_matchId, "Second", "Text.", ViewingMode.Casual, "en"), CancellationToken.None);
+        var saved = await _store.SaveAsync(new MatchRecap(_matchId, "Second", "Text.", ViewingMode.Casual, "en", CommentarySource.Model), CancellationToken.None);
 
         saved.Should().BeFalse();
         (await _store.GetAsync(_matchId, ViewingMode.Casual, "en", CancellationToken.None))!.Headline.Should().Be("First");

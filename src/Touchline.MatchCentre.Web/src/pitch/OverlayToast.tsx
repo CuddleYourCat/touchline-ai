@@ -27,19 +27,41 @@ export function OverlayToast({ overlays, homeName, awayName }: { overlays: Overl
     };
   }, [activeId, durationMs]);
 
-  if (!active) return null;
+  // The live region is always mounted, so a screen reader is already listening when a card arrives; a region that
+  // appears with its text already in it is often not announced. The newest card's words go in it as it arrives.
+  const announce = latest ? announcement(latest, homeName, awayName) : '';
+  const announcer = (
+    <div className="visually-hidden" role="status" aria-label="Overlay announcements">
+      {announce}
+    </div>
+  );
+
+  if (!active) return announcer;
   const { title, subtitle, team } = active.payload;
-  const teamName = team === 'Home' ? homeName : team === 'Away' ? awayName : null;
+  const teamName = teamNameOf(team, homeName, awayName);
   const className = ['overlay-toast', team ? `overlay-${team.toLowerCase()}` : '', fading === active.id ? 'overlay-fading' : '']
     .filter(Boolean)
     .join(' ');
 
   return (
-    <div className={className} role="status" aria-label="Overlay" data-type={active.type}>
-      <span className="overlay-clock data">{active.at.display}</span>
-      <strong className="overlay-title">{title}</strong>
-      {subtitle && <span className="overlay-subtitle">{subtitle}</span>}
-      {teamName && <span className="overlay-team muted">{teamName}</span>}
-    </div>
+    <>
+      {announcer}
+      <div className={className} aria-hidden="true" data-testid="overlay-toast" data-type={active.type}>
+        <span className="overlay-clock data">{active.at.display}</span>
+        <strong className="overlay-title">{title}</strong>
+        {subtitle && <span className="overlay-subtitle">{subtitle}</span>}
+        {teamName && <span className="overlay-team muted">{teamName}</span>}
+      </div>
+    </>
   );
+}
+
+function teamNameOf(team: OverlayCard['payload']['team'], homeName: string, awayName: string): string | null {
+  return team === 'Home' ? homeName : team === 'Away' ? awayName : null;
+}
+
+/** What a screen reader hears for a card: `23:04, GOAL, Ashby 1-0, Harbourside Rovers`. */
+function announcement(card: OverlayCard, homeName: string, awayName: string): string {
+  const { title, subtitle, team } = card.payload;
+  return [card.at.display, title, subtitle, teamNameOf(team, homeName, awayName)].filter(Boolean).join(', ');
 }

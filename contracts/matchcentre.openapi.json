@@ -2170,7 +2170,8 @@
           "headline",
           "text",
           "mode",
-          "language"
+          "language",
+          "source"
         ],
         "type": "object",
         "properties": {
@@ -2193,6 +2194,10 @@
           "language": {
             "type": "string",
             "description": "The language it's written in."
+          },
+          "source": {
+            "description": "Who wrote it: `Template` (built from the facts, no model call) or `Model` (the Producer).",
+            "$ref": "#/components/schemas/CommentarySource"
           }
         },
         "description": "The Producer's full-time recap."

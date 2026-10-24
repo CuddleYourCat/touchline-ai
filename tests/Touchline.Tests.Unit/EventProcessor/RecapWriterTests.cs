@@ -76,8 +76,8 @@ public class RecapWriterTests
     [Test]
     public async Task Recaps_already_stored_are_skipped_without_a_model_call()
     {
-        await _recaps.SaveAsync(new MatchRecap(_matchId, "Stored", "Stored.", ViewingMode.Casual, "en"), CancellationToken.None);
-        await _recaps.SaveAsync(new MatchRecap(_matchId, "Stored", "Stored.", ViewingMode.Analyst, "fr"), CancellationToken.None);
+        await _recaps.SaveAsync(new MatchRecap(_matchId, "Stored", "Stored.", ViewingMode.Casual, "en", CommentarySource.Model), CancellationToken.None);
+        await _recaps.SaveAsync(new MatchRecap(_matchId, "Stored", "Stored.", ViewingMode.Analyst, "fr", CommentarySource.Model), CancellationToken.None);
 
         var run = await Writer().WriteAsync(_matchId, CancellationToken.None);
 

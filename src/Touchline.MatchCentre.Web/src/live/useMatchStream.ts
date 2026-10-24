@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { api } from '../api/client';
-import type { components } from '../api/schema';
+import { defaultViewer, viewerForMatch, viewerQuery, type Viewer } from '../viewer/viewer';
 import {
   applyMessage,
   initialLiveMatch,
@@ -24,19 +24,7 @@ export const reconnectMaxMs = 15_000;
 /** The most random delay added to each reopen, so many viewers don't all reconnect at once after a deploy. */
 export const reconnectJitterMs = 250;
 
-/**
- * Who is watching: the viewing mode, in the contract's own names (sent as `mode=` and carried on
- * every commentary line), and the language (a BCP 47 tag such as `es-ES`).
- */
-export interface Viewer {
-  mode: components['schemas']['ViewingMode'];
-  language: string;
-}
-
-function defaultViewer(): Viewer {
-  const language = typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en';
-  return { mode: 'Casual', language };
-}
+export type { Viewer } from '../viewer/viewer';
 
 /** The live view's state: loading, a missing match, a failure, or the match itself (and whether the stream has gone quiet). */
 export type MatchStreamState =
@@ -54,6 +42,25 @@ type Action =
   | { type: 'stale'; stale: boolean }
   | { type: 'message'; message: StreamMessage };
 
+/**
+ * A reload for a new viewer, on the same match: the moments and their commentary are the new viewer's, but everything
+ * that doesn't depend on the viewer stays on screen. The reopened stream resumes from the new detail's
+ * `lastSequence`, so it never resends the events, shape, momentum, milestones, overlays or analysis seen so far, and
+ * dropping them would blank the pitch until the next event.
+ */
+function keepPicture(shown: LiveMatch, fresh: LiveMatch): LiveMatch {
+  return {
+    ...fresh,
+    events: shown.events,
+    shape: shown.shape,
+    ballPath: shown.ballPath,
+    momentum: shown.momentum,
+    milestones: shown.milestones,
+    overlays: shown.overlays,
+    analysis: shown.analysis,
+  };
+}
+
 function reducer(state: MatchStreamState, action: Action): MatchStreamState {
   switch (action.type) {
     case 'reset':
@@ -62,13 +69,16 @@ function reducer(state: MatchStreamState, action: Action): MatchStreamState {
       return { kind: 'notFound' };
     case 'error':
       return { kind: 'error' };
-    case 'loaded':
+    case 'loaded': {
+      const fresh = initialLiveMatch(action.detail, action.moments ?? [], action.language);
+      const shown = state.kind === 'ready' && state.match.detail.summary.id === action.detail.summary.id ? state.match : undefined;
       return {
         kind: 'ready',
-        match: initialLiveMatch(action.detail, action.moments ?? [], action.language),
+        match: shown ? keepPicture(shown, fresh) : fresh,
         stale: false,
         momentsFailed: action.moments === undefined,
       };
+    }
     case 'moments':
       if (state.kind !== 'ready' || state.match.detail.summary.id !== action.matchId) return state;
       return action.moments
@@ -97,7 +107,7 @@ async function fetchDetail(matchId: string): Promise<DetailResult> {
 async function fetchMomentsOnce(matchId: string, viewer: Viewer): Promise<MomentView[] | undefined> {
   try {
     const { data } = await api.GET('/api/matches/{matchId}/moments', {
-      params: { path: { matchId }, query: { mode: viewer.mode, lang: viewer.language } },
+      params: { path: { matchId }, query: viewerQuery(viewer) },
     });
     return data ?? undefined;
   } catch {
@@ -134,9 +144,17 @@ export function useMatchStream(
   const fallback = defaultViewer();
   const mode = viewer?.mode ?? fallback.mode;
   const language = viewer?.language ?? fallback.language;
+  const team = viewer?.team;
+  // A new match, or a retry, shows the loading state. A new viewer keeps the match on screen while it reloads.
+  const shown = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    const who: Viewer = { mode, language };
+    const key = `${matchId}#${attempt}`;
+    if (shown.current !== key) {
+      shown.current = key;
+      dispatch({ type: 'reset' });
+    }
+    let who: Viewer = team ? { mode, language, team } : { mode, language };
     let cancelled = false;
     let finished = false;
     let source: EventSource | undefined;
@@ -167,7 +185,7 @@ export function useMatchStream(
     };
 
     const open = () => {
-      const query = new URLSearchParams({ after: String(lastSequence), mode: who.mode, lang: who.language });
+      const query = new URLSearchParams({ after: String(lastSequence), ...viewerQuery(who) });
       const es = new EventSource(`/api/matches/${encodeURIComponent(matchId)}/stream?${query.toString()}`);
       source = es;
       for (const name of streamEventNames) {
@@ -211,6 +229,8 @@ export function useMatchStream(
         dispatch({ type: detail.kind });
         return;
       }
+      const { home, away } = detail.detail.summary;
+      who = viewerForMatch(who, [home.id, away.id]);
       const moments = await fetchMoments(matchId, who);
       if (cancelled) return;
       dispatch({ type: 'loaded', detail: detail.detail, moments, language: who.language });
@@ -222,15 +242,18 @@ export function useMatchStream(
     return () => {
       cancelled = true;
       close();
-      dispatch({ type: 'reset' });
     };
-  }, [matchId, attempt, mode, language]);
+  }, [matchId, attempt, mode, language, team]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
-  const retryMoments = useCallback(() => {
-    void fetchMoments(matchId, { mode, language }).then((moments) => dispatch({ type: 'moments', matchId, moments }));
-  }, [matchId, mode, language]);
+  const clubs = state.kind === 'ready' ? [state.match.detail.summary.home.id, state.match.detail.summary.away.id] : [];
+  const sentTeam = viewerForMatch(team ? { mode, language, team } : { mode, language }, clubs).team;
 
-  return { state, retry, retryMoments, viewer: { mode, language } };
+  const retryMoments = useCallback(() => {
+    const who: Viewer = sentTeam ? { mode, language, team: sentTeam } : { mode, language };
+    void fetchMoments(matchId, who).then((moments) => dispatch({ type: 'moments', matchId, moments }));
+  }, [matchId, mode, language, sentTeam]);
+
+  return { state, retry, retryMoments, viewer: sentTeam ? { mode, language, team: sentTeam } : { mode, language } };
 }

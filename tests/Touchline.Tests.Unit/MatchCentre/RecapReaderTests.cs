@@ -40,23 +40,34 @@ public class RecapReaderTests
     [Test]
     public async Task A_stored_recap_in_the_viewers_language_is_served()
     {
-        var stored = new MatchRecap(_matchId, "Gana North Bank FC", "Texto.", ViewingMode.Analyst, "es");
+        var stored = new MatchRecap(_matchId, "Gana North Bank FC", "Texto.", ViewingMode.Analyst, "es", CommentarySource.Model);
         _store.Setup(s => s.GetAsync(_matchId, ViewingMode.Analyst, "es", It.IsAny<CancellationToken>())).ReturnsAsync(stored);
 
         var recap = await Reader().GetAsync(_matchId, Viewer(ViewingMode.Analyst, "es"), CancellationToken.None);
 
-        recap.Should().BeSameAs(stored);
+        recap.Should().Be(stored);
+    }
+
+    [Test]
+    public async Task A_stored_recap_saved_before_the_source_existed_is_marked_as_the_models()
+    {
+        var legacy = new MatchRecap(_matchId, "North Bank FC win", "Text.", ViewingMode.Casual, "en", default);
+        _store.Setup(s => s.GetAsync(_matchId, ViewingMode.Casual, "en", It.IsAny<CancellationToken>())).ReturnsAsync(legacy);
+
+        var recap = await Reader().GetAsync(_matchId, Viewer(ViewingMode.Casual, "en"), CancellationToken.None);
+
+        recap.Should().Be(legacy with { Source = CommentarySource.Model });
     }
 
     [Test]
     public async Task A_regional_language_falls_back_to_its_base_language_then_to_English()
     {
-        var english = new MatchRecap(_matchId, "North Bank FC win", "Text.", ViewingMode.Casual, "en");
+        var english = new MatchRecap(_matchId, "North Bank FC win", "Text.", ViewingMode.Casual, "en", CommentarySource.Model);
         _store.Setup(s => s.GetAsync(_matchId, ViewingMode.Casual, "en", It.IsAny<CancellationToken>())).ReturnsAsync(english);
 
         var recap = await Reader().GetAsync(_matchId, Viewer(ViewingMode.Casual, "pt-BR"), CancellationToken.None);
 
-        recap.Should().BeSameAs(english);
+        recap.Should().Be(english);
         _store.Verify(s => s.GetAsync(_matchId, ViewingMode.Casual, "pt-BR", It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(s => s.GetAsync(_matchId, ViewingMode.Casual, "pt", It.IsAny<CancellationToken>()), Times.Once);
         RecapReader.Languages("es-MX").Should().Equal("es-MX", "es", "en");
@@ -83,6 +94,7 @@ public class RecapReaderTests
 
         recap.Should().Be(ProducerRecap.Template(_sheet, [_goal], viewer));
         recap.Headline.Should().Be("North Bank FC 2–1 Riverside Athletic");
+        recap.Source.Should().Be(CommentarySource.Template);
     }
 
     [Test]
@@ -99,7 +111,7 @@ public class RecapReaderTests
     [Test]
     public async Task A_demo_match_keeps_the_squads_template_recap()
     {
-        var demo = new MatchRecap("demo-1", "Demo", "The key moments.", ViewingMode.Casual, "en");
+        var demo = new MatchRecap("demo-1", "Demo", "The key moments.", ViewingMode.Casual, "en", CommentarySource.Template);
         _squad.Setup(s => s.RecapAsync("demo-1", It.IsAny<Viewer>(), It.IsAny<CancellationToken>())).ReturnsAsync(demo);
 
         var recap = await Reader().GetAsync("demo-1", Viewer(ViewingMode.Casual, "en"), CancellationToken.None);
@@ -111,7 +123,7 @@ public class RecapReaderTests
     [Test]
     public async Task Without_a_recap_store_every_match_goes_to_the_squad()
     {
-        var demo = new MatchRecap(_matchId, "Squad", "Text.", ViewingMode.Casual, "en");
+        var demo = new MatchRecap(_matchId, "Squad", "Text.", ViewingMode.Casual, "en", CommentarySource.Model);
         _squad.Setup(s => s.RecapAsync(_matchId, It.IsAny<Viewer>(), It.IsAny<CancellationToken>())).ReturnsAsync(demo);
 
         var reader = new RecapReader(_squad.Object, _facts.Object, NullLogger<RecapReader>.Instance);

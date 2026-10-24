@@ -134,7 +134,7 @@ public sealed partial class ProducerRecap
                 var unknown = RosterGuardrail.FindUnknownNames($"{headline}\n{text}", sheet.AllowedPlayerNames, sheet.OtherKnownNames);
                 if (unknown.Count == 0)
                 {
-                    return new ProducedRecap(new MatchRecap(matchId, headline, text, viewer.Mode, viewer.Language), FromModel: true);
+                    return new ProducedRecap(new MatchRecap(matchId, headline, text, viewer.Mode, viewer.Language, CommentarySource.Model), FromModel: true);
                 }
 
                 LogGuardrailMiss(matchId, attempt, unknown.Count);
@@ -175,9 +175,16 @@ public sealed partial class ProducerRecap
             $"Full time: {sheet.HomeTeam} {sheet.HomeGoals}, {sheet.AwayTeam} {sheet.AwayGoals}.");
         var text = moments.Count == 0
             ? opening
-            : string.Join(" ", moments.Select(m => $"{m.Clock} {m.Reason}").Prepend($"{opening} The key moments:"));
-        return new MatchRecap(sheet.MatchId, headline, text, viewer.Mode, "en");
+            : string.Join(" ", moments.Select(WithClock).Prepend($"{opening} The key moments:"));
+        return new MatchRecap(sheet.MatchId, headline, text, viewer.Mode, "en", CommentarySource.Template);
     }
+
+    /// <summary>
+    /// A moment's reason, led by its clock. The detector's reasons already start with the clock
+    /// (<c>15:04: Big chance...</c>), so the clock is added only when it isn't there.
+    /// </summary>
+    private static string WithClock(MomentFact moment) =>
+        moment.Reason.StartsWith(moment.Clock, StringComparison.Ordinal) ? moment.Reason : $"{moment.Clock} {moment.Reason}";
 
     private static List<ChatMessage> Messages(
         MatchFactSheet sheet,

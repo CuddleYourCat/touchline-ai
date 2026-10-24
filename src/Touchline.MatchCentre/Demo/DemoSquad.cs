@@ -42,7 +42,12 @@ internal sealed class DemoSquad(DemoMatchSource matches) : ISquad
         var (home, away) = matches.TeamNames;
 
         var headline = string.Create(CultureInfo.InvariantCulture, $"{home} {state.Home.Goals}–{state.Away.Goals} {away}");
-        var text = string.Join(" ", moments.Select(m => m.Reason).Prepend("The Producer isn't connected in this demo build. The key moments:"));
-        return Task.FromResult(new MatchRecap(matchId, headline, text, viewer.Mode, "en"));
+        var opening = string.Create(
+            CultureInfo.InvariantCulture,
+            $"Full time: {home} {state.Home.Goals}, {away} {state.Away.Goals}.");
+        var text = moments.Count == 0
+            ? opening
+            : string.Join(" ", moments.Select(m => m.Reason).Prepend($"{opening} The key moments:"));
+        return Task.FromResult(new MatchRecap(matchId, headline, text, viewer.Mode, "en", CommentarySource.Template));
     }
 }

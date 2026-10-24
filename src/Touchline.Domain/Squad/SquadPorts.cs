@@ -107,7 +107,8 @@ public sealed record FanAnswer(string Text, IReadOnlyList<Citation> Citations, s
 /// <param name="Text">The recap.</param>
 /// <param name="Mode">The viewing mode it was written for.</param>
 /// <param name="Language">The language it's written in.</param>
-public sealed record MatchRecap(string MatchId, string Headline, string Text, ViewingMode Mode, string Language);
+/// <param name="Source">Who wrote it: <c>Template</c> (built from the facts, no model call) or <c>Model</c> (the Producer).</param>
+public sealed record MatchRecap(string MatchId, string Headline, string Text, ViewingMode Mode, string Language, CommentarySource Source);
 
 /// <summary>
 /// A possession sequence found by search (ADR-008).

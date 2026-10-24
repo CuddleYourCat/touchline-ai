@@ -177,7 +177,43 @@ describe('Pitch', () => {
     const shot = event(7, { type: 'Shot', team: 'Away', end: null });
     rerender(<Pitch shape={null} ballPath={ballPathOf(shot)} events={[pass, carry, shot]} homeLineup={[]} awayLineup={[]} />);
     expect(screen.getByTestId('ball-path')).toHaveAttribute('d', 'M 40 38 L 0 34');
-    expect(screen.getAllByTestId('ball-trail')).toHaveLength(2);
+    expect(screen.getAllByTestId('ball-trail-layer').map((l) => l.getAttribute('d'))).toEqual(['M 60 28 L 40 38']);
+  });
+
+  it('draws the trail as one joined line through the recent positions, strongest at the newest end', () => {
+    const ends = [
+      { x: 10, y: 10 },
+      { x: 20, y: 20 },
+      { x: 30, y: 10 },
+      { x: 40, y: 20 },
+    ];
+    const events = ends.map((end, i) => event(i + 1, { type: 'Carry', start: ends[i - 1] ?? { x: 0, y: 10 }, end }));
+    const latest = events.at(-1)!;
+
+    renderPitch({ events, ballPath: ballPathOf(latest) });
+
+    const layers = screen.getAllByTestId('ball-trail-layer').map((l) => l.getAttribute('d'));
+    expect(screen.getAllByTestId('ball-trail')).toHaveLength(1);
+    expect(layers).toEqual(['M 10 58 L 20 48 L 30 58', 'M 20 48 L 30 58']);
+  });
+
+  it('draws no trail before the ball has moved between two places', () => {
+    const pass = event(1);
+
+    renderPitch({ ballPath: ballPathOf(pass), events: [pass] });
+
+    expect(screen.queryByTestId('ball-trail')).not.toBeInTheDocument();
+  });
+
+  it('shows a key to the foul and card markers under the pitch', () => {
+    renderPitch();
+
+    const key = screen.getByRole('list', { name: 'Pitch key' });
+    expect(key).toHaveTextContent('Foul');
+    expect(key).toHaveTextContent('Yellow card');
+    expect(key).toHaveTextContent('Red card');
+    expect(key.querySelector('.marker-yellow')).not.toBeNull();
+    expect(key.querySelector('.marker-red')).not.toBeNull();
   });
 
   it('marks fouls and cards', () => {
@@ -274,21 +310,35 @@ describe('OverlayToast', () => {
     vi.useFakeTimers();
     const { rerender } = render(<OverlayToast overlays={[card('o1', 'GOAL')]} homeName="Harbourside Rovers" awayName="Millbrook" />);
 
-    const toast = screen.getByRole('status', { name: 'Overlay' });
+    const toast = screen.getByTestId('overlay-toast');
     expect(toast).toHaveTextContent('GOAL');
     expect(toast).toHaveTextContent('Harbourside Rovers');
     expect(toast).not.toHaveClass('overlay-fading');
 
     act(() => vi.advanceTimersByTime(3000));
-    expect(screen.getByRole('status', { name: 'Overlay' })).toHaveClass('overlay-fading');
+    expect(screen.getByTestId('overlay-toast')).toHaveClass('overlay-fading');
 
     act(() => vi.advanceTimersByTime(overlayFadeMs));
-    expect(screen.queryByRole('status', { name: 'Overlay' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('overlay-toast')).not.toBeInTheDocument();
 
     rerender(<OverlayToast overlays={[card('o1', 'GOAL')]} homeName="Harbourside Rovers" awayName="Millbrook" />);
-    expect(screen.queryByRole('status', { name: 'Overlay' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('overlay-toast')).not.toBeInTheDocument();
 
     rerender(<OverlayToast overlays={[card('o1', 'GOAL'), card('o2', 'YELLOW CARD')]} homeName="H" awayName="A" />);
-    expect(screen.getByRole('status', { name: 'Overlay' })).toHaveTextContent('YELLOW CARD');
+    expect(screen.getByTestId('overlay-toast')).toHaveTextContent('YELLOW CARD');
+  });
+
+  it('keeps one live region mounted, empty until a card arrives, and fills it with the card', () => {
+    const { rerender } = render(<OverlayToast overlays={[]} homeName="Harbourside Rovers" awayName="Millbrook" />);
+
+    const region = screen.getByRole('status', { name: 'Overlay announcements' });
+    expect(region).toBeEmptyDOMElement();
+
+    rerender(<OverlayToast overlays={[card('o1', 'GOAL')]} homeName="Harbourside Rovers" awayName="Millbrook" />);
+
+    expect(screen.getByRole('status', { name: 'Overlay announcements' })).toBe(region);
+    expect(region).toHaveTextContent('23:04, GOAL, Ashby 1-0, Harbourside Rovers');
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByTestId('overlay-toast')).toHaveAttribute('aria-hidden', 'true');
   });
 });

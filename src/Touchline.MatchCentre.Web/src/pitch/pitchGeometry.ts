@@ -30,6 +30,25 @@ export function ballTrail(events: MatchEvent[], length = 5): PitchPosition[] {
   return events.slice(-(length + 1), -1).map((e) => e.end ?? e.start);
 }
 
+/**
+ * The fading trail as one joined line, drawn in layers. Layer `k` runs from point `k` to the newest point, and the
+ * layers are stacked at the same low opacity, so the newest stretch (under every layer) is the strongest and the
+ * oldest (under one) the faintest. Each layer is a single path, so the joins stay clean. Repeated points are
+ * dropped first; fewer than two distinct points draw nothing.
+ */
+export function trailLayers(points: PitchPosition[]): string[] {
+  const svg = points
+    .map(toSvg)
+    .filter((p, i, all) => i === 0 || p.x !== all[i - 1]!.x || p.y !== all[i - 1]!.y);
+  if (svg.length < 2) return [];
+  return svg.slice(0, -1).map((_, k) =>
+    svg
+      .slice(k)
+      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${round(p.x)} ${round(p.y)}`)
+      .join(' '),
+  );
+}
+
 /** A foul or card to mark on the pitch. */
 export interface IncidentMarker {
   sequence: number;

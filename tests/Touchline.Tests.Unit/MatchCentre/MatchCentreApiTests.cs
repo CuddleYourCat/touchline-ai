@@ -162,6 +162,17 @@ public class MatchCentreApiTests
     }
 
     [Test]
+    public async Task The_demo_recap_opens_with_the_full_time_score_and_reads_neutrally()
+    {
+        var recap = await _client.GetFromJsonAsync<JsonElement>(Url($"/api/matches/{_match}/recap"));
+        var text = recap.GetProperty("text").GetString();
+
+        text.Should().MatchRegex(@"^Full time: .+ 3, .+ 3\. The key moments: ");
+        text.Should().NotContain("isn't connected");
+        recap.GetProperty("source").GetString().Should().Be("Template", "a demo recap is the template, and final");
+    }
+
+    [Test]
     public async Task When_the_squad_is_down_questions_and_recaps_degrade_to_a_503_and_the_match_carries_on()
     {
         var squad = new Mock<ISquad>();

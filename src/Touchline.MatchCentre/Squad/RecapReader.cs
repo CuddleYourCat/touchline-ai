@@ -44,7 +44,9 @@ internal sealed partial class RecapReader(ISquad squad, IMatchFacts facts, ILogg
             {
                 if (await store.GetAsync(matchId, viewer.Mode, language, cancellationToken) is { } stored)
                 {
-                    return stored;
+                    // Only the model's recaps are stored, and ones stored before Source existed read it as the
+                    // enum's default (Template), so a stored recap is always marked as the model's.
+                    return stored with { Source = CommentarySource.Model };
                 }
             }
         }

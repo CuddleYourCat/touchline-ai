@@ -654,6 +654,8 @@ export interface components {
             mode: components["schemas"]["ViewingMode"];
             /** @description The language it's written in. */
             language: string;
+            /** @description Who wrote it: `Template` (built from the facts, no model call) or `Model` (the Producer). */
+            source: components["schemas"]["CommentarySource"];
         };
         /** @description A fan's request to play a match (ADR-032). Always an exhibition: it never counts towards a season. */
         MatchRequest: {

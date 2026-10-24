@@ -67,7 +67,7 @@ public sealed class ProducerRecapTests
 
         var recap = await Producer().RecapAsync(_matchId, Viewer.Default, CancellationToken.None);
 
-        recap.Should().Be(new MatchRecap(_matchId, "North Bank FC edge it", "Tom Okafor scored on 23 minutes.", ViewingMode.Casual, "en"));
+        recap.Should().Be(new MatchRecap(_matchId, "North Bank FC edge it", "Tom Okafor scored on 23 minutes.", ViewingMode.Casual, "en", CommentarySource.Model));
         var request = _chat.Requests.Should().ContainSingle().Subject;
         request.Messages.Should().HaveCount(2);
         request.Messages[0].Role.Should().Be(ChatRole.System);
@@ -237,6 +237,8 @@ public sealed class ProducerRecapTests
 
         model.FromModel.Should().BeTrue();
         template.FromModel.Should().BeFalse();
+        model.Recap.Source.Should().Be(CommentarySource.Model);
+        template.Recap.Source.Should().Be(CommentarySource.Template);
         recaps.Should().Equal("model", "fallback");
     }
 
@@ -249,6 +251,19 @@ public sealed class ProducerRecapTests
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         _chat.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public void The_template_does_not_repeat_a_clock_the_reason_already_starts_with()
+    {
+        var chance = new MomentFact("demo-1:300", "15:04", "BigChance", TeamSide.Home, "15:04: Big chance for North Bank FC, xG 0.41, Saved.");
+
+        var recap = ProducerRecap.Template(_sheet, [chance, _goal], Viewer.Default);
+
+        recap.Text.Should().Be(
+            "Full time: North Bank FC 1, Riverside Athletic 0. The key moments: "
+            + "15:04: Big chance for North Bank FC, xG 0.41, Saved. "
+            + "23:00 Goal: North Bank FC lead 1-0.");
     }
 
     private MeterListener Listen(string instrumentName, string tag, ConcurrentQueue<string> values)

@@ -238,7 +238,7 @@ public sealed class AnalystSquadTests
     public async Task With_foundry_the_analyst_answers_and_hands_recaps_to_the_squad_it_replaced()
     {
         var standIn = new Mock<ISquad>();
-        var recap = new MatchRecap("demo-1", "1-0", "A recap.", ViewingMode.Casual, "en");
+        var recap = new MatchRecap("demo-1", "1-0", "A recap.", ViewingMode.Casual, "en", CommentarySource.Model);
         standIn.Setup(s => s.RecapAsync("demo-1", Viewer.Default, It.IsAny<CancellationToken>())).ReturnsAsync(recap);
         var services = new ServiceCollection().AddLogging().AddSingleton(standIn.Object).AddSingleton(_facts.Object);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>

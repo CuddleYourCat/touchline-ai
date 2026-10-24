@@ -4,6 +4,7 @@ import { HomePage } from './pages/HomePage';
 import { KickoffPage } from './pages/KickoffPage';
 import { MatchPage } from './pages/MatchPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { RecapPage } from './pages/RecapPage';
 import { TeamEditPage } from './pages/TeamEditPage';
 import { TeamsPage } from './pages/TeamsPage';
 
@@ -14,6 +15,7 @@ export const routes = [
     children: [
       { path: '/', element: <HomePage /> },
       { path: '/matches/:id', element: <MatchPage /> },
+      { path: '/matches/:id/recap', element: <RecapPage /> },
       { path: '/teams', element: <TeamsPage /> },
       { path: '/teams/:id/edit', element: <TeamEditPage /> },
       { path: '/kickoff', element: <KickoffPage /> },

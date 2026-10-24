@@ -1,10 +1,13 @@
 import { act, render, renderHook, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import userEvent from '@testing-library/user-event';
+import { Link, MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
 import type { CommentaryLine, LiveState, MatchDetail, MomentView } from '../live/matchStreamReducer';
 import { staleAfterMs, useMatchStream } from '../live/useMatchStream';
+import { momentAnchor } from '../questions/askQuestion';
 import { FakeEventSource } from '../test/FakeEventSource';
+import { viewerStorageKey } from '../viewer/viewer';
 import { MatchPage } from './MatchPage';
 
 /** Counts the pitch's renders: it calls this hook once per render. */
@@ -199,7 +202,7 @@ describe('MatchPage', () => {
     expect(screen.queryByText('Reconnecting…')).not.toBeInTheDocument();
 
     await act(() => vi.advanceTimersByTimeAsync(1000));
-    expect(screen.getByRole('status')).toHaveTextContent('Reconnecting…');
+    expect(screen.getByText('Reconnecting…')).toHaveAttribute('role', 'status');
 
     act(() => source.emit('state', liveState()));
     expect(screen.queryByText('Reconnecting…')).not.toBeInTheDocument();
@@ -248,13 +251,13 @@ describe('MatchPage', () => {
 
     act(() => first.fail());
     expect(first.closed).toBe(true);
-    expect(screen.getByRole('status')).toHaveTextContent('Reconnecting…');
+    expect(screen.getByText('Reconnecting…')).toHaveAttribute('role', 'status');
     await act(() => vi.advanceTimersByTimeAsync(999));
     expect(FakeEventSource.instances).toHaveLength(1);
     await act(() => vi.advanceTimersByTimeAsync(1));
     expect(FakeEventSource.instances).toHaveLength(2);
     expect(streamUrl().searchParams.get('after')).toBe('52');
-    expect(screen.getByRole('status')).toHaveTextContent('Reconnecting…');
+    expect(screen.getByText('Reconnecting…')).toHaveAttribute('role', 'status');
 
     act(() => FakeEventSource.latest().fail());
     await act(() => vi.advanceTimersByTimeAsync(1999));
@@ -331,15 +334,15 @@ describe('MatchPage', () => {
 
     expect(await screen.findByText('Gran ocasión')).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith('/api/matches/{matchId}/moments', {
-      params: { path: { matchId: 'm1' }, query: { mode: 'Casual', lang: 'es-ES' } },
+      params: { path: { matchId: 'm1' }, query: { mode: 'Casual', lang: 'es' } },
     });
     expect(streamUrl().searchParams.get('mode')).toBe('Casual');
-    expect(streamUrl().searchParams.get('lang')).toBe('es-ES');
+    expect(streamUrl().searchParams.get('lang')).toBe('es');
 
     act(() => FakeEventSource.latest().emit('commentary', line(30, 'Model', 'Big chance')));
     expect(screen.getByText('Gran ocasión')).toBeInTheDocument();
 
-    act(() => FakeEventSource.latest().emit('commentary', { ...line(30, 'Model', 'Ocasión clarísima'), language: 'es-ES' }));
+    act(() => FakeEventSource.latest().emit('commentary', { ...line(30, 'Model', 'Ocasión clarísima'), language: 'es' }));
     expect(screen.getByText('Ocasión clarísima')).toBeInTheDocument();
   });
 
@@ -444,5 +447,169 @@ describe('useMatchStream', () => {
     });
     expect(streamUrl().searchParams.get('mode')).toBe('Analyst');
     expect(streamUrl().searchParams.get('lang')).toBe('fr');
+  });
+
+  it("sends a favourite club only when it's playing in the match", async () => {
+    stubApi(found(detail()));
+
+    const playing = renderHook(() => useMatchStream('m1', { mode: 'Casual', language: 'en', team: 'h' }));
+    await waitFor(() => expect(playing.result.current.state.kind).toBe('ready'));
+    expect(streamUrl().searchParams.get('team')).toBe('h');
+    expect(playing.result.current.viewer.team).toBe('h');
+    playing.unmount();
+
+    const elsewhere = renderHook(() => useMatchStream('m1', { mode: 'Casual', language: 'en', team: 'some-other-club' }));
+    await waitFor(() => expect(elsewhere.result.current.state.kind).toBe('ready'));
+    expect(streamUrl().searchParams.has('team')).toBe(false);
+    expect(elsewhere.result.current.viewer.team).toBeUndefined();
+  });
+});
+
+describe('MatchPage viewer, Q&A and recap', () => {
+  beforeEach(() => {
+    FakeEventSource.install();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('switches to Analyst, saves the choice, and reopens the stream for it without blanking the match', async () => {
+    stubApi(found(detail()), [moment(30)]);
+    renderPage();
+    await screen.findByText('LIVE');
+    const first = FakeEventSource.latest();
+    expect(streamUrl(first).searchParams.get('mode')).toBe('Casual');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('radio', { name: 'Analyst' }));
+
+    expect(screen.getByText('LIVE')).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    expect(first.closed).toBe(true);
+    expect(streamUrl().searchParams.get('mode')).toBe('Analyst');
+    expect(JSON.parse(localStorage.getItem(viewerStorageKey) ?? '{}')).toMatchObject({ mode: 'Analyst' });
+  });
+
+  it('keeps the pitch, trail and momentum across a viewer change, and replaces only the moments and commentary', async () => {
+    const get = stubApi(found(detail()), [moment(30, { commentary: line(30, 'Template', 'Casual words') })]);
+    renderPage();
+    await screen.findByText('Casual words');
+
+    const positions = (['Home', 'Away'] as const).flatMap((team) =>
+      Array.from({ length: 11 }, (_, i) => ({ playerId: `${team}${i}`, team, x: 10 + i * 8, y: 34 })),
+    );
+    const carry = (sequence: number, x: number) => ({
+      sequence,
+      matchId: 'm1',
+      possessionId: 3,
+      time: { period: 'FirstHalf', clock: '12:06' },
+      type: 'Carry',
+      team: 'Home',
+      start: { x, y: 20 },
+      end: { x: x + 10, y: 20 },
+    });
+    act(() => {
+      const source = FakeEventSource.latest();
+      source.emit('shape', { sequence: 43, positions });
+      source.emit('event', carry(41, 10));
+      source.emit('event', carry(42, 30));
+      source.emit('event', carry(43, 50));
+      source.emit('momentum', { period: 'FirstHalf', fromMinute: 10, toMinute: 15, value: 0.4 });
+      source.emit('analysis', { momentId: 'm1:30', text: 'Why it happened', citations: [] });
+    });
+    const pitch = screen.getByRole('region', { name: 'Pitch' });
+    const trail = within(pitch).getAllByTestId('ball-trail-layer').map((l) => l.getAttribute('d'));
+    expect(trail).not.toHaveLength(0);
+
+    get.mockImplementation(((path: string) =>
+      Promise.resolve(
+        path === '/api/matches/{matchId}'
+          ? found(detail())
+          : { data: [moment(30, { commentary: line(30, 'Template', 'Analyst words', 'Analyst') })], error: undefined, response: new Response() },
+      )) as never);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('radio', { name: 'Analyst' }));
+
+    expect(await screen.findByText('Analyst words')).toBeInTheDocument();
+    expect(screen.queryByText('Casual words')).not.toBeInTheDocument();
+    expect(within(pitch).getAllByTestId('player-dot')).toHaveLength(22);
+    expect(within(pitch).getByTestId('ball-path')).toHaveAttribute('d', 'M 50 48 L 60 48');
+    expect(within(pitch).getAllByTestId('ball-trail-layer').map((l) => l.getAttribute('d'))).toEqual(trail);
+    expect(within(screen.getByRole('region', { name: 'Momentum' })).getAllByTestId('momentum-bar')).toHaveLength(1);
+    expect(screen.getByText('Why it happened')).toBeInTheDocument();
+  });
+
+  it("drops a question in flight when the match changes, so its answer can't land on the next match", async () => {
+    stubApi(found(detail()));
+    let signal: AbortSignal | undefined;
+    let answer!: (value: unknown) => void;
+    vi.spyOn(api, 'POST').mockImplementation(((_path: string, init: { signal: AbortSignal }) => {
+      signal = init.signal;
+      return new Promise((resolve) => (answer = resolve));
+    }) as never);
+    render(
+      <MemoryRouter initialEntries={['/matches/m1']}>
+        <Link to="/matches/m2">Next match</Link>
+        <Routes>
+          <Route path="/matches/:id" element={<MatchPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByText('LIVE');
+
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('textbox', { name: 'Your question about this match' }), 'Who scored?');
+    await user.click(screen.getByRole('button', { name: 'Ask' }));
+    expect(screen.getByRole('list', { name: 'Answers' })).toHaveTextContent('Who scored?');
+
+    await user.click(screen.getByRole('link', { name: 'Next match' }));
+    await screen.findByText('LIVE');
+    await act(async () => answer({ data: { text: 'An answer about match one.', citations: [], language: 'en' }, error: undefined, response: new Response() }));
+
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByText(/An answer about match one/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Who scored?')).not.toBeInTheDocument();
+  });
+
+  it('offers only English, Spanish and French, and falls back to English for any other browser language', async () => {
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue('de-DE');
+    stubApi(found(detail()));
+    renderPage();
+    await screen.findByText('LIVE');
+
+    const select = screen.getByRole('combobox', { name: 'Language' });
+    expect(within(select).getAllByRole('option').map((o) => o.getAttribute('value'))).toEqual(['en', 'es', 'fr']);
+    expect(select).toHaveValue('en');
+    expect(streamUrl().searchParams.get('lang')).toBe('en');
+  });
+
+  it('offers the two clubs as favourites and sends the one picked', async () => {
+    stubApi(found(detail()));
+    renderPage();
+    await screen.findByText('LIVE');
+
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Favourite club' }), 'Millbrook Athletic');
+
+    await waitFor(() => expect(streamUrl().searchParams.get('team')).toBe('a'));
+  });
+
+  it('puts the Q&A box on the page and links to the recap at full time', async () => {
+    stubApi(found(detail(liveState({ fullTime: true }))));
+    renderPage();
+
+    expect(await screen.findByRole('region', { name: 'Ask the Analyst' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Read the full-time recap/ })).toHaveAttribute('href', '/matches/m1/recap');
+  });
+
+  it('gives each moment an anchor a citation can jump to', async () => {
+    stubApi(found(detail()), [moment(30)]);
+    renderPage();
+    await screen.findByText('Reason 30');
+
+    expect(screen.getByText('Reason 30').closest('li')).toHaveAttribute('id', momentAnchor('m1:30'));
   });
 });
