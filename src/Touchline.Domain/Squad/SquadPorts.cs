@@ -38,7 +38,13 @@ public enum CitationKind
     Possession,
 
     /// <summary>A key or notable moment.</summary>
-    Moment
+    Moment,
+
+    /// <summary>One match event, with the ID <c>event:{matchId}:{sequence}</c>.</summary>
+    Event,
+
+    /// <summary>The match summary, with the ID <c>match:{matchId}</c>.</summary>
+    Match
 }
 
 /// <summary>
@@ -80,7 +86,7 @@ public sealed record CommentaryLine(
 /// <summary>
 /// Something an answer is based on, so a fan can check it.
 /// </summary>
-/// <param name="Kind">A possession or a moment.</param>
+/// <param name="Kind">A possession, a moment, an event or the match summary.</param>
 /// <param name="Id">Its ID.</param>
 /// <param name="Label">A short label to show, such as <c>67:12 goal</c>.</param>
 public sealed record Citation(CitationKind Kind, string Id, string Label);
@@ -90,7 +96,8 @@ public sealed record Citation(CitationKind Kind, string Id, string Label);
 /// </summary>
 /// <param name="Text">The answer.</param>
 /// <param name="Citations">What it's based on. An answer with no citations should say it couldn't find support.</param>
-public sealed record FanAnswer(string Text, IReadOnlyList<Citation> Citations);
+/// <param name="Language">The BCP 47 tag of the language the answer is written in, such as <c>en</c> or <c>es-MX</c>.</param>
+public sealed record FanAnswer(string Text, IReadOnlyList<Citation> Citations, string Language);
 
 /// <summary>
 /// The Producer's full-time recap.

@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { Link, useParams } from 'react-router';
 import type { CommentaryLine, LiveMatch, MomentAnalysis, MomentView } from '../live/matchStreamReducer';
-import { lineModeFor, useMatchStream } from '../live/useMatchStream';
+import { useMatchStream } from '../live/useMatchStream';
 import { MomentumBars } from '../pitch/MomentumBars';
 import { Pitch } from '../pitch/Pitch';
 
@@ -61,7 +61,7 @@ const MomentItem = memo(function MomentItem({ moment, line, analysis, viewerMode
         <div className="moment-tags">
           <span className={moment.tier === 'Key' ? 'pill pill-key' : 'pill'}>{kindLabel(moment.kind)}</span>
           {line?.source === 'Template' && <span className="tag">Template</span>}
-          {otherMode && <span className="tag">{line.mode === 'Analyst' ? 'Analyst view' : 'Commentator view'}</span>}
+          {otherMode && <span className="tag">{line.mode === 'Analyst' ? 'Analyst view' : 'Casual view'}</span>}
         </div>
         <p className="moment-text">{line ? line.text : moment.reason}</p>
         {analysis && <p className="moment-analysis muted">{analysis.text}</p>}
@@ -158,7 +158,7 @@ export function MatchPage() {
               awayName={state.match.detail.summary.away.name}
             />
           </div>
-          <Timeline match={state.match} viewerMode={lineModeFor(viewer.mode)} />
+          <Timeline match={state.match} viewerMode={viewer.mode} />
         </div>
       );
   }

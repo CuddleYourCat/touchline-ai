@@ -15,8 +15,8 @@ public interface IMatchReadModel
     /// <param name="status">Only matches in this status, or null for all.</param>
     /// <param name="season">Only fixtures in this season, or null for all.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>The matches.</returns>
-    Task<IReadOnlyList<MatchSummary>> ListMatchesAsync(MatchStatus? status, string? season, CancellationToken cancellationToken);
+    /// <returns>The matches, and whether a source was missing from them.</returns>
+    Task<MatchList> ListMatchesAsync(MatchStatus? status, string? season, CancellationToken cancellationToken);
 
     /// <summary>Reads one match in full.</summary>
     /// <param name="matchId">The match.</param>
@@ -83,3 +83,11 @@ public interface ILiveFeed
     /// <returns>Completes when the feed is ready.</returns>
     Task PrepareAsync(string matchId, CancellationToken cancellationToken) => Task.CompletedTask;
 }
+
+/// <summary>
+/// A match list with how complete it is. It stays out of the HTTP contract: the endpoint returns
+/// <see cref="Matches"/> as the body, and turns <see cref="Degraded"/> into a response header.
+/// </summary>
+/// <param name="Matches">The matches.</param>
+/// <param name="Degraded">True when Cosmos DB couldn't be read, so the list holds the demo matches alone.</param>
+public sealed record MatchList(IReadOnlyList<MatchSummary> Matches, bool Degraded = false);

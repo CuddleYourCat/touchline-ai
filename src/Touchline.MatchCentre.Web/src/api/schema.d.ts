@@ -28,7 +28,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Matches, newest first. */
+        /**
+         * Matches, newest first.
+         * @description The demo matches and the stored ones, live first. If Cosmos DB can't be read, the list still answers 200 with the demo matches alone, and sets the Touchline-Degraded response header to "cosmos". The API doesn't enable CORS, so a cross-origin client sees the header only if CORS exposes it.
+         */
         get: operations["ListMatches"];
         put?: never;
         /** Starts an exhibition between two teams, with optional team sheets. */
@@ -319,7 +322,7 @@ export interface components {
         };
         /** @description Something an answer is based on, so a fan can check it. */
         Citation: {
-            /** @description A possession or a moment. */
+            /** @description A possession, a moment, an event or the match summary. */
             kind: components["schemas"]["CitationKind"];
             /** @description Its ID. */
             id: string;
@@ -330,7 +333,7 @@ export interface components {
          * @description What a citation in an answer points at.
          * @enum {unknown}
          */
-        CitationKind: "Possession" | "Moment";
+        CitationKind: "Possession" | "Moment" | "Event" | "Match";
         /** @description A match clock reading, ready to show. */
         ClockReading: {
             /** @description The half. */
@@ -416,6 +419,8 @@ export interface components {
             text: string;
             /** @description What it's based on. An answer with no citations should say it couldn't find support. */
             citations: components["schemas"]["Citation"][];
+            /** @description The BCP 47 tag of the language the answer is written in, such as `en` or `es-MX`. */
+            language: string;
         };
         GoalMouthPosition: {
             /** Format: double */
@@ -777,7 +782,7 @@ export interface components {
                  * @description What a citation in an answer points at.
                  * @enum {unknown}
                  */
-                kind: "Possession" | "Moment";
+                kind: "Possession" | "Moment" | "Event" | "Match";
                 /** @description Its ID. */
                 id: string;
                 /** @description A short label to show, such as `67:12 goal`. */
@@ -1469,6 +1474,8 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    /** @description Present, as "cosmos", when Cosmos DB couldn't be read and the list holds the demo matches alone. The API doesn't enable CORS, so a cross-origin client sees the header only if CORS exposes it. */
+                    "Touchline-Degraded"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -1587,6 +1594,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetMatch: {
@@ -1611,6 +1627,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1661,6 +1686,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetMomentum: {
@@ -1685,6 +1719,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1738,6 +1781,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     StreamMatch: {
@@ -1780,6 +1832,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

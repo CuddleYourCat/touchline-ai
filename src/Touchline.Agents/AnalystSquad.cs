@@ -174,18 +174,22 @@ public sealed partial class AnalystSquad : ISquad
     /// <param name="answer"><see cref="NotFoundAnswer"/> or <see cref="UnavailableAnswer"/>.</param>
     /// <param name="language">The viewer's language tag, such as <c>fr</c> or <c>es-MX</c>.</param>
     /// <returns>The translated answer, or <paramref name="answer"/> itself when there's no translation.</returns>
-    public static string SafeAnswer(string answer, string? language)
+    public static string SafeAnswer(string answer, string? language) => ChooseSafeAnswer(answer, language).Text;
+
+    // The safe answer and the tag of the language it's really in, so FanAnswer.Language stays
+    // honest when the choice falls back to the base language or to English.
+    private static (string Text, string Language) ChooseSafeAnswer(string answer, string? language)
     {
         ArgumentNullException.ThrowIfNull(answer);
         if (string.IsNullOrWhiteSpace(language) || !_safeAnswers.TryGetValue(answer, out var translations))
         {
-            return answer;
+            return (answer, "en");
         }
 
         var dash = language.IndexOf('-', StringComparison.Ordinal);
-        return translations.TryGetValue(language, out var exact) ? exact
-            : dash > 0 && translations.TryGetValue(language[..dash], out var baseLanguage) ? baseLanguage
-            : answer;
+        return translations.TryGetValue(language, out var exact) ? (exact, language)
+            : dash > 0 && translations.TryGetValue(language[..dash], out var baseLanguage) ? (baseLanguage, language[..dash])
+            : (answer, "en");
     }
 
     /// <inheritdoc />
@@ -272,7 +276,7 @@ public sealed partial class AnalystSquad : ISquad
             }
 
             _metrics.RecordAnswer(SquadAgent.Analyst, "model");
-            return new FanAnswer(reply.Answer.Trim(), citations);
+            return new FanAnswer(reply.Answer.Trim(), citations, Language(viewer));
         }
     }
 
@@ -361,9 +365,8 @@ public sealed partial class AnalystSquad : ISquad
             AIFunctionFactory.Create(
                 () =>
                 {
-                    // TODO(next contract slice): CitationKind.Match. Moment is the closest kind the contract has.
                     cited[summaryId] = new Citation(
-                        CitationKind.Moment,
+                        CitationKind.Match,
                         summaryId,
                         Label($"{sheet.Clock} {sheet.HomeTeam} {sheet.HomeGoals}-{sheet.AwayGoals} {sheet.AwayTeam}"));
                     return new { Id = summaryId, Match = sheet };
@@ -405,9 +408,7 @@ public sealed partial class AnalystSquad : ISquad
 
                     foreach (var e in found)
                     {
-                        // TODO(next contract slice): CitationKind.Event. Until then an event is a Moment,
-                        // told apart by its event: ID prefix (MatchFactIds.Event).
-                        cited[e.Id] = new Citation(CitationKind.Moment, e.Id, Label($"{e.Clock} {e.Type}"));
+                        cited[e.Id] = new Citation(CitationKind.Event, e.Id, Label($"{e.Clock} {e.Type}"));
                     }
 
                     return found;
@@ -449,13 +450,18 @@ public sealed partial class AnalystSquad : ISquad
     {
         _metrics.RecordFallback(SquadAgent.Analyst, reason);
         _metrics.RecordAnswer(SquadAgent.Analyst, "fallback");
-        return new FanAnswer(SafeAnswer(answer, viewer.Language), []);
+        var (text, language) = ChooseSafeAnswer(answer, Language(viewer));
+        return new FanAnswer(text, [], language);
     }
 
     private static string Label(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 
-    private static string Language(Viewer viewer) =>
-        LanguageTag().IsMatch(viewer.Language) ? viewer.Language : "en";
+    // The language the Analyst writes in and reports: the viewer's, clamped to the configured
+    // languages (exact tag, then base language, then English) and in canonical form.
+    private string Language(Viewer viewer) =>
+        LanguageTags.Closest(
+            LanguageTag().IsMatch(viewer.Language) ? viewer.Language : null,
+            _options.Languages.Count == 0 ? SquadOptions.DefaultLanguages : _options.Languages);
 
     private static AnalystReply? Parse(string text)
     {

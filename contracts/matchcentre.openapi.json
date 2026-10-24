@@ -126,6 +126,7 @@
           "Matches"
         ],
         "summary": "Matches, newest first.",
+        "description": "The demo matches and the stored ones, live first. If Cosmos DB can't be read, the list still answers 200 with the demo matches alone, and sets the Touchline-Degraded response header to \"cosmos\". The API doesn't enable CORS, so a cross-origin client sees the header only if CORS exposes it.",
         "operationId": "ListMatches",
         "parameters": [
           {
@@ -146,6 +147,14 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Touchline-Degraded": {
+                "description": "Present, as \"cosmos\", when Cosmos DB couldn't be read and the list holds the demo matches alone. The API doesn't enable CORS, so a cross-origin client sees the header only if CORS exposes it.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -215,6 +224,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -249,6 +268,16 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -323,6 +352,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -360,6 +399,16 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -449,6 +498,16 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -552,6 +611,16 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1311,7 +1380,7 @@
         "type": "object",
         "properties": {
           "kind": {
-            "description": "A possession or a moment.",
+            "description": "A possession, a moment, an event or the match summary.",
             "$ref": "#/components/schemas/CitationKind"
           },
           "id": {
@@ -1328,7 +1397,9 @@
       "CitationKind": {
         "enum": [
           "Possession",
-          "Moment"
+          "Moment",
+          "Event",
+          "Match"
         ],
         "description": "What a citation in an answer points at."
       },
@@ -1514,7 +1585,8 @@
       "FanAnswer": {
         "required": [
           "text",
-          "citations"
+          "citations",
+          "language"
         ],
         "type": "object",
         "properties": {
@@ -1528,6 +1600,10 @@
               "$ref": "#/components/schemas/Citation"
             },
             "description": "What it's based on. An answer with no citations should say it couldn't find support."
+          },
+          "language": {
+            "type": "string",
+            "description": "The BCP 47 tag of the language the answer is written in, such as `en` or `es-MX`."
           }
         },
         "description": "The Analyst's answer to a fan's question."
@@ -2403,7 +2479,9 @@
                 "kind": {
                   "enum": [
                     "Possession",
-                    "Moment"
+                    "Moment",
+                    "Event",
+                    "Match"
                   ],
                   "description": "What a citation in an answer points at."
                 },

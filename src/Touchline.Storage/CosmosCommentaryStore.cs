@@ -40,21 +40,7 @@ public sealed class CosmosCommentaryStore(CosmosClient client) : ICommentaryStor
     /// </summary>
     /// <param name="language">A tag such as <c>es-mx</c>.</param>
     /// <returns>For example <c>es-MX</c>.</returns>
-    public static string NormaliseLanguage(string language)
-    {
-        ArgumentNullException.ThrowIfNull(language);
-        var parts = language.Split('-');
-        parts[0] = parts[0].ToLowerInvariant();
-        for (var i = 1; i < parts.Length; i++)
-        {
-            if (parts[i].Length == 2)
-            {
-                parts[i] = parts[i].ToUpperInvariant();
-            }
-        }
-
-        return string.Join('-', parts);
-    }
+    public static string NormaliseLanguage(string language) => LanguageTags.Normalise(language);
 
     /// <inheritdoc />
     /// <exception cref="ArgumentException">

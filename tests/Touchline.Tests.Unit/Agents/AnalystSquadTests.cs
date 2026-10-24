@@ -83,7 +83,7 @@ public sealed class AnalystSquadTests
 
         var answer = await Analyst().AnswerAsync("demo-1", attack, Viewer.Default, CancellationToken.None);
 
-        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.NotFoundAnswer, []));
+        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.NotFoundAnswer, [], "en"));
         var messages = _chat.Requests[0].Messages;
         messages[0].Text.Should().Be(AnalystSquad.SystemPrompt);
         var user = messages[1].Text;
@@ -118,7 +118,7 @@ public sealed class AnalystSquadTests
 
         var answer = await Analyst().AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
 
-        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.NotFoundAnswer, []));
+        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.NotFoundAnswer, [], "en"));
     }
 
     [Test]
@@ -130,7 +130,7 @@ public sealed class AnalystSquadTests
 
         var answer = await Analyst().AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
 
-        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.NotFoundAnswer, []));
+        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.NotFoundAnswer, [], "en"));
         _chat.Requests.Should().HaveCount(3);
         _chat.Requests[2].Options!.ToolMode.Should().Be(ChatToolMode.Auto, "the retry may check a name with one tool round");
         _chat.Requests[2].Messages[^1].Text.Should().Contain("isn't in this match").And.Contain("\"Tom Okafor\"").And.Contain("\"Riverside Athletic\"");
@@ -168,7 +168,7 @@ public sealed class AnalystSquadTests
 
         var answer = await Analyst().AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
 
-        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.UnavailableAnswer, []));
+        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.UnavailableAnswer, [], "en"));
     }
 
     [Test]
@@ -179,7 +179,7 @@ public sealed class AnalystSquadTests
 
         var answer = await Analyst().AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
 
-        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.UnavailableAnswer, []));
+        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.UnavailableAnswer, [], "en"));
         _chat.Requests.Should().BeEmpty();
     }
 
@@ -190,7 +190,7 @@ public sealed class AnalystSquadTests
 
         var answer = await Analyst().AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
 
-        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.NotFoundAnswer, []));
+        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.NotFoundAnswer, [], "en"));
         _chat.Requests.Should().HaveCount(AnalystSquad.MaxToolRounds + 1);
         _chat.Requests[^1].Options!.ToolMode.Should().Be(ChatToolMode.None);
         _facts.Verify(f => f.GetKeyMomentsAsync("demo-1", It.IsAny<CancellationToken>()), Times.Exactly(AnalystSquad.MaxToolRounds));
@@ -264,8 +264,9 @@ public sealed class AnalystSquadTests
         var answer = await Analyst().AnswerAsync("demo-1", "What's the score?", Viewer.Default, CancellationToken.None);
 
         answer.Text.Should().Be("North Bank FC lead 1-0.");
+        answer.Language.Should().Be("en");
         answer.Citations.Should().ContainSingle().Which.Should().Be(
-            new Citation(CitationKind.Moment, "match:demo-1", "67:12 North Bank FC 1-0 Riverside Athletic"));
+            new Citation(CitationKind.Match, "match:demo-1", "67:12 North Bank FC 1-0 Riverside Athletic"));
         var result = _chat.Requests[1].Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single().Result;
         System.Text.Json.JsonSerializer.Serialize(result).Should().Contain("\"id\":\"match:demo-1\"");
     }
@@ -306,22 +307,72 @@ public sealed class AnalystSquadTests
 
         var answer = await Analyst().AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
 
-        answer.Citations.Should().ContainSingle().Which.Id.Should().Be("event:demo-1:412");
+        answer.Citations.Should().ContainSingle().Which.Should().Be(new Citation(CitationKind.Event, "event:demo-1:412", "23:00 Shot"));
         _facts.Verify(f => f.GetEventsAsync("demo-1", 20, 25, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [TestCase("en", AnalystSquad.NotFoundAnswer)]
-    [TestCase("es", "No he encontrado eso en este partido.")]
-    [TestCase("fr-CA", "Je n'ai pas trouvé cela dans ce match.")]
-    [TestCase("de", AnalystSquad.NotFoundAnswer)]
-    public async Task The_safe_answer_is_in_the_viewers_language(string language, string expected)
+    [TestCase("en", AnalystSquad.NotFoundAnswer, "en")]
+    [TestCase("es", "No he encontrado eso en este partido.", "es")]
+    [TestCase("fr-CA", "Je n'ai pas trouvé cela dans ce match.", "fr")]
+    [TestCase("de", AnalystSquad.NotFoundAnswer, "en")]
+    public async Task The_safe_answer_is_in_the_viewers_language_and_says_which(string language, string expected, string expectedLanguage)
     {
         _chat.Returns("""{"answer":"","citations":[],"found":false}""");
 
-        var answer = await Analyst().AnswerAsync("demo-1", _question, Viewer.Create(ViewingMode.Casual, language, null, null, null, _ => true, _ => true).Viewer!, CancellationToken.None);
+        var answer = await Analyst().AnswerAsync("demo-1", _question, ViewerIn(language), CancellationToken.None);
 
-        answer.Should().BeEquivalentTo(new FanAnswer(expected, []));
+        answer.Should().BeEquivalentTo(new FanAnswer(expected, [], expectedLanguage));
     }
+
+    [Test]
+    public async Task A_model_answer_is_in_the_language_the_model_was_asked_for()
+    {
+        _chat.Returns(FakeChatClient.ToolCall("key_moments")).Returns(Reply("Tom Okafor marcó al contragolpe.", _goalId));
+
+        var answer = await Analyst().AnswerAsync("demo-1", _question, ViewerIn("es-MX"), CancellationToken.None);
+
+        answer.Language.Should().Be("es");
+        _chat.Requests[0].Messages.Last().Text.Should().Contain("\"es\"");
+    }
+
+    [TestCase("ja-JP", "en")]
+    [TestCase("es-MX", "es")]
+    [TestCase("fr", "fr")]
+    public async Task The_Analyst_writes_in_the_closest_configured_language(string language, string expected)
+    {
+        _chat.Returns(FakeChatClient.ToolCall("key_moments")).Returns(Reply("Tom Okafor scored.", _goalId));
+
+        var answer = await Analyst().AnswerAsync("demo-1", _question, ViewerIn(language), CancellationToken.None);
+
+        answer.Language.Should().Be(expected);
+        _chat.Requests[0].Messages.Last().Text.Should().Contain($"\"{expected}\"");
+    }
+
+    [Test]
+    public async Task A_configured_regional_language_is_kept_in_canonical_form()
+    {
+        _options.Languages = ["en", "es-mx"];
+        _chat.Returns(FakeChatClient.ToolCall("key_moments")).Returns(Reply("Tom Okafor marcó.", _goalId));
+
+        var answer = await Analyst().AnswerAsync("demo-1", _question, ViewerIn("es-MX"), CancellationToken.None);
+
+        answer.Language.Should().Be("es-MX");
+    }
+
+    [TestCase("ja-JP", "en")]
+    [TestCase("es-MX", "es")]
+    [TestCase("fr", "fr")]
+    public async Task The_safe_answer_uses_the_closest_configured_language(string language, string expected)
+    {
+        _chat.Returns("""{"answer":"","citations":[],"found":false}""");
+
+        var answer = await Analyst().AnswerAsync("demo-1", _question, ViewerIn(language), CancellationToken.None);
+
+        answer.Language.Should().Be(expected);
+    }
+
+    private static Viewer ViewerIn(string language) =>
+        Viewer.Create(ViewingMode.Casual, language, null, null, null, _ => true, _ => true).Viewer!;
 
     [Test]
     public void Every_default_language_has_both_safe_answers()
@@ -349,7 +400,7 @@ public sealed class AnalystSquadTests
 
         var answer = await Analyst(budgeted).AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
 
-        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.UnavailableAnswer, []));
+        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.UnavailableAnswer, [], "en"));
         _chat.Requests.Should().HaveCount(AnalystSquad.MaxToolRounds, "the final call is refused before it reaches the model");
         reasons.Should().Contain(["budget", "fallback"]);
     }

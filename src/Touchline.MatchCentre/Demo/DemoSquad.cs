@@ -31,7 +31,7 @@ internal sealed class DemoSquad(DemoMatchSource matches) : ISquad
                 MomentIds.For(matchId, m.Trigger.Sequence),
                 string.Create(CultureInfo.InvariantCulture, $"{m.Trigger.Time} {m.Kind}")))
         ];
-        return Task.FromResult(new FanAnswer(text, citations));
+        return Task.FromResult(new FanAnswer(text, citations, "en"));
     }
 
     /// <inheritdoc />

@@ -24,6 +24,11 @@ internal static partial class MatchCentreEndpoints
     /// <summary>The most events one page returns.</summary>
     public const int MaxEventLimit = 1000;
 
+    private const string _listDescription =
+        "The demo matches and the stored ones, live first. If Cosmos DB can't be read, the list still answers 200 "
+        + "with the demo matches alone, and sets the Touchline-Degraded response header to \"cosmos\". "
+        + "The API doesn't enable CORS, so a cross-origin client sees the header only if CORS exposes it.";
+
     private const string _streamDescription =
         "Server-sent events (text/event-stream). Each message has an event name, an id (the last event sequence " +
         "the client has fully seen, for Last-Event-ID resume) and one JSON data line. The event names and their " +
@@ -44,18 +49,19 @@ internal static partial class MatchCentreEndpoints
 
         var matches = api.MapGroup("/matches").WithTags("Matches");
         matches.MapGet("/", ListMatches).WithName("ListMatches").WithSummary("Matches, newest first.")
+            .WithDescription(_listDescription)
             .ProducesValidationProblem();
         matches.MapGet("/{matchId}", GetMatch).WithName("GetMatch").WithSummary("A match in full.")
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/events", GetEvents).WithName("GetEvents").WithSummary("A page of a match's events.")
-            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/momentum", GetMomentum).WithName("GetMomentum").WithSummary("Momentum so far, in five-minute windows.")
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/moments", GetMoments).WithName("GetMoments").WithSummary("Key and notable moments so far, with commentary for the viewer.")
-            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/stream", Stream).WithName("StreamMatch").WithSummary("The live match, as server-sent events.")
             .WithDescription(_streamDescription)
-            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapPost("/{matchId}/questions", AskQuestion).WithName("AskQuestion").WithSummary("Ask the Analyst about a match.")
             .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status429TooManyRequests).RequireRateLimiting(RateLimiting.PaidCalls);
@@ -68,7 +74,7 @@ internal static partial class MatchCentreEndpoints
 
         api.MapGet("/seasons/{season}/players/{playerId}", GetPlayerSeason).WithTags("Seasons")
             .WithName("GetPlayerSeason").WithSummary("A player's season card.")
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         return app;
     }
@@ -77,6 +83,7 @@ internal static partial class MatchCentreEndpoints
         [FromQuery] string? status,
         [FromQuery] string? season,
         IMatchReadModel matches,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         var wanted = EnumNames.Parse<MatchStatus>(status);
@@ -85,7 +92,13 @@ internal static partial class MatchCentreEndpoints
             return Invalid("status", "The status must be scheduled, live or fulltime.");
         }
 
-        return TypedResults.Ok(await matches.ListMatchesAsync(wanted, season, cancellationToken));
+        var list = await matches.ListMatchesAsync(wanted, season, cancellationToken);
+        if (list.Degraded)
+        {
+            context.Response.Headers[DegradedSources.Header] = DegradedSources.Cosmos;
+        }
+
+        return TypedResults.Ok(list.Matches);
     }
 
     private static async Task<Results<Ok<MatchDetail>, ProblemHttpResult>> GetMatch(

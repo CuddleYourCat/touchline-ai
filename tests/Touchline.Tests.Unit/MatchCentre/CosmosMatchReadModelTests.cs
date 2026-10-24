@@ -209,12 +209,12 @@ public class CosmosMatchReadModelTests
         _matches.Setup(c => c.GetItemQueryStreamIterator(It.IsAny<QueryDefinition>(), It.IsAny<string>(), It.IsAny<QueryRequestOptions>()))
             .Returns(() => Pages([finished, live]));
 
-        var list = await _readModel.ListMatchesAsync(null, null, CancellationToken.None);
+        var list = (await _readModel.ListMatchesAsync(null, null, CancellationToken.None)).Matches;
 
         list.Should().HaveCount(2);
         list.Single(m => m.Id == finished.MatchId).Status.Should().Be(MatchStatus.FullTime);
         list.Single(m => m.Id == "live-match").Status.Should().Be(MatchStatus.Live);
-        (await _readModel.ListMatchesAsync(MatchStatus.Scheduled, null, CancellationToken.None)).Should().BeEmpty("a stored match has kicked off");
+        (await _readModel.ListMatchesAsync(MatchStatus.Scheduled, null, CancellationToken.None)).Matches.Should().BeEmpty("a stored match has kicked off");
     }
 
     private static CosmosMatchReadModel.StoredMatch Stored(int played) =>

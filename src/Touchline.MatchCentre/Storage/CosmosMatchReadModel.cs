@@ -57,12 +57,12 @@ public sealed partial class CosmosMatchReadModel(
     private Container PlayerSeasons => client.GetContainer(CosmosNames.Database, CosmosNames.PlayerSeasons);
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<MatchSummary>> ListMatchesAsync(MatchStatus? status, string? season, CancellationToken cancellationToken)
+    public async Task<MatchList> ListMatchesAsync(MatchStatus? status, string? season, CancellationToken cancellationToken)
     {
         // A stored match has had at least one event, so it's never scheduled.
         if (status == MatchStatus.Scheduled)
         {
-            return [];
+            return new MatchList([]);
         }
 
         var filters = new List<string> { "IS_DEFINED(c.metadata) AND NOT IS_NULL(c.metadata)" };
@@ -90,13 +90,13 @@ public sealed partial class CosmosMatchReadModel(
         // The one query that fans out across partitions. The list is small (a season is a few
         // dozen matches), so it's sorted here rather than with a cross-partition ORDER BY.
         var stored = await CosmosQueries.ReadAllAsync<StoredMatch>(Matches, query, partition: null, cancellationToken);
-        return
+        return new MatchList(
         [
             .. stored
                 .Where(match => match.Metadata is not null)
                 .Select(match => Summary(match, match.Metadata!))
                 .OrderByDescending(summary => summary.KickOffUtc)
-        ];
+        ]);
     }
 
     /// <inheritdoc />

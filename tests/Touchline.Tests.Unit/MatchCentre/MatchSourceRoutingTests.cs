@@ -65,11 +65,11 @@ public class MatchSourceRoutingTests
     {
         var kickOff = new DateTimeOffset(2026, 10, 23, 15, 0, 0, TimeSpan.Zero);
         _demo.Setup(m => m.ListMatchesAsync(null, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Summary("demo-1", MatchStatus.FullTime, kickOff.AddHours(2))]);
+            .ReturnsAsync(new MatchList([Summary("demo-1", MatchStatus.FullTime, kickOff.AddHours(2))]));
         _cosmos.Setup(m => m.ListMatchesAsync(null, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Summary("old", MatchStatus.FullTime, kickOff), Summary("live", MatchStatus.Live, kickOff.AddHours(-1))]);
+            .ReturnsAsync(new MatchList([Summary("old", MatchStatus.FullTime, kickOff), Summary("live", MatchStatus.Live, kickOff.AddHours(-1))]));
 
-        var matches = await Router(_cosmos.Object).ListMatchesAsync(null, null, CancellationToken.None);
+        var matches = (await Router(_cosmos.Object).ListMatchesAsync(null, null, CancellationToken.None)).Matches;
 
         matches.Select(m => m.Id).Should().Equal("live", "demo-1", "old");
     }
@@ -78,14 +78,14 @@ public class MatchSourceRoutingTests
     public async Task With_cosmos_db_down_the_list_is_the_demo_alone_and_a_stored_id_is_unavailable()
     {
         var demoMatch = Summary("demo-1", MatchStatus.Live, DateTimeOffset.UnixEpoch);
-        _demo.Setup(m => m.ListMatchesAsync(MatchStatus.Live, null, It.IsAny<CancellationToken>())).ReturnsAsync([demoMatch]);
+        _demo.Setup(m => m.ListMatchesAsync(MatchStatus.Live, null, It.IsAny<CancellationToken>())).ReturnsAsync(new MatchList([demoMatch]));
         _demo.Setup(m => m.GetMomentumAsync("demo-1", It.IsAny<CancellationToken>())).ReturnsAsync([]);
         _cosmos.Setup(m => m.ListMatchesAsync(It.IsAny<MatchStatus?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("unreachable"));
         _cosmos.Setup(m => m.GetMomentumAsync(_storedId, It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException("unreachable"));
         var router = Router(_cosmos.Object);
 
-        (await router.ListMatchesAsync(MatchStatus.Live, null, CancellationToken.None)).Should().Equal(demoMatch);
+        (await router.ListMatchesAsync(MatchStatus.Live, null, CancellationToken.None)).Should().BeEquivalentTo(new MatchList([demoMatch], Degraded: true));
         (await router.GetMomentumAsync("demo-1", CancellationToken.None)).Should().BeEmpty();
         var stored = () => router.GetMomentumAsync(_storedId, CancellationToken.None);
         (await stored.Should().ThrowAsync<MatchSourceUnavailableException>()).WithInnerException<HttpRequestException>();
@@ -154,11 +154,41 @@ public class MatchSourceRoutingTests
     }
 
     [Test]
+    public async Task A_list_served_without_cosmos_db_says_so_in_a_header()
+    {
+        var failing = new Mock<IMatchReadModel>();
+        failing.Setup(m => m.ListMatchesAsync(It.IsAny<MatchStatus?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CosmosException("down", HttpStatusCode.ServiceUnavailable, 0, "", 0));
+        await using var factory = WithCosmos(failing.Object, Mock.Of<ILiveFeed>());
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/api/matches", UriKind.Relative));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues(DegradedSources.Header).Should().Equal(DegradedSources.Cosmos);
+        JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [Test]
+    public async Task A_full_list_has_no_degraded_header()
+    {
+        var healthy = new Mock<IMatchReadModel>();
+        healthy.Setup(m => m.ListMatchesAsync(It.IsAny<MatchStatus?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new MatchList([]));
+        await using var factory = WithCosmos(healthy.Object, Mock.Of<ILiveFeed>());
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/api/matches", UriKind.Relative));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Contains(DegradedSources.Header).Should().BeFalse();
+    }
+
+    [Test]
     public async Task A_stored_match_whose_change_feed_never_starts_answers_503_instead_of_hanging()
     {
         await using var demoOnly = MatchCentreFactory.Live();
         var demo = demoOnly.Services.GetRequiredKeyedService<IMatchReadModel>(MatchSources.Demo);
-        var demoId = (await demo.ListMatchesAsync(null, null, CancellationToken.None))[0].Id;
+        var demoId = (await demo.ListMatchesAsync(null, null, CancellationToken.None)).Matches[0].Id;
         var detail = await demo.GetMatchAsync(demoId, CancellationToken.None);
         var stored = new Mock<IMatchReadModel>();
         stored.Setup(m => m.GetMatchAsync(_storedId, It.IsAny<CancellationToken>())).ReturnsAsync(detail);
@@ -186,7 +216,7 @@ public class MatchSourceRoutingTests
     [Test]
     public async Task Only_an_outage_degrades_the_match_list()
     {
-        _demo.Setup(m => m.ListMatchesAsync(null, null, It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _demo.Setup(m => m.ListMatchesAsync(null, null, It.IsAny<CancellationToken>())).ReturnsAsync(new MatchList([]));
         _cosmos.Setup(m => m.ListMatchesAsync(null, null, It.IsAny<CancellationToken>())).ThrowsAsync(new ArgumentException("bug"));
 
         var list = () => Router(_cosmos.Object).ListMatchesAsync(null, null, CancellationToken.None);
@@ -267,7 +297,7 @@ public class MatchSourceRoutingTests
         factory.Services.GetRequiredService<LiveMatchHubs>().Should().NotBeNull();
         factory.Services.GetServices<IHostedService>().Should().ContainSingle(service => service is ChangeFeedReader);
         var demoId = (await factory.Services.GetRequiredKeyedService<IMatchReadModel>(MatchSources.Demo)
-            .ListMatchesAsync(null, null, CancellationToken.None))[0].Id;
+            .ListMatchesAsync(null, null, CancellationToken.None)).Matches[0].Id;
         demoId.Should().StartWith("demo-");
         using var demoMatch = await client.GetAsync(new Uri($"/api/matches/{demoId}", UriKind.Relative));
         demoMatch.StatusCode.Should().Be(HttpStatusCode.OK, "a demo ID never reaches the strict Cosmos DB mock");

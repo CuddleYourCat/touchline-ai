@@ -48,6 +48,34 @@ public class OpenApiContractTests
         status.GetProperty("enum").EnumerateArray().Select(v => v.GetString()).Should().Equal("Scheduled", "Live", "FullTime");
     }
 
+    [TestCase("/api/matches/{matchId}", "get")]
+    [TestCase("/api/matches/{matchId}/events", "get")]
+    [TestCase("/api/matches/{matchId}/moments", "get")]
+    [TestCase("/api/matches/{matchId}/momentum", "get")]
+    [TestCase("/api/matches/{matchId}/stream", "get")]
+    [TestCase("/api/seasons/{season}/players/{playerId}", "get")]
+    public async Task Every_read_that_cosmos_db_serves_declares_a_503(string path, string method)
+    {
+        using var contract = JsonDocument.Parse(await File.ReadAllTextAsync(Snapshots.PathOf(_contractPath)));
+
+        var responses = contract.RootElement.GetProperty("paths").GetProperty(path).GetProperty(method).GetProperty("responses");
+
+        responses.TryGetProperty("503", out _).Should().BeTrue();
+    }
+
+    [Test]
+    public async Task The_match_list_documents_its_degraded_header()
+    {
+        using var contract = JsonDocument.Parse(await File.ReadAllTextAsync(Snapshots.PathOf(_contractPath)));
+
+        var list = contract.RootElement.GetProperty("paths").GetProperty("/api/matches").GetProperty("get");
+
+        list.GetProperty("description").GetString().Should().Contain(DegradedSources.Header);
+        list.GetProperty("responses").GetProperty("200").GetProperty("headers").TryGetProperty(DegradedSources.Header, out _).Should().BeTrue();
+        list.GetProperty("responses").GetProperty("200").GetProperty("content").GetProperty("application/json")
+            .GetProperty("schema").GetProperty("type").GetString().Should().Be("array");
+    }
+
     // The compiler writes XML doc comments with the build machine's newline, so descriptions
     // carry an escaped \r\n on Windows and \n on the Linux CI runner.
     private static string Normalise(string json) =>

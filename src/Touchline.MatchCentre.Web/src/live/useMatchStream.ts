@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useReducer, useState } from 'react';
 import { api } from '../api/client';
+import type { components } from '../api/schema';
 import {
   applyMessage,
   initialLiveMatch,
   mergeMoments,
   streamEventNames,
-  type CommentaryLine,
   type LiveMatch,
   type MatchDetail,
   type MomentView,
@@ -24,20 +24,18 @@ export const reconnectMaxMs = 15_000;
 /** The most random delay added to each reopen, so many viewers don't all reconnect at once after a deploy. */
 export const reconnectJitterMs = 250;
 
-/** Who is watching: the viewing mode and the language (a BCP 47 tag such as `es-ES`). */
+/**
+ * Who is watching: the viewing mode, in the contract's own names (sent as `mode=` and carried on
+ * every commentary line), and the language (a BCP 47 tag such as `es-ES`).
+ */
 export interface Viewer {
-  mode: 'Commentator' | 'Analyst';
+  mode: components['schemas']['ViewingMode'];
   language: string;
-}
-
-/** The contract's name for a viewer mode, as sent in `mode=` and as it appears on a {@link CommentaryLine}. */
-export function lineModeFor(mode: Viewer['mode']): CommentaryLine['mode'] {
-  return mode === 'Analyst' ? 'Analyst' : 'Casual';
 }
 
 function defaultViewer(): Viewer {
   const language = typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en';
-  return { mode: 'Commentator', language };
+  return { mode: 'Casual', language };
 }
 
 /** The live view's state: loading, a missing match, a failure, or the match itself (and whether the stream has gone quiet). */
@@ -99,7 +97,7 @@ async function fetchDetail(matchId: string): Promise<DetailResult> {
 async function fetchMomentsOnce(matchId: string, viewer: Viewer): Promise<MomentView[] | undefined> {
   try {
     const { data } = await api.GET('/api/matches/{matchId}/moments', {
-      params: { path: { matchId }, query: { mode: lineModeFor(viewer.mode), lang: viewer.language } },
+      params: { path: { matchId }, query: { mode: viewer.mode, lang: viewer.language } },
     });
     return data ?? undefined;
   } catch {
@@ -169,7 +167,7 @@ export function useMatchStream(
     };
 
     const open = () => {
-      const query = new URLSearchParams({ after: String(lastSequence), mode: lineModeFor(who.mode), lang: who.language });
+      const query = new URLSearchParams({ after: String(lastSequence), mode: who.mode, lang: who.language });
       const es = new EventSource(`/api/matches/${encodeURIComponent(matchId)}/stream?${query.toString()}`);
       source = es;
       for (const name of streamEventNames) {

@@ -28,7 +28,7 @@ internal sealed partial class RoutingMatchReadModel(
     private static readonly Counter<long> _degraded = _meter.CreateCounter<long>(DegradedCounter, description: "Responses served without Cosmos DB, while it was down");
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<MatchSummary>> ListMatchesAsync(MatchStatus? status, string? season, CancellationToken cancellationToken)
+    public async Task<MatchList> ListMatchesAsync(MatchStatus? status, string? season, CancellationToken cancellationToken)
     {
         var demoMatches = await demo.ListMatchesAsync(status, season, cancellationToken);
         if (cosmos is null)
@@ -36,7 +36,7 @@ internal sealed partial class RoutingMatchReadModel(
             return demoMatches;
         }
 
-        IReadOnlyList<MatchSummary> stored;
+        MatchList stored;
         try
         {
             stored = await cosmos.ListMatchesAsync(status, season, cancellationToken);
@@ -44,16 +44,18 @@ internal sealed partial class RoutingMatchReadModel(
         catch (Exception exception) when (MatchSources.IsOutage(exception, cancellationToken))
         {
             // The list is still useful without the stored matches: the demo carries on. The
-            // counter makes the degraded list visible; a contract "degraded" flag on the list
-            // response comes in the next contract slice.
+            // counter makes the degraded list visible to operators, and the Degraded flag
+            // becomes the Touchline-Degraded header for clients.
             LogListDegraded(logger, exception);
             _degraded.Add(1, new KeyValuePair<string, object?>("operation", "list"));
-            return demoMatches;
+            return demoMatches with { Degraded = true };
         }
 
-        return [.. demoMatches.Concat(stored)
-            .OrderByDescending(match => match.Status == MatchStatus.Live)
-            .ThenByDescending(match => match.KickOffUtc)];
+        return new MatchList(
+            [.. demoMatches.Matches.Concat(stored.Matches)
+                .OrderByDescending(match => match.Status == MatchStatus.Live)
+                .ThenByDescending(match => match.KickOffUtc)],
+            demoMatches.Degraded || stored.Degraded);
     }
 
     /// <inheritdoc />

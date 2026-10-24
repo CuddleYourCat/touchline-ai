@@ -46,16 +46,34 @@ internal sealed class StreamMessageSchemas : IOpenApiDocumentTransformer
         }
 
         DescribeStreamBody(document);
+        DescribeDegradedListHeader(document);
     }
+
+    // The match list keeps its array body when Cosmos DB is down, and says so in a header.
+    private static void DescribeDegradedListHeader(OpenApiDocument document)
+    {
+        if (Operation(document, "ListMatches")?.Responses?.TryGetValue("200", out var ok) == true && ok is OpenApiResponse response)
+        {
+            response.Headers ??= new Dictionary<string, IOpenApiHeader>();
+            response.Headers[DegradedSources.Header] = new OpenApiHeader
+            {
+                Description = $"Present, as \"{DegradedSources.Cosmos}\", when Cosmos DB couldn't be read and the list holds the demo matches alone. The API doesn't enable CORS, so a cross-origin client sees the header only if CORS exposes it.",
+                Schema = new OpenApiSchema { Type = JsonSchemaType.String }
+            };
+        }
+    }
+
+    private static OpenApiOperation? Operation(OpenApiDocument document, string operationId) =>
+        document.Paths?.Values
+            .SelectMany(path => path.Operations is { } operations ? operations.Values : Enumerable.Empty<OpenApiOperation>())
+            .FirstOrDefault(operation => operation.OperationId == operationId);
 
     // The generator describes the stream's body as the SseItem<object> type that produces it,
     // which isn't what goes over the wire. The body is text, and its messages are described
     // in the operation's description and the component schemas above.
     private static void DescribeStreamBody(OpenApiDocument document)
     {
-        var stream = document.Paths?.Values
-            .SelectMany(path => path.Operations is { } operations ? operations.Values : Enumerable.Empty<OpenApiOperation>())
-            .FirstOrDefault(operation => operation.OperationId == "StreamMatch");
+        var stream = Operation(document, "StreamMatch");
         if (stream?.Responses?.TryGetValue("200", out var ok) == true
             && ok.Content?.TryGetValue("text/event-stream", out var body) == true)
         {

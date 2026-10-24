@@ -45,7 +45,7 @@ public class DemoMatchSourceTests
     [Test]
     public async Task Lap_one_kicks_off_as_soon_as_the_service_starts()
     {
-        var matches = await _source.ListMatchesAsync(null, null, CancellationToken.None);
+        var matches = (await _source.ListMatchesAsync(null, null, CancellationToken.None)).Matches;
 
         matches.Should().ContainSingle();
         matches[0].Id.Should().Be("demo-1");
@@ -75,10 +75,10 @@ public class DemoMatchSourceTests
     {
         _time.Advance(MatchLength + _gap);
 
-        var matches = await _source.ListMatchesAsync(null, null, CancellationToken.None);
+        var matches = (await _source.ListMatchesAsync(null, null, CancellationToken.None)).Matches;
 
         matches.Select(m => (m.Id, m.Status)).Should().Equal(("demo-2", MatchStatus.Live), ("demo-1", MatchStatus.FullTime));
-        (await _source.ListMatchesAsync(MatchStatus.Live, null, CancellationToken.None)).Should().ContainSingle(m => m.Id == "demo-2");
+        (await _source.ListMatchesAsync(MatchStatus.Live, null, CancellationToken.None)).Matches.Should().ContainSingle(m => m.Id == "demo-2");
     }
 
     [TestCase("demo-2", Description = "a lap that hasn't kicked off")]

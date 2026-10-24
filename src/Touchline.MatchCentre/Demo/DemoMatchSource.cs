@@ -109,7 +109,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
     public static string IdFor(int lap) => string.Create(CultureInfo.InvariantCulture, $"{IdPrefix}{lap}");
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<MatchSummary>> ListMatchesAsync(MatchStatus? status, string? season, CancellationToken cancellationToken)
+    public Task<MatchList> ListMatchesAsync(MatchStatus? status, string? season, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow();
         var current = (int)((now - _start) / _lapLength) + 1;
@@ -123,7 +123,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
                 .Where(match => status is null || match.Status == status)
                 .Where(match => season is null || match.Season == season)
         ];
-        return Task.FromResult(matches);
+        return Task.FromResult(new MatchList(matches));
     }
 
     /// <inheritdoc />
