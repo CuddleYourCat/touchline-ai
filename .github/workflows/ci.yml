@@ -124,6 +124,36 @@ jobs:
           }
           if ($failed) { exit 1 }
 
+  images:
+    name: Build image (${{ matrix.image }})
+    # Pull requests only: the deploy jobs already build the images on main with
+    # ACR Tasks. This catches a broken Dockerfile (a project missing from the
+    # restore layer, say) before the merge instead of at deploy time.
+    # Build only: no Azure sign-in, no registry, nothing pushed.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: matchcentre
+            project: Touchline.MatchCentre
+          - image: simulator
+            project: Touchline.Simulator
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The runner's default builder is BuildKit, while ACR Tasks uses Docker's
+      # classic builder, so a classic-only quirk could still slip through.
+      - name: Build
+        run: >
+          docker build
+          --file src/${{ matrix.project }}/Dockerfile
+          --tag ${{ matrix.image }}:pr
+          .
+
   deploy:
     name: Deploy Match Centre
     # Only after both checks pass, and only for commits that reached main.
