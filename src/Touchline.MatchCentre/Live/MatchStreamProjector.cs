@@ -18,10 +18,20 @@ namespace Touchline.MatchCentre.Live;
 /// <param name="State">The match state after the event.</param>
 /// <param name="Notable">
 /// The notable moment the event triggered (ADR-046), or null. A minor one (a throw-in or goal
-/// kick) is reported here but puts no moment, card or line on the stream until the viewer
-/// filter (slice E2) decides who sees it.
+/// kick) is reported here but puts nothing in <paramref name="Messages"/>; see <paramref name="Minor"/>.
 /// </param>
-internal sealed record Projection(IReadOnlyList<LiveMessage> Messages, KeyMoment? Moment, MatchState State, NotableMoment? Notable = null);
+/// <param name="Overlay">The numbers an Analyst subtitle can use, taken after the event.</param>
+/// <param name="Minor">
+/// The minor moment's moment message and card (ADR-055), kept off the shared messages so the hub
+/// can send it to Analyst subscribers only. Null unless the notable moment is minor.
+/// </param>
+internal sealed record Projection(
+    IReadOnlyList<LiveMessage> Messages,
+    KeyMoment? Moment,
+    MatchState State,
+    OverlayContext Overlay,
+    NotableMoment? Notable = null,
+    MinorExtras? Minor = null);
 
 /// <summary>
 /// Turns a match's events, fed in order, into live stream messages: the event itself, the
@@ -158,10 +168,21 @@ internal sealed partial class MatchStreamProjector
             messages.Add(new LiveMessage(StreamEvents.FullTime, id, state));
         }
 
-        return new Projection(messages, moment, _state, notable);
+        var context = new OverlayContext(matchEvent.Shot?.ExpectedGoals, _state.Home.ExpectedGoals, _state.Away.ExpectedGoals);
+        return new Projection(messages, moment, _state, context, notable, MinorFor(notable));
     }
 
-    // The one place a moment becomes a card (ADR-047). A minor moment has no card yet. When
+    // A minor moment's moment message and card, off the shared stream (ADR-055). Its card follows
+    // the same quiet window as a notable one, and neither starts nor resets it.
+    private MinorExtras? MinorFor(NotableMoment? notable) =>
+        notable is { IsMinor: true } minor
+            ? new MinorExtras(
+                MomentViews.From(minor, _state.MatchId, commentary: null),
+                minor.Trigger.Sequence - _lastKeyCard <= NotableCardQuietEvents ? null : OverlayCardBuilder.For(minor, _state.MatchId))
+            : null;
+
+    // The one place a moment becomes a shared card (ADR-047). A minor moment's card is built in
+    // MinorFor, off the shared stream, because only the Analyst is sent it (ADR-055). When
     // milestones exist (skill shot 3), a milestone reached on this event replaces the notable
     // card here, so a first booking shows as a milestone and not as a plain yellow card.
     // A notable card is skipped when a key card went out within NotableCardQuietEvents events,
@@ -263,7 +284,7 @@ internal static class MomentViews
     /// <returns>The view. Its team is the side the moment is about, which for a corner is the side that wins it.</returns>
     public static MomentView From(NotableMoment moment, string matchId, CommentaryLine? commentary) =>
         new(MomentIds.For(matchId, moment.Trigger.Sequence),
-            MomentTier.Notable,
+            moment.IsMinor ? MomentTier.Minor : MomentTier.Notable,
             moment.Kind.ToString(),
             moment.Trigger.Sequence,
             ClockReading.From(moment.Trigger.Time),

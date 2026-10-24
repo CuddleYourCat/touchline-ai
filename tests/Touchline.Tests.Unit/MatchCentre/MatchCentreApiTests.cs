@@ -109,7 +109,7 @@ public class MatchCentreApiTests
     {
         var moments = await _client.GetFromJsonAsync<JsonElement>(Url($"/api/matches/{_match}/moments?mode=Analyst"));
 
-        moments.GetArrayLength().Should().Be(25);
+        moments.GetArrayLength().Should().Be(80, "25 key and notable moments plus 36 throw-ins and 19 goal kicks, which only the Analyst is sent");
         var key = moments.EnumerateArray().First(m => m.GetProperty("tier").GetString() == "Key");
         key.GetProperty("commentary").GetProperty("mode").GetString().Should().Be("Analyst");
     }

@@ -18,7 +18,13 @@ public enum MomentTier
     Key,
 
     /// <summary>A notable moment: yellow cards, corners, woodwork. Template commentary only.</summary>
-    Notable
+    Notable,
+
+    /// <summary>
+    /// A minor moment: a throw-in or a goal kick (ADR-055). Only an Analyst is sent it, with a low-priority
+    /// card and a template line.
+    /// </summary>
+    Minor
 }
 
 /// <summary>Where a line of commentary came from.</summary>

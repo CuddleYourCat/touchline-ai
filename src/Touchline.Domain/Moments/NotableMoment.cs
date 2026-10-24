@@ -48,8 +48,9 @@ public sealed record NotableMoment(
     string? PlayerTeam)
 {
     /// <summary>
-    /// True for a throw-in or a goal kick: it produces no card or line unless the viewer is the
-    /// Analyst. In slice E1 this is only carried; the viewer filter comes in E2.
+    /// True for a throw-in or a goal kick: it produces a moment, a low-priority card and a template
+    /// line for the Analyst only, and nothing at all for the Casual viewer (ADR-055). The
+    /// projector builds it on a side channel that the hub injects per subscriber.
     /// </summary>
     public bool IsMinor => Kind is NotableMomentKind.ThrowIn or NotableMomentKind.GoalKick;
 

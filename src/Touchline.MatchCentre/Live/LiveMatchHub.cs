@@ -46,7 +46,7 @@ internal sealed partial class LiveMatchHub
     private readonly EventBackfill _backfill;
     private readonly ILogger _logger;
     private readonly Lock _gate = new();
-    private readonly List<(long Sequence, IReadOnlyList<LiveMessage> Messages)> _history = [];
+    private readonly List<(long Sequence, Projected Projected)> _history = [];
     private readonly Dictionary<string, Arrival> _commentary = [];
     private readonly List<MatchEvent> _pending = [];
     private readonly SortedDictionary<long, MatchEvent> _held = [];
@@ -344,14 +344,21 @@ internal sealed partial class LiveMatchHub
 
         var due = best.Where(r => r.Arrived > after).OrderBy(r => r.Arrived).ToList();
         var next = 0;
-        foreach (var (sequence, messages) in _history)
+        foreach (var (sequence, projected) in _history)
         {
             if (sequence <= after)
             {
                 continue;
             }
 
-            backlog.AddRange(messages);
+            // Shaped for this viewer exactly as Broadcast shapes it, so a replay matches what the
+            // stream would have sent. An Analyst's minor line follows its moment.
+            backlog.AddRange(subscriber.Messages(projected));
+            if (subscriber.Choose(subscriber.MinorLinesFor(projected)) is { } minorLine)
+            {
+                backlog.Add(new LiveMessage(StreamEvents.Commentary, LiveMessage.IdFor(sequence), minorLine));
+            }
+
             for (; next < due.Count && due[next].Arrived <= sequence; next++)
             {
                 backlog.Add(new LiveMessage(StreamEvents.Commentary, LiveMessage.IdFor(sequence), due[next].Line));
@@ -499,7 +506,6 @@ internal sealed partial class LiveMatchHub
         var wasFullTime = _projector.State.FullTime;
         var projection = _projector.Apply(matchEvent);
         var messages = projection.Messages;
-        _history.Add((matchEvent.Sequence, messages));
         if (_projector.State.FullTime && !wasFullTime)
         {
             _fullTimeAt = _time.GetUtcNow();
@@ -518,7 +524,15 @@ internal sealed partial class LiveMatchHub
             }
         }
 
-        return new Projected(messages, lines);
+        // A minor moment's line is kept out of the commentary the hub holds, which a replay hands to
+        // any viewer: only an Analyst is sent it, from here (ADR-055).
+        IReadOnlyList<CommentaryLine> minorLines = projection.Notable is { IsMinor: true } minor
+            ? NotableLines.For(minor, MatchId)
+            : [];
+
+        var projected = new Projected(messages, lines, projection.Overlay, projection.Minor, minorLines);
+        _history.Add((matchEvent.Sequence, projected));
+        return projected;
     }
 
     private void Broadcast(long sequence, Projected? projected)
@@ -537,15 +551,27 @@ internal sealed partial class LiveMatchHub
                 continue;
             }
 
-            var wrote = projected.Messages.All(message => subscriber.Channel.Writer.TryWrite(message));
-            if (wrote && subscriber.Choose(projected.Lines) is { } line)
+            // The whole event is built first and written only if all of it fits. Every message of an
+            // event carries its sequence as the ID, so a half-written event would make a client
+            // that resumes after that ID lose the rest of it (the state, say). Ending the stream
+            // with none of it written leaves the client's last ID at the previous event.
+            List<LiveMessage> batch = [.. subscriber.Messages(projected)];
+            if (subscriber.Choose([.. projected.Lines, .. subscriber.MinorLinesFor(projected)]) is { } line)
             {
-                wrote = subscriber.Channel.Writer.TryWrite(new LiveMessage(StreamEvents.Commentary, LiveMessage.IdFor(sequence), line));
+                batch.Add(new LiveMessage(StreamEvents.Commentary, LiveMessage.IdFor(sequence), line));
             }
 
-            if (!wrote)
+            // Only this method writes (under the lock) and the reader can only free space, so a
+            // room check that passes means every TryWrite below succeeds.
+            if (_buffer - subscriber.Channel.Reader.Count < batch.Count)
             {
                 (overflowed ??= []).Add(subscriber);
+                continue;
+            }
+
+            foreach (var message in batch)
+            {
+                subscriber.Channel.Writer.TryWrite(message);
             }
         }
 
@@ -614,8 +640,14 @@ internal sealed partial class LiveMatchHub
     private readonly record struct Gap(long After, long Before);
 
     // What one event projected to: the shared messages, and the template lines (if any) from
-    // which each subscriber is sent the one that suits its viewer.
-    private sealed record Projected(IReadOnlyList<LiveMessage> Messages, IReadOnlyList<CommentaryLine> Lines);
+    // which each subscriber is sent the one that suits its viewer. The overlay numbers and the
+    // minor moment (with its template lines) are the Analyst-only side channel (ADR-055).
+    private sealed record Projected(
+        IReadOnlyList<LiveMessage> Messages,
+        IReadOnlyList<CommentaryLine> Lines,
+        OverlayContext Context,
+        MinorExtras? Minor,
+        IReadOnlyList<CommentaryLine> MinorLines);
 
     // A commentary line and the hub's sequence when it arrived.
     private sealed record Arrival(CommentaryLine Line, long Sequence);
@@ -623,6 +655,16 @@ internal sealed partial class LiveMatchHub
     private sealed class Subscriber(Viewer viewer, long? after, Channel<LiveMessage> channel)
     {
         public long? After { get; } = after;
+
+        // The minor moment's template lines for this viewer: the Analyst's, and nothing for anyone
+        // else (ADR-055). The other lines of an event are never minor, so Broadcast adds these to
+        // them and Replay, which takes the others from the held commentary, uses these alone.
+        public IReadOnlyList<CommentaryLine> MinorLinesFor(Projected projected) =>
+            viewer.Mode == ViewingMode.Analyst ? projected.MinorLines : [];
+
+        // The event's messages shaped for this viewer (ADR-055).
+        public IReadOnlyList<LiveMessage> Messages(Projected projected) =>
+            OverlayShaping.Apply(projected.Messages, projected.Context, projected.Minor, viewer);
 
         public Channel<LiveMessage> Channel { get; } = channel;
 

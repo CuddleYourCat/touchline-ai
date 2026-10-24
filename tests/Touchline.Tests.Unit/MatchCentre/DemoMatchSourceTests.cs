@@ -193,8 +193,11 @@ public class DemoMatchSourceTests
         var (analyst, _) = Viewer.Create(ViewingMode.Analyst, null, null, null, null, _ => true, _ => true);
         var late = await _source.FollowAsync("demo-1", 1000, analyst!, CancellationToken.None).ToListAsync();
 
-        late.Where(m => m.Event != StreamEvents.Commentary).Should().Equal(
-            early.SkipWhile(m => long.Parse(m.Id!, System.Globalization.CultureInfo.InvariantCulture) <= 1000).Where(m => m.Event != StreamEvents.Commentary));
+        // Overlay cards and moments are shaped per viewer too (ADR-055), so only the rest is shared.
+        static bool Shared(LiveMessage m) => m.Event is not (StreamEvents.Commentary or StreamEvents.Overlay or StreamEvents.Moment);
+
+        late.Where(Shared).Should().Equal(
+            early.SkipWhile(m => long.Parse(m.Id!, System.Globalization.CultureInfo.InvariantCulture) <= 1000).Where(Shared));
         late.Where(m => m.Event == StreamEvents.Commentary).Should().OnlyContain(m => ((CommentaryLine)m.Data).Mode == ViewingMode.Analyst);
     }
 

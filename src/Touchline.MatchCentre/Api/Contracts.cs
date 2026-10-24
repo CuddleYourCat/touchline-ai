@@ -194,7 +194,7 @@ public sealed record EventPage(IReadOnlyList<MatchEvent> Events, long? NextAfter
 /// A key or notable moment, with its commentary for the viewer.
 /// </summary>
 /// <param name="Id">The moment ID, <c>{matchId}:{sequence}</c>.</param>
-/// <param name="Tier">Key or notable.</param>
+/// <param name="Tier">Key, notable or minor.</param>
 /// <param name="Kind">What happened, as a key-moment or notable-moment kind name, such as <c>Goal</c>.</param>
 /// <param name="Sequence">The triggering event.</param>
 /// <param name="Clock">When it happened.</param>
@@ -260,7 +260,12 @@ public sealed record OverlayPayload(string Title, string? Subtitle, TeamSide? Te
 /// <param name="Type">The card type, such as <c>goal</c>, <c>card</c> or <c>milestone</c>.</param>
 /// <param name="DurationMs">How long to show it, in milliseconds.</param>
 /// <param name="Payload">What it shows.</param>
-public sealed record OverlayCard(string Id, ClockReading At, string Type, int DurationMs, OverlayPayload Payload);
+/// <param name="Priority">
+/// How much the card matters (ADR-055): <c>high</c> for a key moment, <c>normal</c> for a notable
+/// one and <c>low</c> for a minor one, which only the Analyst is sent. A client may use it to
+/// stack or fade cards, or ignore it.
+/// </param>
+public sealed record OverlayCard(string Id, ClockReading At, string Type, int DurationMs, OverlayPayload Payload, string? Priority = null);
 
 /// <summary>
 /// One player's modelled position (ADR-035), in metres on the pitch, to one decimal place.

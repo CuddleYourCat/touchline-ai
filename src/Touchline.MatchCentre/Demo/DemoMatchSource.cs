@@ -47,7 +47,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
     private readonly List<(int Index, NotableMoment Moment)> _notables = [];
     private readonly NotableMoment?[] _notableAt;
     private readonly NotableMomentDetector _notableDetector;
-    private readonly Dictionary<string, IReadOnlyList<LiveMessage>[]> _projections = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Projection[]> _projections = new(StringComparer.Ordinal);
     private readonly MatchMetadata _metadata;
     private readonly IReadOnlyList<PlayerSummary> _homeLineup;
     private readonly IReadOnlyList<PlayerSummary> _awayLineup;
@@ -100,7 +100,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
                 _moments.Add((i, moment));
                 _momentAt[i] = moment;
             }
-            else if (_notableDetector.DetectAfterKey(events[i], state) is { IsMinor: false } notableMoment)
+            else if (_notableDetector.DetectAfterKey(events[i], state) is { } notableMoment)
             {
                 _notables.Add((i, notableMoment));
                 _notableAt[i] = notableMoment;
@@ -169,7 +169,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
         IReadOnlyList<MomentView> moments =
         [
             .. _moments.Where(m => m.Index < lap.Played).Select(m => (m.Index, View: MomentViews.From(m.Moment, matchId, Commentary(m.Moment, matchId, viewer))))
-                .Concat(_notables.Where(n => n.Index < lap.Played).Select(n => (n.Index, View: MomentViews.From(n.Moment, matchId, Template(n.Moment, matchId, viewer)))))
+                .Concat(_notables.Where(n => n.Index < lap.Played && (!n.Moment.IsMinor || viewer.Mode == ViewingMode.Analyst)).Select(n => (n.Index, View: MomentViews.From(n.Moment, matchId, Template(n.Moment, matchId, viewer)))))
                 .OrderBy(entry => entry.Index)
                 .Select(entry => entry.View)
         ];
@@ -257,9 +257,10 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
 
     // One event's shared messages, then its commentary and overlay. Commentary depends on the
     // viewer, so it's added per follower rather than shared.
-    private IEnumerable<LiveMessage> MessagesAt(int index, IReadOnlyList<LiveMessage>[] projected, string matchId, Viewer viewer)
+    private IEnumerable<LiveMessage> MessagesAt(int index, Projection[] projected, string matchId, Viewer viewer)
     {
-        foreach (var message in projected[index])
+        var frame = projected[index];
+        foreach (var message in OverlayShaping.Apply(frame.Messages, frame.Overlay, frame.Minor, viewer))
         {
             yield return message;
         }
@@ -322,13 +323,14 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
             viewer.Mode,
             "en");
 
-    // A notable moment's template line in the viewer's mode and language (English when there is none).
+    // A notable moment's template line in the viewer's mode and language (English when there is
+    // none). A minor moment has none for a Casual viewer (ADR-055).
     private static CommentaryLine? Template(NotableMoment moment, string matchId, Viewer viewer) =>
-        CommentarySelection.Pick(NotableLines.For(moment, matchId), viewer.Mode, viewer.Language);
+        moment.IsMinor && viewer.Mode != ViewingMode.Analyst ? null : CommentarySelection.Pick(NotableLines.For(moment, matchId), viewer.Mode, viewer.Language);
 
     // The stream messages for each event of a lap, built once for all its followers. Only the
     // two newest laps are kept: the live one and the one just finished.
-    private IReadOnlyList<LiveMessage>[] MessagesFor(string matchId)
+    private Projection[] MessagesFor(string matchId)
     {
         lock (_projections)
         {
@@ -338,7 +340,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
             }
 
             var projector = new MatchStreamProjector(matchId, _detector, _teams, notable: _notableDetector);
-            var projected = _events.Select(e => projector.Apply(Relabel(e, matchId)).Messages).ToArray();
+            var projected = _events.Select(e => projector.Apply(Relabel(e, matchId))).ToArray();
             _projections[matchId] = projected;
 
             foreach (var stale in _projections.Keys.OrderByDescending(LapNumber).Skip(2).ToList())

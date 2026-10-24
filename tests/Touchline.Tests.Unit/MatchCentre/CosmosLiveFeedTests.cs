@@ -87,7 +87,10 @@ public class CosmosLiveFeedTests
             sent.Add(message);
         }
 
-        sent.Where(m => m.Event != StreamEvents.Commentary).Should().Equal(expected);
+        // The overlay cards are shaped for the viewer (ADR-055), so they are compared by ID.
+        sent.Where(m => m.Event is not (StreamEvents.Commentary or StreamEvents.Overlay)).Should().Equal(expected.Where(m => m.Event != StreamEvents.Overlay));
+        sent.Where(m => m.Event == StreamEvents.Overlay).Select(m => ((OverlayCard)m.Data).Id)
+            .Should().Equal(expected.Where(m => m.Event == StreamEvents.Overlay).Select(m => ((OverlayCard)m.Data).Id));
         sent.Count(m => m.Event == StreamEvents.Commentary).Should().Be(16, "one template line per notable moment, the best for the viewer");
         sent[^1].Event.Should().Be(StreamEvents.FullTime);
     }

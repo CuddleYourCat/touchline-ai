@@ -2509,7 +2509,8 @@
       "MomentTier": {
         "enum": [
           "Key",
-          "Notable"
+          "Notable",
+          "Minor"
         ],
         "description": "How much attention a moment gets. Key moments get the agents; notable moments get a\ntemplate line and no model call (backlog: the notable-moment tier)."
       },
@@ -2563,7 +2564,7 @@
             "description": "The moment ID, `{matchId}:{sequence}`."
           },
           "tier": {
-            "description": "Key or notable.",
+            "description": "Key, notable or minor.",
             "$ref": "#/components/schemas/MomentTier"
           },
           "kind": {
@@ -2812,6 +2813,13 @@
               }
             },
             "description": "What a broadcast overlay card shows."
+          },
+          "priority": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "How much the card matters (ADR-055): `high` for a key moment, `normal` for a notable\none and `low` for a minor one, which only the Analyst is sent. A client may use it to\nstack or fade cards, or ignore it."
           }
         },
         "description": "A timecoded card for a graphical overlay on a live feed."

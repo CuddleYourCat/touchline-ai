@@ -115,7 +115,7 @@ public static class NotableLines
                    matchId,
                    momentId,
                    moment.Trigger.Sequence,
-                   MomentTier.Notable,
+                   moment.IsMinor ? MomentTier.Minor : MomentTier.Notable,
                    CommentarySource.Template,
                    Text(moment, language),
                    mode,

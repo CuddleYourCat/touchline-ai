@@ -1512,3 +1512,29 @@ A recap pair whose model call fails stores nothing and completes the message, so
 - **A longer outage costs repeated calls,** up to five deliveries of the missing pairs. Calls that fail with 429 or 5xx aren't billed for tokens, and the OpenAI SDK already retries them with backoff inside each delivery.
 - **The redelivery is immediate** (an explicit abandon), so five deliveries can pass during an outage of a few minutes. Scheduled redelivery would need a send-later, which isn't worth it here.
 - **A plain network failure with no HTTP status** is classed as permanent, because the decision names status codes and timeouts only.
+
+---
+
+## ADR-055 — Shaping overlay cards and minor restarts for each viewer
+
+**Status:** Accepted · 24 Oct, lane E (builds on ADR-046, ADR-047)
+
+**Question**
+ADR-047 left viewer shaping to this slice: a Casual viewer wants a plain title and no minor cards, and an Analyst wants an xG subtitle and the throw-ins and goal kicks. The projection is shared by every viewer, so where does the difference live, and how do we keep a Casual viewer from ever receiving a minor card?
+
+**Decision**
+- **Minor cards travel on a side channel.** `MatchStreamProjector` builds a minor moment's moment message and card into an internal `MinorExtras` on its `Projection`, never into the shared `Messages`. The hub stores them beside each history entry and injects them for Analyst subscribers only, in both `Broadcast` and `Replay`. A Casual subscriber is never sent a byte of them. The minor template lines are held the same way and are kept out of the commentary the hub replays to any viewer.
+- **Quiet window:** a minor card neither starts nor resets the `NotableCardQuietEvents` window, and is itself skipped inside it. Its moment message and line are not skipped.
+- **A `priority` on the overlay card,** optional and additive: `high` for a key moment, `normal` for a notable one and `low` for a minor one. The UI may ignore it. A minor card shows for 2 s.
+- **One pure `OverlayShaping`,** used by the hub and by `DemoMatchSource`. Casual gets a friendly sentence-case title from a small map keyed by card type ("Goal!", "Big chance", "Off the woodwork"; any other type keeps the neutral title), no subtitle and no low-priority card; the Analyst keeps the broadcast-style title. Analyst gets `xG 0.34` (invariant culture) on a shot-based card; on any other card, the match xG (`xG 1.20 - 0.80`) only when the viewer's favourite metric is `xG` (case-insensitive), and nothing otherwise, so a metric is never invented. The ID, time and duration are kept so a client's de-duplication after a reconnect holds, and the neutral card is never changed.
+- **Minor moments are their own tier:** `MomentTier` gains `Minor` (additive), set on the moment message and the template line of a throw-in or a goal kick, so a client can tell it from a yellow card. The Analyst's `moments` endpoint (demo and Cosmos) includes them with their template line; Casual's does not.
+- **An event is written whole or not at all.** The hub builds a subscriber's full list for an event first and writes it only if the channel has room for all of it; otherwise it ends the stream before writing any of it. Every message of an event has the same ID, so a half-written event would make a client resuming after that ID lose the rest (the state, say).
+
+**Alternatives considered**
+- **A shared stream with a flag, filtered by the hub.** One projection and one history, but the minor card would sit in the shared messages and a missed filter would leak it, and it needs a new marker on the wire.
+- **No priority field,** with low priority shown only through a shorter duration. No contract change, but a client can't tell a minor card from a short notable one.
+
+**Trade-offs**
+- **The hub does a little work per subscriber per event** (a new message list when the event has an overlay or a minor moment; the shared list itself otherwise). It is small beside the channel writes.
+- **The match xG subtitle shows both sides' totals without names,** home first, because the card carries no team names. It is shown only to an Analyst who asked for xG.
+- **A Cosmos read model change:** `GetMomentsAsync` now depends on the viewer's mode for minor moments.

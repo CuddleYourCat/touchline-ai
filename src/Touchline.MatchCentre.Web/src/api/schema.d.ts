@@ -796,7 +796,7 @@ export interface components {
          *     template line and no model call (backlog: the notable-moment tier).
          * @enum {unknown}
          */
-        MomentTier: "Key" | "Notable";
+        MomentTier: "Key" | "Notable" | "Minor";
         /** @description How one window of a match tilted: which side was more dangerous (skill shot 2, match dynamics). */
         MomentumReading: {
             /** @description The half the window is in. */
@@ -822,7 +822,7 @@ export interface components {
         MomentView: {
             /** @description The moment ID, `{matchId}:{sequence}`. */
             id: string;
-            /** @description Key or notable. */
+            /** @description Key, notable or minor. */
             tier: components["schemas"]["MomentTier"];
             /** @description What happened, as a key-moment or notable-moment kind name, such as `Goal`. */
             kind: string;
@@ -923,6 +923,12 @@ export interface components {
                 /** @description The player it's about, or null. */
                 playerId: null | string;
             };
+            /**
+             * @description How much the card matters (ADR-055): `high` for a key moment, `normal` for a notable
+             *     one and `low` for a minor one, which only the Analyst is sent. A client may use it to
+             *     stack or fade cards, or ignore it.
+             */
+            priority?: null | string;
         };
         /** @description The detail of a pass (ADR-019, ADR-020). */
         PassDetail: {
