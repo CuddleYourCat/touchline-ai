@@ -90,6 +90,9 @@ public sealed class AgentTokenCaps
     /// <summary>The Producer's cap. Default 1,200.</summary>
     public int Producer { get; set; } = 1200;
 
+    /// <summary>The possession-summary writer's cap (ADR-056). Default 160.</summary>
+    public int Indexer { get; set; } = 160;
+
     /// <summary>The cap for an agent.</summary>
     /// <param name="agent">The agent.</param>
     /// <returns>Its output-token cap.</returns>
@@ -99,6 +102,7 @@ public sealed class AgentTokenCaps
         SquadAgent.Localiser => Localiser,
         SquadAgent.Analyst => Analyst,
         SquadAgent.Producer => Producer,
+        SquadAgent.Indexer => Indexer,
         _ => throw new ArgumentOutOfRangeException(nameof(agent), agent, "Unknown agent.")
     };
 }

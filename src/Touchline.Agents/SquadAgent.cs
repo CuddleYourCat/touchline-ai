@@ -17,7 +17,10 @@ public enum SquadAgent
     Analyst,
 
     /// <summary>Writes the full-time recap. Large model.</summary>
-    Producer
+    Producer,
+
+    /// <summary>Writes the search summaries of key-moment possessions at full time (ADR-056). Small model.</summary>
+    Indexer
 }
 
 /// <summary>
@@ -69,7 +72,7 @@ public static class SquadAgentChatOptions
     /// <returns><see cref="SquadModels.Small"/> or <see cref="SquadModels.Large"/>.</returns>
     public static string ModelFor(SquadAgent agent) => agent switch
     {
-        SquadAgent.Commentator or SquadAgent.Localiser => SquadModels.Small,
+        SquadAgent.Commentator or SquadAgent.Localiser or SquadAgent.Indexer => SquadModels.Small,
         SquadAgent.Analyst or SquadAgent.Producer => SquadModels.Large,
         _ => throw new ArgumentOutOfRangeException(nameof(agent), agent, "Unknown agent.")
     };

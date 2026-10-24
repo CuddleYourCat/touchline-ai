@@ -119,7 +119,7 @@ public sealed record MatchRecap(string MatchId, string Headline, string Text, Vi
 /// <summary>
 /// A possession sequence found by search (ADR-008).
 /// </summary>
-/// <param name="Id">The document ID, <c>{matchId}:{possessionId}</c>.</param>
+/// <param name="Id">The document key, <c>{matchId}_{possessionId}</c> (ADR-056: Azure AI Search keys cannot contain a colon).</param>
 /// <param name="MatchId">The match.</param>
 /// <param name="PossessionId">The possession within the match.</param>
 /// <param name="Team">The team in possession.</param>

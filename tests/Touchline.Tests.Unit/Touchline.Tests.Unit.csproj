@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\Touchline.Agents\Touchline.Agents.csproj" />
     <ProjectReference Include="..\..\src\Touchline.Domain\Touchline.Domain.csproj" />
     <ProjectReference Include="..\..\src\Touchline.MatchCentre\Touchline.MatchCentre.csproj" />
+    <ProjectReference Include="..\..\src\Touchline.Search\Touchline.Search.csproj" />
     <!-- Aliased: the Simulator, the Event Processor and the Match Centre each have a public top-level Program class (.NET 10). -->
     <ProjectReference Include="..\..\src\Touchline.Simulator\Touchline.Simulator.csproj" Aliases="simulator" />
     <ProjectReference Include="..\..\src\Touchline.EventProcessor\Touchline.EventProcessor.csproj" Aliases="processor" />

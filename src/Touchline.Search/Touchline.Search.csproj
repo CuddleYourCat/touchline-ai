@@ -3,10 +3,22 @@
   <!--
     Retrieval (ADR-008, ADR-026): the possession documents, their embeddings with
     text-embedding-3-small, and Azure AI Search with hybrid queries and semantic ranking. It
-    implements Touchline.Domain's IPossessionSearch. Empty until the search lane starts.
+    implements Touchline.Domain's IPossessionSearch. The shared foundation (document model, options, metrics) lives here; the indexer and query slices build on it.
   -->
 
   <ItemGroup>
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Azure.Search.Documents" />
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="OpenAI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The token-budget client, the roster guardrail and the squad options (ADR-043, ADR-044) are reused, not copied. -->
+    <ProjectReference Include="..\Touchline.Agents\Touchline.Agents.csproj" />
     <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
   </ItemGroup>
 

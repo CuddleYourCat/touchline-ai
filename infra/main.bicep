@@ -775,6 +775,10 @@ resource processorApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'servicebusrecaps__fullyQualifiedNamespace', value: serviceBusHost }
         { name: 'servicebusrecaps__credential', value: 'managedidentity' }
         { name: 'servicebusrecaps__clientId', value: processorIdentity.properties.clientId }
+        // The search indexer trigger's own connection (PossessionIndexFunction.ConnectionName, ADR-039).
+        { name: 'servicebussearch__fullyQualifiedNamespace', value: serviceBusHost }
+        { name: 'servicebussearch__credential', value: 'managedidentity' }
+        { name: 'servicebussearch__clientId', value: processorIdentity.properties.clientId }
         // Aspire's clients, keyless: DefaultAzureCredential picks the identity named by AZURE_CLIENT_ID.
         { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
         { name: 'Aspire__Azure__Messaging__ServiceBus__FullyQualifiedNamespace', value: serviceBusHost }

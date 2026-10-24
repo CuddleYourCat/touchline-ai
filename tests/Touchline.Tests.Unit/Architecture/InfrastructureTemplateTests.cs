@@ -27,9 +27,11 @@ public class InfrastructureTemplateTests
     {
         var triggers = ServiceBusTriggers();
 
-        triggers.Should().HaveCountGreaterThanOrEqualTo(2, "the commentary and the recaps each read a subscription");
+        triggers.Should().HaveCountGreaterThanOrEqualTo(3, "the commentary, the recaps and the search indexer each read a subscription");
         triggers.Select(t => t.Connection).Should().OnlyHaveUniqueItems();
         RecapFunction.ConnectionName.Should().NotBe(CommentaryFunction.ConnectionName);
+        PossessionIndexFunction.ConnectionName.Should().Be("servicebussearch").And.NotBe(RecapFunction.ConnectionName);
+        PossessionIndexFunction.SubscriptionName.Should().Be("search-index");
     }
 
     [Test]
@@ -51,9 +53,14 @@ public class InfrastructureTemplateTests
     {
         foreach (var trigger in ServiceBusTriggers())
         {
+            // A subscription's name is written out, or held in a var such as searchSubscriptionName.
+            var nameVar = Regex.Match(_template, $@"var (\w+) = '{Regex.Escape(trigger.SubscriptionName!)}'");
+            var nameForms = nameVar.Success
+                ? $"(?:'{Regex.Escape(trigger.SubscriptionName!)}'|{nameVar.Groups[1].Value})"
+                : $"'{Regex.Escape(trigger.SubscriptionName!)}'";
             var symbol = Regex.Match(
                 _template,
-                $@"resource (\w+) 'Microsoft\.ServiceBus/namespaces/topics/subscriptions@[^']+' = \{{\s*parent: \w+\s*name: '{Regex.Escape(trigger.SubscriptionName!)}'");
+                $@"resource (\w+) 'Microsoft\.ServiceBus/namespaces/topics/subscriptions@[^']+' = \{{\s*parent: \w+\s*name: {nameForms}");
             symbol.Success.Should().BeTrue("the {0} subscription is declared as its own resource", trigger.SubscriptionName);
 
             _template.Should().MatchRegex(
@@ -86,7 +93,7 @@ public class InfrastructureTemplateTests
             _template.Should().MatchRegex($@"resource {symbol} '[^']+' = if \(deploySquadModels\)", "a model quota failure mustn't block the rest (ADR-051)");
         }
 
-        foreach (var symbol in new[] { "commentaryReceiverForProcessor", "recapsReceiverForProcessor", "commentarySubscription", "recapsSubscription" })
+        foreach (var symbol in new[] { "commentaryReceiverForProcessor", "recapsReceiverForProcessor", "commentarySubscription", "recapsSubscription", "searchIndexReceiverForProcessor", "searchIndexSubscription" })
         {
             _template.Should().MatchRegex($@"resource {symbol} '[^']+' = \{{", "the Service Bus wiring deploys on every run");
         }

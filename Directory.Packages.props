@@ -28,6 +28,8 @@
     <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.10.0" />
     <!-- The agent squad (ADR-006, ADR-042, ADR-043): Agent Framework, Microsoft.Extensions.AI and the GA OpenAI SDK, with an Entra ID token. -->
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <!-- Lane C: possession search over Azure AI Search (ADR-039, ADR-040, ADR-057). -->
+    <PackageVersion Include="Azure.Search.Documents" Version="11.7.0" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.25.0" />
     <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.25.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.11.0" />

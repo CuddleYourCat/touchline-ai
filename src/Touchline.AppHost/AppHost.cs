@@ -16,6 +16,8 @@ keyMoments.AddServiceBusSubscription("key-moments-highlights", subscriptionName:
 // is also a Cosmos DB container, so the subscription gets a prefixed resource name too.
 var matchFinished = serviceBus.AddServiceBusTopic("match-finished");
 matchFinished.AddServiceBusSubscription("match-finished-recaps", subscriptionName: "recaps");
+// The search indexer's subscription (ADR-039); main.bicep creates it whether or not Search is deployed.
+matchFinished.AddServiceBusSubscription("match-finished-search-index", subscriptionName: "search-index");
 
 // The Cosmos DB emulator, with its Data Explorer, so stored events can be browsed locally.
 var cosmos = builder.AddAzureCosmosDB("cosmos").RunAsEmulator(emulator => emulator.WithDataExplorer());
@@ -46,7 +48,9 @@ var eventProcessor = builder.AddAzureFunctionsProject<Projects.Touchline_EventPr
     .WithReference(serviceBus).WaitFor(serviceBus)
     // The recap trigger has its own connection name (RecapFunction.ConnectionName), the same
     // namespace under a second name, as in main.bicep.
-    .WithReference(serviceBus, connectionName: "servicebusrecaps");
+    .WithReference(serviceBus, connectionName: "servicebusrecaps")
+    // The search indexer trigger (PossessionIndexFunction.ConnectionName), a third name for the same namespace.
+    .WithReference(serviceBus, connectionName: "servicebussearch");
 
 // The squad's model settings (ADR-043), passed through only when set in the AppHost's
 // configuration (user secrets or environment), so a machine with no Foundry still runs the

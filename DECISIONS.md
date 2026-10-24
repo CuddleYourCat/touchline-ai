@@ -1515,6 +1515,56 @@ A recap pair whose model call fails stores nothing and completes the message, so
 
 ---
 
+## ADR-056 — How a possession document is cut and summarised
+
+**Status:** Accepted · 24 Oct, lane C (builds on ADR-008, ADR-039, ADR-040 and ADR-052)
+
+**Question**
+How does the indexer turn stored match events into possession documents, and what happens when the model that writes a summary fails?
+
+**Decision**
+- **Cutting:** group the stored events by the simulator's `PossessionId`, in `Sequence` order. There is no re-segmentation. Groups with no on-ball events are skipped. The clock range and `fromSeconds` come from the group's first and last events. `players` are the distinct roster names. `endedIn` comes from the last event: a key moment (by the moment detector) if there is one, otherwise turnover, out, foul and so on.
+- **Document key:** `{matchId}_{possessionId}`, not the `{matchId}:{possessionId}` written in ADR-008 and ADR-039. Azure AI Search keys allow only letters, digits, `_`, `-` and `=`, so a colon is rejected. The possession ID is a number, so the last underscore splits the key unambiguously, and a redelivered message still rewrites the same documents. `PossessionDocument.KeyFor` rejects a match ID with any other character. `PossessionHit.Id` is this key.
+- **`fromSeconds`:** the clock in seconds in the first half, plus 3,600 in the second half. First-half added time can show a clock past 45:00, so a plain clock would not sort or tell the halves apart. `ToHit` reads the period back from it.
+- **Summary:** a deterministic template for every possession (team, clock range, passing chain with the first 6 and last 3 players for long moves, outcome), capped at about 120 tokens. For possessions that end in a key moment, the small chat model writes the summary through the token-budget client and the roster guardrail, for at most `MaxModelSummariesPerMatch` (20) per match.
+- **Summary failures never cost a redelivery.** A model error, a guardrail miss, a blown budget or the cap means that possession keeps its template text and indexing carries on. Each is counted on `search.fallback` with the reason `summary_model_failed`, `summary_guardrail`, `summary_budget` or `summary_cap`.
+- **Embeddings:** one batch call per match. If it fails, the message is abandoned for redelivery (at most 3, ADR-052) and then dead-lettered. Documents are never indexed without vectors.
+- **Redeliveries pay for no model calls (added in review).** The function passes the Service Bus delivery count to the writer. On any delivery after the first (for example after an embedding failure), no model summaries are written and every possession uses its template text, counted once on `search.fallback` as `summary_redelivery`. Without this, a redelivery would repeat up to 20 paid calls.
+- **Model summaries run with bounded concurrency** (`MaxSummaryConcurrency`, default 4). The `MaxModelSummariesPerMatch` candidates are chosen up front, goals and penalties first, so the cap is exact; `summary_cap` is counted once per match with the number of possessions skipped.
+- **The summary call has its own agent,** `SquadAgent.Indexer` on the small model, with its own output cap (`Squad:MaxOutputTokens:Indexer`, default 160), so its tokens are not billed to the Commentator.
+- **Lane H integration point:** player names come from `ITeamProfiles`, whose default is the embedded catalogue. Lane H registers an implementation over the fan-built teams store before `AddPossessionIndexer` (the indexer uses `TryAdd`), and fan teams then get named players in the index.
+
+**Alternatives considered**
+- **Template only.** Cheapest and fully predictable, but the text for the moments fans ask about most is flat.
+- **The model for every possession.** Richest text, but 150-250 calls a match for little gain on routine play.
+- **Abandon the message on a summary model error.** Keeps all text model-written, but an outage holds up indexing for the whole match.
+
+**Trade-offs**
+- **Routine possessions read like templates,** so semantic matching leans on the key-moment ones for "why" questions.
+- **Up to 20 small-model calls a match** are added to the full-time cost, bounded by the cap and the token budget.
+- **`fromSeconds` is not a plain clock,** so anything reading it must go through `PossessionDocument`.
+
+---
+
+## ADR-057 — Where the search code lives
+
+**Status:** Accepted · 24 Oct, lane C (builds on ADR-039, ADR-041 and ADR-056)
+
+**Question**
+Which project holds the search code, and how do the two apps that use it behave when Search isn't deployed?
+
+**Decision**
+- **One `Touchline.Search` project** holds the document model, the summariser, the embedding wiring, the indexer (write) and `AzurePossessionSearch` (read, implementing `IPossessionSearch`). The Event Processor and the Match Centre both reference it.
+- **Registrations are no-ops when `Search:Endpoint` is unset** (`PossessionSearchOptions.IsConfigured`). In the Event Processor a null indexer is registered, so the `search-index` trigger still binds and completes its message. In the Match Centre no `IPossessionSearch` is registered, so the Analyst has no search tool and answers from events and moments as it does today.
+- **The query side (C3) is wired into the Analyst now,** gated on that configuration, not left for integration day.
+
+**Alternatives considered**
+- **Split indexing and query into two projects.** Cleaner dependencies, but the document model and options would need a third project, for a library of a few files.
+- **Wire C3 on integration day.** Avoids touching the Analyst while lane D is still moving, but leaves the retrieval path unproven until the last day.
+
+**Trade-offs**
+- **The Match Centre carries the write code** (and the processor the read code) even though each uses half. The cost is a slightly larger assembly.
+- **An unconfigured Search is silent by design,** so a deploy without Search works. The cost is that a missing setting only shows up as an absent tool, so each host should log at start-up which mode it is in.
 ## ADR-053 — Edit keys in the browser
 
 **Status:** Accepted · 24 Oct, lane A (builds on ADR-031)

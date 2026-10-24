@@ -36,4 +36,8 @@ builder.Services.AddLiveCommentary(builder.Configuration);
 // writes nothing, and the Match Centre serves the template recap.
 builder.Services.AddFullTimeRecaps();
 
+// The possession indexer on the same topic (ADR-039, ADR-057). Without Search:Endpoint it is a
+// no-op that completes its messages.
+builder.Services.AddPossessionIndexer(builder.Configuration);
+
 await builder.Build().RunAsync();
