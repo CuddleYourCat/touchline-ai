@@ -70,6 +70,21 @@ public static class TeamProfileCatalog
 
     private static void Validate(TeamProfile profile, string source)
     {
+        var problems = Problems(profile);
+        if (problems.Count > 0)
+        {
+            throw new InvalidDataException($"Team profile '{source}' is invalid: {string.Join("; ", problems)}.");
+        }
+    }
+
+    /// <summary>
+    /// Everything wrong with a profile, by the same rules the embedded catalog is held to. The
+    /// fan team builder (ADR-050) uses it too, so a fan team meets exactly the built-ins' bar.
+    /// </summary>
+    /// <param name="profile">The profile.</param>
+    /// <returns>The problems, in plain words; empty when the profile is usable.</returns>
+    internal static IReadOnlyList<string> Problems(TeamProfile profile)
+    {
         var problems = new List<string>();
 
         // JSON can leave non-nullable strings null, so check them here, where the source is known.
@@ -81,7 +96,7 @@ public static class TeamProfileCatalog
         // "required" only checks a property is present; an explicit null still gets through.
         if (profile.Squad is null || profile.Tendencies is null || profile.Colours is null)
         {
-            throw new InvalidDataException($"Team profile '{source}' is invalid: squad, tendencies and colours must all be present.");
+            return ["squad, tendencies and colours must all be present"];
         }
 
         foreach (var (player, index) in profile.Squad.Select((p, i) => (p, i)))
@@ -121,10 +136,7 @@ public static class TeamProfileCatalog
             }
         }
 
-        if (problems.Count > 0)
-        {
-            throw new InvalidDataException($"Team profile '{source}' is invalid: {string.Join("; ", problems)}.");
-        }
+        return problems;
     }
 
     // The traits of ADR-019. Top speeds are checked against a human range, so a value in m/s

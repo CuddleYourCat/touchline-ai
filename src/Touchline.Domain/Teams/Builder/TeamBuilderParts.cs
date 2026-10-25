@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Touchline.Domain.Teams.Builder;
 
 // The parts a fan builds a team from (ADR-031). Archetypes and manager styles stand in for raw
@@ -178,4 +180,43 @@ public static class SquadRules
         (PlayerPosition.Midfielder, 3),
         (PlayerPosition.Forward, 3)
     ];
+
+    /// <summary>Every fan team's ID starts with this, so it never collides with a built-in team.</summary>
+    public const string FanIdPrefix = "fan-";
+
+    /// <summary>
+    /// Finds everything wrong with a squad's size, shirt numbers and positions. Names, IDs and
+    /// archetypes are checked elsewhere.
+    /// </summary>
+    /// <param name="squad">Each player's shirt number and position.</param>
+    /// <returns>The problems, in plain words; empty when the squad meets the rules.</returns>
+    public static IReadOnlyList<string> Problems(IReadOnlyList<(int ShirtNumber, PlayerPosition Position)> squad)
+    {
+        ArgumentNullException.ThrowIfNull(squad);
+        var problems = new List<string>();
+
+        if (squad.Count is < MinPlayers or > MaxPlayers)
+        {
+            problems.Add(string.Create(CultureInfo.InvariantCulture, $"A squad has {MinPlayers} to {MaxPlayers} players; this one has {squad.Count}."));
+        }
+
+        problems.AddRange(squad
+            .Where(p => p.ShirtNumber is < MinShirtNumber or > MaxShirtNumber)
+            .Select(p => string.Create(CultureInfo.InvariantCulture, $"Shirt number {p.ShirtNumber} isn't {MinShirtNumber} to {MaxShirtNumber}.")));
+        problems.AddRange(squad
+            .GroupBy(p => p.ShirtNumber)
+            .Where(g => g.Count() > 1)
+            .Select(g => string.Create(CultureInfo.InvariantCulture, $"Shirt number {g.Key} is used more than once.")));
+
+        foreach (var (position, minimum) in MinimumByPosition)
+        {
+            var count = squad.Count(p => p.Position == position);
+            if (count < minimum)
+            {
+                problems.Add(string.Create(CultureInfo.InvariantCulture, $"A squad needs at least {minimum} of position {position}; this one has {count}."));
+            }
+        }
+
+        return problems;
+    }
 }

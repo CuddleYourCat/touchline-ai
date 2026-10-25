@@ -1,5 +1,6 @@
 using Touchline.Domain.Matches;
 using Touchline.Domain.Officials;
+using Touchline.Domain.Teams.Builder;
 
 namespace Touchline.Simulator.Engine;
 
@@ -38,4 +39,15 @@ public sealed record MatchOptions
     /// before the starting eleven is picked. Empty by default.
     /// </summary>
     public IReadOnlySet<string> Unavailable { get; init; } = new HashSet<string>();
+
+    /// <summary>
+    /// The home team's chosen eleven and bench (ADR-032, ADR-050), or null for the engine's
+    /// default 1-4-3-3 pick. The engine plays the eleven; the bench is stored but not yet played.
+    /// The sheet must pass <see cref="MatchdaySheetRules"/> against the home squad and
+    /// <see cref="Unavailable"/>.
+    /// </summary>
+    public MatchdaySheet? HomeSheet { get; init; }
+
+    /// <summary>The away team's chosen eleven and bench, or null for the default pick. See <see cref="HomeSheet"/>.</summary>
+    public MatchdaySheet? AwaySheet { get; init; }
 }

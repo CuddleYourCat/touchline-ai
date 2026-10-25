@@ -3,6 +3,7 @@ using Touchline.Domain.Matches;
 using Touchline.Domain.Officials;
 using Touchline.Domain.Pitch;
 using Touchline.Domain.Teams;
+using Touchline.Domain.Teams.Builder;
 using static Touchline.Simulator.Engine.EngineTuning;
 
 namespace Touchline.Simulator.Engine;
@@ -31,6 +32,8 @@ public sealed partial class MatchSimulator
     private readonly int _seed;
     private readonly RefereeProfile _referee;
     private readonly MatchMetadata _metadata;
+    private readonly MatchdaySheet? _homeSheet;
+    private readonly MatchdaySheet? _awaySheet;
 
     /// <summary>
     /// Sets up a match.
@@ -38,13 +41,20 @@ public sealed partial class MatchSimulator
     /// <param name="home">The home team, attacking towards X = 105. The match is played at its venue.</param>
     /// <param name="away">The away team, attacking towards X = 0.</param>
     /// <param name="seed">Random seed. The same seed and options replay the same match.</param>
-    /// <param name="options">Match ID, kick-off, referee and the kind of match. All optional.</param>
-    /// <exception cref="ArgumentException">The options describe an invalid match, for example a fixture without a season.</exception>
+    /// <param name="options">Match ID, kick-off, referee, the kind of match and the team sheets. All optional.</param>
+    /// <exception cref="ArgumentException">
+    /// The options describe an invalid match, for example a fixture without a season, or a team
+    /// sheet that breaks <see cref="MatchdaySheetRules"/>.
+    /// </exception>
     public MatchSimulator(TeamProfile home, TeamProfile away, int seed, MatchOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(home);
         ArgumentNullException.ThrowIfNull(away);
         options ??= new MatchOptions();
+
+        // Checked against the full squad, so a sheet naming an unavailable player says so.
+        _homeSheet = CheckedSheet(home, options.HomeSheet, options.Unavailable, nameof(MatchOptions.HomeSheet));
+        _awaySheet = CheckedSheet(away, options.AwaySheet, options.Unavailable, nameof(MatchOptions.AwaySheet));
 
         _home = Available(home, options.Unavailable);
         _away = Available(away, options.Unavailable);
@@ -54,8 +64,8 @@ public sealed partial class MatchSimulator
 
         // Built here rather than when play starts, so invalid options fail at once.
         _metadata = new MatchMetadata(
-            Sheet(_home),
-            Sheet(_away),
+            Sheet(_home, _homeSheet),
+            Sheet(_away, _awaySheet),
             _home.Venue,
             options.KickOffUtc ?? DefaultKickOffUtc,
             seed,
@@ -76,7 +86,7 @@ public sealed partial class MatchSimulator
     /// <returns>
     /// Every event of the match, in sequence order: the match metadata, then kick-off to full time.
     /// </returns>
-    public IEnumerable<MatchEvent> Play() => new Run(_home, _away, _seed, MatchId, _referee, _metadata).Events();
+    public IEnumerable<MatchEvent> Play() => new Run(_home, _away, _homeSheet, _awaySheet, _seed, MatchId, _referee, _metadata).Events();
 
     // A squad without its unavailable players. The engine picks the eleven from whoever is left.
     private static TeamProfile Available(TeamProfile team, IReadOnlySet<string> unavailable)
@@ -87,8 +97,26 @@ public sealed partial class MatchSimulator
             : throw new ArgumentException($"{team.Name} has only {squad.Count} players available, and a team needs 11.", nameof(unavailable));
     }
 
-    private static TeamSheet Sheet(TeamProfile team) =>
-        new(team.Id, team.Name, team.ShortName, Lineup.StartingEleven(team).Select(p => p.Id).ToList());
+    // A chosen sheet is checked here, defensively: the Match Centre checks it too, but the
+    // engine must never play an eleven it can't stand behind (ADR-050). The rules are the
+    // shared MatchdaySheetRules, so the two checks can't drift apart.
+    private static MatchdaySheet? CheckedSheet(TeamProfile team, MatchdaySheet? sheet, IReadOnlySet<string> unavailable, string option)
+    {
+        if (sheet is null)
+        {
+            return null;
+        }
+
+        // GroupBy rather than ToDictionary, so a squad with a repeated ID can't throw here.
+        var squad = team.Squad.GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.First().Position);
+        var problems = MatchdaySheetRules.Problems(sheet, squad, unavailable);
+        return problems.Count == 0
+            ? sheet
+            : throw new ArgumentException($"{team.Name}'s team sheet is invalid: {string.Join(" ", problems)}", option);
+    }
+
+    private static TeamSheet Sheet(TeamProfile team, MatchdaySheet? sheet) =>
+        new(team.Id, team.Name, team.ShortName, Lineup.StartingEleven(team, sheet).Select(p => p.Id).ToList());
 
     // A replay must never share its fixture's ID, or its stored documents would overwrite the
     // fixture's (ADR-021). By default it's named after the fixture and its own seed.
@@ -138,13 +166,13 @@ public sealed partial class MatchSimulator
         // A completed high pass into the box: the next action can be a header (ADR-020).
         private bool _crossArrived;
 
-        public Run(TeamProfile home, TeamProfile away, int seed, string matchId, RefereeProfile referee, MatchMetadata metadata)
+        public Run(TeamProfile home, TeamProfile away, MatchdaySheet? homeSheet, MatchdaySheet? awaySheet, int seed, string matchId, RefereeProfile referee, MatchMetadata metadata)
         {
             _random = new SeededRandom(seed);
             _matchId = matchId;
             _referee = referee;
             _metadata = metadata;
-            _lineups = new() { [TeamSide.Home] = new Lineup(home), [TeamSide.Away] = new Lineup(away) };
+            _lineups = new() { [TeamSide.Home] = new Lineup(home, homeSheet), [TeamSide.Away] = new Lineup(away, awaySheet) };
         }
 
         public IEnumerable<MatchEvent> Events()

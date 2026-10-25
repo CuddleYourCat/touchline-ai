@@ -39,6 +39,14 @@ public class MatchdaySheetRulesTests
         MatchdaySheetRules.Problems(new MatchdaySheet([.. _eleven[..10], "p99"], []), _squad).Should().Contain(p => p.Contains("'p99' isn't in the squad"));
 
     [Test]
+    public void A_null_or_blank_player_is_reported_rather_than_thrown()
+    {
+        var sheet = new MatchdaySheet([.. _eleven[..10], null!], ["  "]);
+
+        MatchdaySheetRules.Problems(sheet, _squad).Should().ContainSingle(p => p == "The sheet names an empty player.");
+    }
+
+    [Test]
     public void A_starter_cannot_also_be_a_substitute() =>
         MatchdaySheetRules.Problems(new MatchdaySheet(_eleven, ["p3"]), _squad).Should().Contain(p => p.Contains("'p3' is named more than once"));
 

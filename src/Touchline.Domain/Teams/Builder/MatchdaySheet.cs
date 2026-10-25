@@ -50,12 +50,19 @@ public static class MatchdaySheetRules
             problems.Add(string.Create(CultureInfo.InvariantCulture, $"There are {substitutes.Count} substitutes; the most is {MaxSubstitutes}."));
         }
 
-        var named = starters.Concat(substitutes).ToList();
+        // A null ID would make the dictionary lookups below throw, so it's a problem like any other.
+        var allNamed = starters.Concat(substitutes).ToList();
+        if (allNamed.Any(string.IsNullOrWhiteSpace))
+        {
+            problems.Add("The sheet names an empty player.");
+        }
+
+        var named = allNamed.Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
         problems.AddRange(named.Where(id => !squad.ContainsKey(id)).Distinct().Select(id => $"Player '{id}' isn't in the squad."));
         problems.AddRange(named.GroupBy(id => id).Where(g => g.Count() > 1).Select(g => $"Player '{g.Key}' is named more than once."));
         problems.AddRange(named.Where(id => unavailable?.Contains(id) == true).Distinct().Select(id => $"Player '{id}' isn't available for this match."));
 
-        var keepers = starters.Count(id => squad.TryGetValue(id, out var position) && position == PlayerPosition.Goalkeeper);
+        var keepers = starters.Count(id => !string.IsNullOrWhiteSpace(id) && squad.TryGetValue(id, out var position) && position == PlayerPosition.Goalkeeper);
         if (keepers != 1)
         {
             problems.Add(string.Create(CultureInfo.InvariantCulture, $"The starting eleven needs exactly one goalkeeper, not {keepers}."));

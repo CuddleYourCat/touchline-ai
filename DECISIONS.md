@@ -1259,6 +1259,40 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 
 ---
 
+## ADR-050 — Fan teams in the engine: archetype ratings, team sheets and starting the job
+
+**Status:** Accepted · 24 Oct, lane H (builds on ADR-031 and ADR-032)
+
+**Question**
+ADR-031 makes fan players archetypes and managers styles, and ADR-032 lets a fan pick the eleven. How does a fan team become something the seeded engine can play without leaving its calibrated ranges, how does the engine take a chosen eleven without changing any match played without one, and how does the Match Centre start that match on the pipeline without running up cost?
+
+**Decision**
+- **A static archetype table.** Each `PlayerArchetype` maps to fixed `Finishing`, `Passing`, `Discipline`, `TopSpeedKmh` and a plain-words role, and each `ManagerStyle` to fixed tendencies (ADR-014). **Every value lies within the min and max of that trait across the built-in profiles**, for players per position. A unit test recomputes those bounds from the catalog, so it follows any edit to the built-ins. Penalty aim and dive bias are null: the league average (ADR-020). Ratings never appear in the API.
+- **A pure builder.** `FanTeamProfiles.Build(FanTeamSpec)` in `Touchline.Domain/Teams/Builder` turns a fan team (names, colours, venue, a manager with a style, players with an ID, name, shirt number, foot and archetype) into a `TeamProfile`, and holds it to the catalog's own checks (`TeamProfileCatalog.Problems`, shared with the embedded profiles). It also enforces the fan-team rules defensively: an ID starting `fan-`, and `SquadRules.Problems` (14 to 25 players, distinct shirt numbers from 1 to 99, the minimum per position). It knows nothing of Cosmos DB or the Match Centre, which maps its stored team onto the spec.
+- **The chosen eleven goes on `MatchOptions`** as `HomeSheet` and `AwaySheet` (a `MatchdaySheet`, null by default). The engine checks a sheet with `MatchdaySheetRules` (11 distinct squad players, exactly one goalkeeper, none unavailable) and refuses a bad one with an `ArgumentException`. It plays the eleven in line order (goalkeeper, defenders, midfielders, forwards), keeping the sheet's order within each line, so set-piece and penalty takers keep their rule (the first midfielder or forward on the pitch) and the metadata's `TeamSheet` lists the keeper first. The formation is derived from that list (`MatchdaySheetRules.Formation`), as the shape model already does. The bench is stored, not played. The bench never leaves the engine: it's carried by the match request (H3) and shown from there, not from the event stream.
+- **No sheet means no change.** The default 1-4-3-3 pick is untouched, and a golden test pins the SHA-256 of three seeded matches' serialised event streams, computed on `main` before this change.
+- **Starting the job** (built in H3/H4): the Match Centre calls the Container Apps job Start API, passing only the match request ID (its role scoped to that one job); the job reads the request from a `match-requests` Cosmos DB container.
+- **Limits** (built in H3/H4): 5 a day is an ETag-guarded day counter document; the one-live check is the latest request's status, with a lease expiry just beyond the job's replica timeout. An `Idempotency-Key` maps to a deterministic request document ID; a start that fails marks the request failed and refunds the day's slot.
+
+**Alternatives considered**
+- **Reorder the squad instead of a sheet**, so the default picker takes the chosen players first. No engine change, but the eleven is then implied by an order, the 1-4-3-3 shape is forced, and a 5-4-1 can't be expressed.
+- **Copy a template built-in player's traits** for each archetype. Realistic by construction, but a fan team would carry a built-in player's quirks, and an edit to a built-in squad would quietly change every fan team.
+- **A Service Bus queue the job reads.** Decouples the Match Centre from the job, but adds a namespace, a scaler and a dead-letter path to look after, for at most five matches a day.
+- **A simple counter with no idempotency or refund.** Less code, but a double-click spends two of the day's five slots, and a start that fails spends one for nothing.
+
+**Trade-offs**
+- **Tables are coarse.** Every poacher is the same poacher; fans choose a type, not a player. That is the point (ADR-031), but it limits variety within a squad.
+- **The bounds follow the two built-in squads.** They're narrow, so the styles differ less than their names suggest. A third built-in profile would widen them, and the test would follow. Over 150 seeded matches of one fan squad against North Bank FC:
+  - **Pressing** shows clearly: High press closes down on 33% of the opponent's actions, Counter on 21%.
+  - **Directness** shows clearly: Direct and Counter go long on 24% of passes, Possession on 19%.
+  - **Width** (0.5 to 0.7) barely shows: a pass moves 8.2 m across the pitch under High press against 7.6 m under Counter.
+  - **Shot appetite** (0.50 to 0.55) barely shows: Direct shoots about 6% more often per action than Counter.
+  - **Balanced and Possession play almost alike.** They differ only in directness (0.5 against 0.4) and by 0.02 in shot appetite.
+- **The metadata carries no formation field.** Consumers derive it from the eleven's positions; adding one would change every stored event, including the default path.
+- **Calibration is checked for two extremes, not every team.** Over 200 seeded matches each against North Bank FC, an all-poacher high-press side and an all-defensive counter side both sit near 2.6 goals and 2.5 to 2.6 xG a match, well inside the bands. Other combinations are assumed to fall between them.
+
+---
+
 ## ADR-033 — Match Centre UI: project layout, type generation and build
 
 **Status:** Accepted · 22 Oct, lane A

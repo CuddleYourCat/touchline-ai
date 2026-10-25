@@ -1,11 +1,13 @@
 using Touchline.Domain.Pitch;
 using Touchline.Domain.Teams;
+using Touchline.Domain.Teams.Builder;
 
 namespace Touchline.Simulator.Engine;
 
 /// <summary>
-/// The eleven players a team starts with, and who is still on the pitch. Picks the starting
-/// eleven in squad order: one goalkeeper, four defenders, three midfielders, three forwards.
+/// The eleven players a team starts with, and who is still on the pitch. Plays the team sheet
+/// when one is given (ADR-050); otherwise picks the starting eleven in squad order: one
+/// goalkeeper, four defenders, three midfielders, three forwards.
 /// </summary>
 internal sealed class Lineup
 {
@@ -29,18 +31,37 @@ internal sealed class Lineup
     private readonly List<Player> _onPitch;
     private readonly HashSet<string> _booked = [];
 
-    public Lineup(TeamProfile team)
+    public Lineup(TeamProfile team, MatchdaySheet? sheet = null)
     {
         Team = team;
-        _onPitch = [.. StartingEleven(team)];
+        _onPitch = [.. StartingEleven(team, sheet)];
     }
 
     /// <summary>
     /// The eleven who start, goalkeeper first. It's the one definition used both for play and
     /// for the metadata's team sheet, so the two can't disagree.
     /// </summary>
-    public static IReadOnlyList<Player> StartingEleven(TeamProfile team)
+    /// <remarks>
+    /// A sheet's eleven is put in line order (goalkeeper, defenders, midfielders, forwards),
+    /// keeping the sheet's order within each line. That order picks the set-piece and penalty
+    /// takers, as it does for the default pick, and keeps the goalkeeper first, which readers
+    /// of the metadata rely on. The caller has already checked the sheet against
+    /// <see cref="MatchdaySheetRules"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentException">The sheet names a player who isn't in the squad.</exception>
+    public static IReadOnlyList<Player> StartingEleven(TeamProfile team, MatchdaySheet? sheet = null)
     {
+        if (sheet is not null)
+        {
+            // OrderBy is a stable sort, so players in the same line keep the sheet's order.
+            return
+            [
+                .. sheet.StartingEleven
+                    .Select(id => team.FindPlayer(id) ?? throw new ArgumentException($"Player '{id}' isn't in {team.Name}'s squad.", nameof(sheet)))
+                    .OrderBy(p => p.Position)
+            ];
+        }
+
         var eleven = _shape
             .SelectMany(slot => team.Squad.Where(p => p.Position == slot.Position).Take(slot.Count))
             .ToList();
