@@ -1803,3 +1803,50 @@ ADR-031 sends every fan-supplied name through Azure AI Content Safety and a bloc
 **As built: no abbreviations on the blocklist (25 Oct, Tracey's call)**
 - **Real clubs' abbreviations are no longer on the blocklist,** which replaces ADR-032's review fix ("the blocklist gains real clubs' abbreviations"). Broadcasters use different codes for the same club, so there's no agreed set to block, and a three-letter list would keep refusing fans hunting for a short name. Short names and crest initials still go to the guard as `Abbreviation` and are still checked by Content Safety for abuse; only the blocklist match is gone.
 - **The trade-off:** a fan team can use a real club's initials on its scoreboard or crest. The full name, nicknames and ground are still blocked, initials rarely identify a club on their own, and fan teams are labelled as fan-made.
+
+## ADR-059 — Wiping the stored matches before judging
+
+**Status:** Accepted · 25 Oct, Tracey's call
+
+**Question**
+Every smoke test left a match in Cosmos DB, so the Match Centre's list is full of test runs. How should the stored data be cleared before the judges see it, and what goes?
+
+**Decision**
+- **Everything built from a match goes:** `matches`, `events`, `commentary`, `recaps`, the season projections (`player-matches`, `player-seasons`), the Search `possessions` index, and the change feed `leases`. The fan side goes too: `teams` (with the edit keys used in testing) and `match-requests` (rosters and the day counters). The demo match is a recording, so the list is never empty.
+- **The containers are deleted and recreated, not emptied.** `deploy.ps1 -Action wipe-data` refuses while a simulator execution is running, asks for the resource group name, stops the processor, deletes the containers and the index through the control plane, redeploys (which recreates them from `main.bicep`), recreates the index, starts the processor again, and restarts the Match Centre's active revisions.
+- **A test keeps the wipe list equal to `cosmosContainerDefinitions`,** so a container added later can't be missed.
+
+**Rationale**
+Deleting a container is one control-plane call that works with the developer's normal rights: nobody holds a Cosmos DB data role apart from the apps' identities, and the `az` CLI has no item deletes. Recreating from the template keeps each container's partition key and time to live as reviewed. The leases have to go with the containers, because a checkpoint into a deleted container means nothing in its replacement. The Match Centre keeps a change feed position in memory for the same reason, so it is restarted.
+
+**Alternatives considered**
+- **Delete item by item** with a small tool. Containers and leases stay, but it needs a data role for the developer, costs RUs per document and is slower.
+- **Keep chosen matches.** Needs the item-by-item tool and a list of IDs; judges are better served by a clean list and one or two fresh showcase matches.
+- **Partition-key delete.** A preview feature that has to be switched on per account.
+
+**Trade-offs**
+- **The app is briefly broken** between the deletes and the end of the redeploy (a few minutes). A failed redeploy leaves containers missing until `-Action wipe-data` is re-run, which deletes only what's left, redeploys and restarts the apps.
+- **Fan matches can't start mid-wipe** once ADR-060's maintenance page is up, because it answers every `POST` with a 503. The live-match check runs again after it goes up, for a match started just before.
+- **Fan teams built in testing are gone,** and their edit keys stop working.
+
+## ADR-060 — A maintenance page while the data is wiped
+
+**Status:** Accepted · 25 Oct, Tracey's call
+
+**Question**
+While `wipe-data` (ADR-059) deletes and recreates the containers, the Match Centre would serve errors and half-deleted data. What should a visitor see, and how is it switched on and off?
+
+**Decision**
+- **A flag in the app.** `MatchCentre:Maintenance:Enabled` turns on a short-circuit middleware, placed just after the exception handler. Page requests get a self-contained maintenance page. Requests to `/api` and `/openapi`, the live stream included, get a 503 problem of type `.../problems/maintenance`. Both carry `Retry-After`, `Cache-Control: no-store` and an `X-Touchline-Maintenance: on` header. `/health` and `/alive` still answer, so Container Apps keeps the replica and doesn't restart it.
+- **The page** follows Tracey's layout: a header bar, a cone icon, "PITCH MAINTENANCE IN PROGRESS", an estimated kick-off (`EstimatedMinutes`, default 15) and a "RETURN TO TOUCHLINE" link. It has the synthetic-data label, uses the app's theme colours in light and dark, has no scripts or bundles, and reloads itself every `RetryAfterSeconds` (default 30).
+- **`wipe-data` switches it.** Before anything is deleted, it sets the setting with `az containerapp update`, which makes a new revision that takes the traffic. It then waits until the live app answers with the header. If it doesn't (an image from before this change), the wipe stops with no data deleted. A `maintenanceMode` template parameter keeps the setting through the wipe's own redeploy. In a `finally`, the setting is removed, which makes another new revision with fresh replicas. Maintenance goes off whenever the script ends, even after a failure, as Tracey asked.
+- **The wipe refuses to start when traffic is pinned** to a revision (a `judging` label, ADR-009), because a new revision would then get no traffic.
+
+**Alternatives considered**
+- **Swap traffic to a revision running a static maintenance image.** This needs no app change, but it needs a second image, and the mid-wipe redeploy would read the maintenance image as the live one and bake it into the template.
+- **Scale to zero.** Visitors would get a connection error, not a page.
+
+**Trade-offs**
+- **Each switch is a new revision** and a cold start (up to about a minute). Old revisions keep no traffic and stay at zero replicas.
+- **A failed wipe ends with the app up but missing containers,** answering 503s, until `wipe-data` is run again. Leaving maintenance on after a failure would hide that from visitors, but it was asked to go off when the script ends.
+- **The 503 isn't in the OpenAPI document,** because it comes from middleware, not an endpoint. The README's API notes should mention it (Penalties).

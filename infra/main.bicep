@@ -73,6 +73,9 @@ param deployNameGuard bool = false
 @description('Let fans start matches on the pipeline (ADR-050): gives the Match Centre the simulator job\'s resource ID. Off until the limits slice (one live, five a day) is deployed, because without it every POST /api/matches starts a billed job execution; a kill switch afterwards. The job role and the match-requests container are deployed either way.')
 param deployFanMatches bool = false
 
+@description('Maintenance mode (ADR-060): the Match Centre answers everything but its health probes with a 503 maintenance page or problem. deploy.ps1 sets it only while -Action wipe-data runs, so the wipe\'s own redeploy keeps the page up.')
+param maintenanceMode bool = false
+
 @description('Tokens-per-minute limit, in thousands, for the small chat model (Commentator, Localiser).')
 @minValue(1)
 param smallModelCapacity int = 50
@@ -498,6 +501,7 @@ resource matchCentre 'Microsoft.App/containerApps@2024-03-01' = {
             // The job a fan match starts (ADR-050), only while deployFanMatches is on; without it the
             // launcher stays unconnected and answers 503.
             ...(deployFanMatches ? [{ name: 'MatchCentre__FanMatches__JobResourceId', value: simulatorJob.id }] : [])
+            ...(maintenanceMode ? [{ name: 'MatchCentre__Maintenance__Enabled', value: 'true' }] : []) // ADR-060
           ]
           // The placeholder image has no /alive or /health, so probes only apply to the real image.
           // The startup probe holds off liveness while a cold start from zero replicas

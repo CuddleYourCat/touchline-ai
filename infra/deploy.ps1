@@ -40,6 +40,17 @@
               infra/search/possessions-index.json (ADR-040). Needs the Search
               service (deploy with -DeploySearch first) and the Search Service
               Contributor role, which the deploy grants to the signed-in user.
+    wipe-data Delete every stored match and everything built from one: the
+              Cosmos DB containers (matches, events, commentary, recaps, the
+              season projections, fan teams, fan match requests and the change
+              feed leases) and the Search index. Then redeploy to recreate them
+              empty, recreate the index and restart the apps. The Match Centre
+              shows a maintenance page (ADR-060) from before the first delete to
+              the end of the script, and the wipe stops if that page doesn't
+              appear. Works through the control plane, so it needs no Cosmos DB
+              data role. Refuses while a simulator execution is running, or while
+              traffic is pinned to a revision. Destructive; asks for confirmation
+              unless -Force is supplied. Takes the same feature switches as deploy.
 
 .PARAMETER ResourceGroup
     Target resource group (ADR-011).
@@ -129,10 +140,12 @@
     ./infra/deploy.ps1 -Action deploy -MatchCentreImage crtouchline2ryqfwse6uqn4.azurecr.io/matchcentre:abc123
 #>
 
+#Requires -Version 7.0
+
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('whatif', 'deploy', 'teardown', 'principal', 'create-index', 'teardown-search')]
+    [ValidateSet('whatif', 'deploy', 'teardown', 'principal', 'create-index', 'teardown-search', 'wipe-data')]
     [string]$Action,
 
     [string]$ResourceGroup = 'rg-touchline-ai',
@@ -195,6 +208,24 @@ if ($DeploySquadModels -and $NoSquadModels) {
 $SearchIndexFile = Join-Path $PSScriptRoot 'search/possessions-index.json'
 $SearchIndexName = 'possessions'
 $SearchDataApiVersion = '2024-07-01'
+
+# Maintenance mode (ADR-060). Must match MaintenanceOptions.SectionName and MaintenanceMode.HeaderName.
+# While $script:MaintenanceOn is set, every deploy passes maintenanceMode=true, so the wipe's own
+# redeploy can't turn the page off part way.
+$MaintenanceSetting = 'MatchCentre__Maintenance__Enabled'
+$MaintenanceHeader = 'X-Touchline-Maintenance'
+$script:MaintenanceOn = $false
+
+# Must match CosmosNames.cs and main.bicep's cosmosContainerDefinitions. Every container that holds
+# a match, something built from one, or a checkpoint into one. wipe-data deletes these, and the
+# redeploy that follows recreates them empty.
+$CosmosDatabaseName = 'touchline'
+$WipedContainers = @(
+    'matches', 'events', 'commentary', 'recaps',
+    'player-matches', 'player-seasons',
+    'teams', 'match-requests',
+    'leases'
+)
 
 # ── Who is deploying ──────────────────────────────────────────────────────────
 
@@ -360,12 +391,14 @@ function Get-TemplateParameterFile {
         -Setting 'MatchCentre__FanMatches__JobResourceId' -OnSwitch '-DeployFanMatches' -OffSwitch '-NoFanMatches'
     $values.deployNameGuard = $nameGuard.On
     $values.deployFanMatches = $fanMatches.On
+    $values.maintenanceMode = [bool]$script:MaintenanceOn
 
     Write-Host "  Deploying as: $($Deployer.Kind)" -ForegroundColor DarkGray
     Write-Host "  Squad models: $($squad.Why)$capacity" -ForegroundColor DarkGray
     Write-Host "  Azure AI Search: $(if ($values.deploySearch) { "deployed in $searchRegion (about 2 pounds a day)" } else { 'not deployed' })" -ForegroundColor DarkGray
     Write-Host "  Name guard: $($nameGuard.Why)" -ForegroundColor DarkGray
     Write-Host "  Fan matches: $($fanMatches.Why)" -ForegroundColor DarkGray
+    if ($values.maintenanceMode) { Write-Host "  Maintenance mode: kept on (wipe-data in progress)" -ForegroundColor DarkGray }
     Write-Host "  Match Centre image: $(if ($values.Contains('matchCentreImage')) { $values.matchCentreImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     Write-Host "  Simulator image: $(if ($values.Contains('simulatorImage')) { $values.simulatorImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     if ($values.Contains('matchCentreTraffic')) {
@@ -459,18 +492,33 @@ function Invoke-Deploy {
     az deployment group show --resource-group $ResourceGroup --name main --query properties.outputs
 }
 
-function Invoke-CreateIndex {
-    $endpoint = az deployment group show --resource-group $ResourceGroup --name main `
-        --query properties.outputs.searchEndpoint.value -o tsv
+# The Search endpoint from the deployment outputs and an Entra ID token for its data plane. The
+# service has local auth off, so it never takes an API key.
+# Given a service name, the endpoint is built from it, because a failed deploy leaves the 'main'
+# deployment with no outputs and a re-run wipe still has to reach the index.
+function Get-SearchDataPlane {
+    param([string]$ServiceName)
+
+    $endpoint = if ($ServiceName) {
+        "https://$ServiceName.search.windows.net"
+    }
+    else {
+        az deployment group show --resource-group $ResourceGroup --name main `
+            --query properties.outputs.searchEndpoint.value -o tsv
+    }
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($endpoint)) {
         throw "No search endpoint in the deployment outputs. Run '-Action deploy -DeploySearch' first."
     }
-    $endpoint = $endpoint.Trim()
 
-    # The service has local auth off, so the data plane takes an Entra ID token, never an API key.
     $token = az account get-access-token --resource https://search.azure.com --query accessToken -o tsv
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) { throw "Could not get a Search access token." }
-    $headers = @{ Authorization = "Bearer $($token.Trim())" }
+    return [pscustomobject]@{ Endpoint = $endpoint.Trim(); Headers = @{ Authorization = "Bearer $($token.Trim())" } }
+}
+
+function Invoke-CreateIndex {
+    $search = Get-SearchDataPlane
+    $endpoint = $search.Endpoint
+    $headers = $search.Headers
 
     Write-Host "`nCreating or updating index '$SearchIndexName' on $endpoint..." -ForegroundColor Cyan
     $body = Get-Content -Path $SearchIndexFile -Raw
@@ -509,6 +557,211 @@ function Invoke-TeardownSearch {
     }
 
     Write-Host "`nSearch deleted. Run '-Action deploy -NoSearch' next, and record the date in the resource ledger.`n" -ForegroundColor Green
+}
+
+# The name of the one resource of a type in the group, or $null if there is none. More than one
+# means the group isn't the shape main.bicep makes, so the wipe stops rather than guess.
+function Get-SingleResourceName {
+    param([Parameter(Mandatory)][string]$Type)
+
+    $names = @(az resource list --resource-group $ResourceGroup --resource-type $Type --query "[].name" -o tsv)
+    if ($LASTEXITCODE -ne 0) { throw "Could not list the $Type resources in '$ResourceGroup'." }
+    $names = @($names | Where-Object { $_ })
+    if ($names.Count -gt 1) { throw "Expected one $Type in '$ResourceGroup', found $($names.Count): $($names -join ', ')." }
+    if ($names.Count -eq 0) { return $null }
+    return $names[0].Trim()
+}
+
+# A live match would keep writing events into the containers as they're deleted, and its
+# half-finished documents would land in the new ones. 'Processing' is an execution that has been
+# started but isn't running yet, so it counts as live too.
+function Assert-NoLiveMatch {
+    $running = @(az containerapp job execution list --name $SimulatorJobName --resource-group $ResourceGroup `
+            --query "[?properties.status=='Running' || properties.status=='Processing'].name" -o tsv)
+    if ($LASTEXITCODE -ne 0) { throw "Could not list the simulator's executions, so can't tell whether a match is live." }
+    $running = @($running | Where-Object { $_ })
+    if ($running.Count -gt 0) {
+        throw "A match is still being simulated ($($running -join ', ')). Wait for it to finish, then re-run."
+    }
+}
+
+# Maintenance mode (ADR-060). A settings change makes a new revision, which only takes the traffic
+# when the ingress sends 100% to the latest revision. A pinned rule (a "judging" label, ADR-009)
+# would leave the maintenance revision with no traffic, so the wipe refuses to start.
+function Assert-TrafficFollowsLatest {
+    $rules = az containerapp ingress traffic show --name $MatchCentreAppName --resource-group $ResourceGroup -o json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw "Could not read the Match Centre's traffic rules." }
+    $latest = @($rules | Where-Object { $_.PSObject.Properties['latestRevision'] -and $_.latestRevision -and $_.PSObject.Properties['weight'] -and $_.weight -eq 100 })
+    if ($latest.Count -eq 0) {
+        throw "The Match Centre's traffic is pinned to a revision, so a maintenance revision would get none. Send 100% to the latest revision first."
+    }
+}
+
+# Asks the live app until it answers with the maintenance header (or stops answering with it).
+function Wait-MaintenanceState {
+    param(
+        [Parameter(Mandatory)][string]$Url,
+        [Parameter(Mandatory)][bool]$On,
+        [int]$TimeoutSeconds = 300
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $response = Invoke-WebRequest -Uri $Url -Method Get -SkipHttpErrorCheck -TimeoutSec 30 -UseBasicParsing
+            $marked = $response.Headers.ContainsKey($MaintenanceHeader)
+            if ($marked -eq $On) { return $true }
+        }
+        catch {
+            # A revision starting from zero replicas can refuse or time out for a while.
+        }
+        Start-Sleep -Seconds 5
+    }
+    return $false
+}
+
+function Get-MatchCentreUrl {
+    $fqdn = az containerapp show --name $MatchCentreAppName --resource-group $ResourceGroup `
+        --query properties.configuration.ingress.fqdn -o tsv
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($fqdn)) { throw "Could not read the Match Centre's address." }
+    return "https://$($fqdn.Trim())/api/matches"
+}
+
+function Enable-Maintenance {
+    param([Parameter(Mandatory)][string]$Url)
+
+    Write-Host "`n  Turning maintenance mode on..." -ForegroundColor Cyan
+    # Any deploy from here on (the wipe's own) keeps it on, because the template adds the setting.
+    $script:MaintenanceOn = $true
+    az containerapp update --name $MatchCentreAppName --resource-group $ResourceGroup `
+        --set-env-vars "$MaintenanceSetting=true" --output none
+    if ($LASTEXITCODE -ne 0) { throw "Could not turn maintenance mode on. No data deleted." }
+
+    # The setting does nothing on an image built before ADR-060, so check the page is really up.
+    if (-not (Wait-MaintenanceState -Url $Url -On $true)) {
+        throw "The Match Centre isn't showing the maintenance page (no $MaintenanceHeader header). Is the ADR-060 image deployed? No data deleted."
+    }
+    Write-Host "  Maintenance page is up." -ForegroundColor DarkGray
+}
+
+function Disable-Maintenance {
+    param([Parameter(Mandatory)][string]$Url)
+
+    Write-Host "`n  Turning maintenance mode off..." -ForegroundColor Cyan
+    $script:MaintenanceOn = $false
+    # A new revision with fresh replicas, so no change feed position into a deleted container survives.
+    az containerapp update --name $MatchCentreAppName --resource-group $ResourceGroup `
+        --remove-env-vars $MaintenanceSetting --output none
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Could not turn maintenance mode off. Run: az containerapp update -n $MatchCentreAppName -g $ResourceGroup --remove-env-vars $MaintenanceSetting"
+        return
+    }
+    if (-not (Wait-MaintenanceState -Url $Url -On $false)) {
+        Write-Warning "The Match Centre still shows the maintenance page. Check the latest revision in the portal."
+        return
+    }
+    Write-Host "  The Match Centre is back." -ForegroundColor DarkGray
+}
+
+function Invoke-WipeData {
+    $cosmos = Get-SingleResourceName -Type 'Microsoft.DocumentDB/databaseAccounts'
+    if (-not $cosmos) { throw "No Cosmos DB account in '$ResourceGroup'. Nothing to wipe." }
+    $processor = Get-SingleResourceName -Type 'Microsoft.Web/sites'
+    $searchService = Get-SingleResourceName -Type 'Microsoft.Search/searchServices'
+
+    Assert-NoLiveMatch
+    Assert-TrafficFollowsLatest
+    $matchCentreUrl = Get-MatchCentreUrl
+
+    # Look the Search endpoint up before anything is deleted, so a missing output or token stops the
+    # wipe while the data is still whole.
+    $search = if ($searchService) { Get-SearchDataPlane -ServiceName $searchService } else { $null }
+
+    $live = @(az cosmosdb sql container list --account-name $cosmos --resource-group $ResourceGroup `
+            --database-name $CosmosDatabaseName --query "[].name" -o tsv)
+    if ($LASTEXITCODE -ne 0) { throw "Could not list the containers in '$cosmos'." }
+    $live = @($live | Where-Object { $_ } | ForEach-Object { $_.Trim() })
+    $toDelete = @($WipedContainers | Where-Object { $live -contains $_ })
+
+    Write-Host "`nAbout to delete every stored match and everything built from one:" -ForegroundColor Yellow
+    Write-Host "  Cosmos DB '$cosmos', database '$CosmosDatabaseName': $($toDelete -join ', ')"
+    Write-Host "  Search index '$SearchIndexName': $(if ($searchService) { "on '$searchService'" } else { 'no Search service, skipped' })"
+    Write-Host "Fan teams and their edit keys go too. The demo match is a recording, so it stays."
+    Write-Host "The Match Centre shows a maintenance page throughout, the processor is stopped, and a"
+    Write-Host "deploy recreates the containers empty."
+    Write-Host "`nThis cannot be undone." -ForegroundColor Red
+
+    if (-not $Force) {
+        $confirm = (Read-Host "Type the resource group name to confirm").Trim()
+        if ($confirm -ne $ResourceGroup) {
+            Write-Host "`nCancelled. No changes made." -ForegroundColor Green
+            return
+        }
+    }
+
+    # Maintenance goes on first, so nobody sees half-deleted data, and fans can't start a match:
+    # the maintenance page answers every POST. It goes off when the script ends, whatever happens.
+    try {
+        Enable-Maintenance -Url $matchCentreUrl
+
+        # Stop the processor, so no trigger writes into a container between its delete and the
+        # redeploy. It's started again whatever happens below.
+        if ($processor) {
+            Write-Host "  Stopping '$processor'..." -ForegroundColor Cyan
+            az functionapp stop --name $processor --resource-group $ResourceGroup --output none
+            if ($LASTEXITCODE -ne 0) { throw "Could not stop '$processor'. No data deleted." }
+        }
+
+        try {
+            # Check again: a match started before maintenance went on could still be playing.
+            Assert-NoLiveMatch
+
+            foreach ($name in $toDelete) {
+                Write-Host "  Deleting container '$name'..." -ForegroundColor Cyan
+                az cosmosdb sql container delete --account-name $cosmos --resource-group $ResourceGroup `
+                    --database-name $CosmosDatabaseName --name $name --yes
+                if ($LASTEXITCODE -ne 0) { throw "Could not delete container '$name'." }
+            }
+
+            if ($search) {
+                Write-Host "  Deleting index '$SearchIndexName'..." -ForegroundColor Cyan
+                try {
+                    Invoke-RestMethod -Method Delete -Uri "$($search.Endpoint)/indexes/${SearchIndexName}?api-version=$SearchDataApiVersion" `
+                        -Headers $search.Headers | Out-Null
+                }
+                catch {
+                    # An index that's already gone is the state we want. A failure with no HTTP response
+                    # (DNS, TLS) has no Response property, and StrictMode would throw on reading it.
+                    $response = $_.Exception.PSObject.Properties['Response']
+                    if (-not $response -or $null -eq $response.Value -or [int]$response.Value.StatusCode -ne 404) { throw }
+                }
+            }
+
+            # The deploy recreates every container from main.bicep, with its partition key and time to
+            # live, and keeps the live images, traffic rules and feature switches as any deploy does.
+            # It also keeps maintenance mode on, because $script:MaintenanceOn is set.
+            Invoke-Deploy
+            if ($search) { Invoke-CreateIndex }
+        }
+        catch {
+            # Re-running the wipe deletes only what's left, then redeploys and restarts everything.
+            Write-Host "`nThe wipe stopped part way: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Re-run '-Action wipe-data' to finish. It skips what's already gone, then redeploys and restarts the apps." -ForegroundColor Yellow
+            throw
+        }
+        finally {
+            if ($processor) {
+                Write-Host "`n  Starting '$processor'..." -ForegroundColor Cyan
+                az functionapp start --name $processor --resource-group $ResourceGroup --output none
+                if ($LASTEXITCODE -ne 0) { Write-Warning "Could not start '$processor'. Start it in the portal." }
+            }
+        }
+    }
+    finally {
+        if ($script:MaintenanceOn) { Disable-Maintenance -Url $matchCentreUrl }
+    }
+
+    Write-Host "`nWiped. Play a fresh match with ./infra/start-match.ps1 to check the pipeline end to end.`n" -ForegroundColor Green
 }
 
 function Invoke-Teardown {
@@ -566,4 +819,5 @@ switch ($Action) {
     'principal' { Show-Principal }
     'create-index' { Invoke-CreateIndex }
     'teardown-search' { Invoke-TeardownSearch }
+    'wipe-data' { Invoke-WipeData }
 }

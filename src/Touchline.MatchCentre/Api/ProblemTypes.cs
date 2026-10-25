@@ -25,4 +25,7 @@ public static class ProblemTypes
 
     /// <summary>429: a fan match is already being played, or the day's fan matches are used (ADR-032). <c>Retry-After</c> says when to try again.</summary>
     public const string FanMatchLimit = Base + "/fan-match-limit";
+
+    /// <summary>503: the Match Centre is in maintenance mode (ADR-060). <c>Retry-After</c> says when to try again.</summary>
+    public const string Maintenance = Base + "/maintenance";
 }

@@ -3,6 +3,7 @@ using Touchline.Domain.Moments;
 using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Demo;
+using Touchline.MatchCentre.Maintenance;
 using Touchline.MatchCentre.Squad;
 using Touchline.MatchCentre.Storage;
 using Touchline.MatchCentre.TeamBuilding;
@@ -28,6 +29,7 @@ builder.Services.AddOptions<StreamOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder.Services.AddMaintenanceMode();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(TeamProfileCatalog.LoadEmbedded());
 builder.Services.AddMatchCentreRateLimits();
@@ -62,6 +64,9 @@ var app = builder.Build();
 // HTTPS before a request reaches the container, which listens on plain HTTP. Redirecting again
 // in here would point clients at a port the container doesn't serve.
 app.UseExceptionHandler();
+
+// Maintenance mode (ADR-060) answers before anything else runs, apart from the health probes.
+app.UseMaintenanceMode();
 app.UseStatusCodePages();
 app.UseRateLimiter();
 

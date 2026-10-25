@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.Azure.Functions.Worker;
 using processor::Touchline.EventProcessor;
+using Touchline.MatchCentre.Maintenance;
 
 namespace Touchline.Tests.Unit.Architecture;
 
@@ -108,6 +109,34 @@ public class InfrastructureTemplateTests
 
         templateName.Should().NotBeEmpty();
         scriptName.Should().Be(templateName, "deploy.ps1 keeps the models on by finding this deployment (ADR-051)");
+    }
+
+    [Test]
+    public void The_data_wipe_deletes_every_container_the_template_creates()
+    {
+        var script = File.ReadAllText(Path.Combine(RepositoryFiles.Root(), "infra", "deploy.ps1"));
+        var definitions = Regex.Match(_template, @"var cosmosContainerDefinitions = \[(?<body>.*?)\n\]", RegexOptions.Singleline).Groups["body"].Value;
+        var templateNames = Regex.Matches(definitions, @"\{ name: (?:'(?<literal>[^']+)'|(?<variable>\w+)),")
+            .Select(m => m.Groups["literal"].Success
+                ? m.Groups["literal"].Value
+                : Regex.Match(_template, $@"var {m.Groups["variable"].Value} = '(?<name>[^']+)'").Groups["name"].Value)
+            .ToList();
+        var wipeList = Regex.Match(script, @"\$WipedContainers = @\((?<body>.*?)\)", RegexOptions.Singleline).Groups["body"].Value;
+        var scriptNames = Regex.Matches(wipeList, "'(?<name>[^']+)'").Select(m => m.Groups["name"].Value).ToList();
+
+        templateNames.Should().NotBeEmpty().And.NotContain(string.Empty);
+        scriptNames.Should().BeEquivalentTo(templateNames, "a container left out of the wipe would keep data that points at deleted matches");
+    }
+
+    [Test]
+    public void Maintenance_mode_uses_the_setting_and_header_the_Match_Centre_reads()
+    {
+        var script = File.ReadAllText(Path.Combine(RepositoryFiles.Root(), "infra", "deploy.ps1"));
+        var setting = MaintenanceOptions.SectionName.Replace(":", "__", StringComparison.Ordinal) + "__" + nameof(MaintenanceOptions.Enabled);
+
+        script.Should().Contain($"$MaintenanceSetting = '{setting}'", "wipe-data turns maintenance on with this setting (ADR-060)");
+        script.Should().Contain($"$MaintenanceHeader = '{MaintenanceMode.HeaderName}'", "wipe-data checks the page is up by this header");
+        _template.Should().Contain($"...(maintenanceMode ? [{{ name: '{setting}', value: 'true' }}] : [])", "the wipe's own redeploy must keep the page up");
     }
 
     private static List<ServiceBusTriggerAttribute> ServiceBusTriggers() =>
