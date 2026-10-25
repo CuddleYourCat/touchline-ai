@@ -49,6 +49,7 @@ if (MatchSources.IsCosmosConfigured(builder.Configuration))
 }
 
 builder.Services.AddMatchSourceRouting();
+builder.AddTeamBuilderBackends();
 builder.Services.AddDemoTeamBuilder();
 
 // The Analyst answers fan questions (ADR-030) when Squad:FoundryEndpoint is set; without it the

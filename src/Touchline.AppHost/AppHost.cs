@@ -37,6 +37,10 @@ database.AddContainer("commentary", "/matchId");
 // Each finished match's recaps, written once by the processor and read by the Match Centre.
 database.AddContainer("recaps", "/matchId");
 
+// Fan-built teams, written by the Match Centre (ADR-048). The emulator container has no default TTL,
+// so a deleted team stays flagged here; in Azure the container's TTL removes it after a week.
+database.AddContainer("teams", "/id");
+
 // The Functions host's own storage (AzureWebJobsStorage), which also holds the Event Hubs
 // trigger's checkpoints.
 var storage = builder.AddAzureStorage("storage").RunAsEmulator();
@@ -80,6 +84,14 @@ var matchcentre = builder.AddProject<Projects.Touchline_MatchCentre>("matchcentr
 foreach (var (name, value) in squadSettings)
 {
     matchcentre.WithEnvironment(name, value);
+}
+
+// The team builder's name guard (ADR-049), only when MatchCentre:ContentSafety:Endpoint is set in the
+// AppHost's user secrets; without it the Match Centre checks the name format alone. Needs a signed-in
+// developer with Cognitive Services User on the account, and the blocklist loaded.
+if (builder.Configuration["MatchCentre:ContentSafety:Endpoint"] is { Length: > 0 } contentSafetyEndpoint)
+{
+    matchcentre.WithEnvironment("MatchCentre__ContentSafety__Endpoint", contentSafetyEndpoint);
 }
 
 // The Match Centre's React UI as a Vite dev server, for local development only: its proxy sends

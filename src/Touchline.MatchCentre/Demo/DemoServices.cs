@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Touchline.Domain.Squad;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Storage;
@@ -38,8 +39,8 @@ internal static class DemoServices
     /// <returns>The services, for chaining.</returns>
     public static IServiceCollection AddDemoTeamBuilder(this IServiceCollection services)
     {
-        services.AddSingleton<ITeamStore, InMemoryTeamStore>();
-        services.AddSingleton<INameGuard, FormatOnlyNameGuard>();
+        services.TryAddSingleton<ITeamStore, InMemoryTeamStore>();
+        services.TryAddSingleton<INameGuard, FormatOnlyNameGuard>();
         services.AddSingleton<IMatchLauncher, UnconnectedMatchLauncher>();
         return services;
     }

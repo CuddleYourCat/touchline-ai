@@ -204,7 +204,7 @@ describe('TeamEditPage: editing a fan team', () => {
   it('forgets a wrong key on a 403 and asks for the key, keeping the changes', async () => {
     rememberEditKey(teamId, key);
     stubGets();
-    const put = vi.spyOn(api, 'PUT').mockResolvedValue(fail(403, { title: 'Wrong edit key', detail: 'secret' }) as never);
+    const put = vi.spyOn(api, 'PUT').mockResolvedValue(fail(403, { type: 'https://touchline.example/problems/wrong-edit-key', title: 'Wrong edit key', detail: 'secret' }) as never);
 
     renderAt(`/teams/${teamId}/edit`);
     await screen.findByRole('form', { name: 'Edit team' });
@@ -235,7 +235,7 @@ describe('TeamEditPage: editing a fan team', () => {
   it('never stores a pasted key the service refused, and forgets a stored key only on request', async () => {
     rememberEditKey(teamId, key);
     stubGets();
-    vi.spyOn(api, 'PUT').mockResolvedValue(fail(403, { title: 'Wrong edit key' }) as never);
+    vi.spyOn(api, 'PUT').mockResolvedValue(fail(403, { type: 'https://touchline.example/problems/wrong-edit-key', title: 'Wrong edit key' }) as never);
 
     renderAt(`/teams/${teamId}/edit`);
     await screen.findByRole('form', { name: 'Edit team' });
@@ -289,7 +289,7 @@ describe('TeamEditPage: editing a fan team', () => {
   it('says a read-only team is read-only on that 403 title, keeping the key', async () => {
     rememberEditKey(teamId, key);
     stubGets();
-    vi.spyOn(api, 'PUT').mockResolvedValue(fail(403, { title: 'Read-only team' }) as never);
+    vi.spyOn(api, 'PUT').mockResolvedValue(fail(403, { type: 'https://touchline.example/problems/read-only-team', title: 'Read-only team' }) as never);
 
     renderAt(`/teams/${teamId}/edit`);
     await screen.findByRole('form', { name: 'Edit team' });

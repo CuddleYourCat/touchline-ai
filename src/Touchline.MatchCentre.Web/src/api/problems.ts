@@ -23,11 +23,14 @@ export function fieldErrors(body: unknown): FieldErrors {
   return found;
 }
 
-/** A problem's title, used only to tell apart responses that share a status code. It's matched, never shown. */
-export function problemTitle(body: unknown): string | undefined {
+/**
+ * A problem's `type` URI (RFC 9457), used only to tell apart responses that share a status code. It's matched against
+ * the stable identifiers in `ProblemTypes.cs`, never shown, and never read from the title, which is prose.
+ */
+export function problemType(body: unknown): string | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
-  const title = (body as { title?: unknown }).title;
-  return typeof title === 'string' ? title : undefined;
+  const type = (body as { type?: unknown }).type;
+  return typeof type === 'string' ? type : undefined;
 }
 
 /**

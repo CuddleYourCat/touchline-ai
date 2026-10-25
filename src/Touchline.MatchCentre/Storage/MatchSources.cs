@@ -90,7 +90,21 @@ internal static partial class MatchSources
     /// <param name="logger">Logs the failure.</param>
     /// <param name="cancellationToken">The caller's token.</param>
     /// <returns>The call's result.</returns>
-    public static async Task<T> GuardAsync<T>(Func<Task<T>> call, string what, ILogger logger, CancellationToken cancellationToken)
+    public static Task<T> GuardAsync<T>(Func<Task<T>> call, string what, ILogger logger, CancellationToken cancellationToken) =>
+        GuardAsync(call, what, publicDetail: null, logger, cancellationToken);
+
+    /// <summary>
+    /// Like the overload above, with the sentence the <c>503</c> problem shows the caller, for a
+    /// source that isn't a match (the teams).
+    /// </summary>
+    /// <typeparam name="T">The call's result.</typeparam>
+    /// <param name="call">The call.</param>
+    /// <param name="what">What was asked for, for the log.</param>
+    /// <param name="publicDetail">The problem's detail, or null for the match wording.</param>
+    /// <param name="logger">Logs the failure.</param>
+    /// <param name="cancellationToken">The caller's token.</param>
+    /// <returns>The call's result.</returns>
+    public static async Task<T> GuardAsync<T>(Func<Task<T>> call, string what, string? publicDetail, ILogger logger, CancellationToken cancellationToken)
     {
         try
         {
@@ -99,7 +113,7 @@ internal static partial class MatchSources
         catch (Exception exception) when (IsOutage(exception, cancellationToken))
         {
             LogUnavailable(logger, exception, what);
-            throw new MatchSourceUnavailableException($"Cosmos DB couldn't serve {what}.", exception);
+            throw new MatchSourceUnavailableException($"Cosmos DB couldn't serve {what}.", exception, publicDetail);
         }
     }
 
@@ -117,7 +131,7 @@ internal static partial class MatchSources
                 return false;
             }
 
-            await MatchCentreEndpoints.Unavailable("This match's data isn't available right now. Try again shortly.").ExecuteAsync(httpContext);
+            await MatchCentreEndpoints.Unavailable((exception as MatchSourceUnavailableException)?.PublicDetail ?? "This match's data isn't available right now. Try again shortly.").ExecuteAsync(httpContext);
             return true;
         }
     }
@@ -129,5 +143,10 @@ internal static partial class MatchSources
 /// </summary>
 /// <param name="message">What couldn't be served.</param>
 /// <param name="innerException">The underlying failure.</param>
-internal sealed class MatchSourceUnavailableException(string message, Exception innerException)
-    : Exception(message, innerException);
+/// <param name="publicDetail">The sentence the problem shows the caller, or null for the match wording.</param>
+internal sealed class MatchSourceUnavailableException(string message, Exception innerException, string? publicDetail = null)
+    : Exception(message, innerException)
+{
+    /// <summary>The sentence the problem shows the caller, or null for the match wording.</summary>
+    public string? PublicDetail { get; } = publicDetail;
+}

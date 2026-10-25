@@ -35,6 +35,7 @@ public interface ITeamStore
     /// <param name="team">The team, with its ID already assigned.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>A task that completes when the team is stored.</returns>
+    /// <exception cref="TeamAlreadyExistsException">A team with that ID is already stored.</exception>
     Task AddAsync(StoredTeam team, CancellationToken cancellationToken);
 
     /// <summary>Replaces a team, if it's still at the version the caller read.</summary>
@@ -104,4 +105,15 @@ public interface IMatchLauncher
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>True while it's playing.</returns>
     Task<bool> IsTeamPlayingAsync(string teamId, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// A team with this ID is already stored. IDs carry a random suffix, so it's a freak collision
+/// that the create endpoint answers by trying a fresh ID.
+/// </summary>
+/// <param name="teamId">The ID that was taken.</param>
+public sealed class TeamAlreadyExistsException(string teamId) : Exception($"Team '{teamId}' already exists.")
+{
+    /// <summary>The ID that was taken.</summary>
+    public string TeamId { get; } = teamId;
 }

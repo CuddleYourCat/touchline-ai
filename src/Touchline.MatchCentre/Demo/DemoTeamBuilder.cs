@@ -50,7 +50,7 @@ internal sealed class InMemoryTeamStore : ITeamStore
     {
         if (!_teams.TryAdd(team.Detail.Team.Id, team))
         {
-            throw new InvalidOperationException($"Team '{team.Detail.Team.Id}' already exists.");
+            throw new TeamAlreadyExistsException(team.Detail.Team.Id);
         }
 
         return Task.CompletedTask;

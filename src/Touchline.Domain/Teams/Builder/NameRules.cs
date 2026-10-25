@@ -47,10 +47,20 @@ public static partial class NameRules
             return $"A name has at most {MaxWords} words.";
         }
 
-        return Allowed().IsMatch(name)
-            ? null
-            : "A name starts with a letter and uses only letters, spaces, hyphens, apostrophes and full stops.";
+        if (!Allowed().IsMatch(name))
+        {
+            return "A name starts with a letter and uses only letters, spaces, hyphens, apostrophes and full stops.";
+        }
+
+        // Latin letters mixed with Cyrillic or Greek ones are how look-alike spellings dodge the blocklist.
+        return name.Any(IsLatinLetter) && name.Any(IsCyrillicOrGreekLetter)
+            ? "A name uses one alphabet: don't mix Latin letters with Cyrillic or Greek ones."
+            : null;
     }
+
+    private static bool IsLatinLetter(char c) => char.IsLetter(c) && (c < 'ɐ' || c is >= 'Ḁ' and <= 'ỿ');
+
+    private static bool IsCyrillicOrGreekLetter(char c) => char.IsLetter(c) && c is >= 'Ͱ' and <= 'ԯ';
 
     // \p{L} letters and \p{M} accents, so names like Zoë or Łukasz are fine.
     [GeneratedRegex(@"^\p{L}[\p{L}\p{M} '’.\-]*$")]

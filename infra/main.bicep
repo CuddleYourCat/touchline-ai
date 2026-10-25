@@ -67,6 +67,9 @@ param deploySearch bool = false
 @description('Deploy the squad\'s chat models, their content filter and the Squad__* settings. Off by default, so a model quota failure can\'t hold up the rest of the template. deploy.ps1 keeps it on once the models exist (ADR-051).')
 param deploySquadModels bool = false
 
+@description('Point the Match Centre at Content Safety for the team builder\'s name guard (ADR-049). Off by default: the guard fails closed, so with it on and the blocklist not yet loaded every team create returns 503. Load the blocklist (infra/load-name-blocklist.ps1) first, then turn it on.')
+param deployNameGuard bool = false
+
 @description('Tokens-per-minute limit, in thousands, for the small chat model (Commentator, Localiser).')
 @minValue(1)
 param smallModelCapacity int = 50
@@ -127,6 +130,16 @@ var squadSettings = deploySquadModels
     ]
   : []
 
+// The Match Centre's name guard (ADR-049): Content Safety on the Foundry account, keyless. The Content
+// Safety API lives on the cognitiveservices.azure.com host, not the openai.azure.com one above.
+var contentSafetyBlocklistName = 'touchline-real-names' // must match infra/load-name-blocklist.ps1
+var nameGuardSettings = deployNameGuard
+  ? [
+      { name: 'MatchCentre__ContentSafety__Endpoint', value: 'https://${foundryName}.cognitiveservices.azure.com/' }
+      { name: 'MatchCentre__ContentSafety__BlocklistName', value: contentSafetyBlocklistName }
+    ]
+  : []
+
 var placeholderImage = 'mcr.microsoft.com/k8se/quickstart:latest'
 var isPlaceholder = matchCentreImage == placeholderImage
 
@@ -137,6 +150,8 @@ var matchCentrePort = isPlaceholder ? 80 : 8080
 var roles = {
   acrPull: '7f951dda-4ed3-4680-a7ca-43fe172d538d'
   cognitiveServicesOpenAiUser: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+  // Calls the account's Content Safety API (ADR-049). The OpenAI User role does not cover it.
+  cognitiveServicesUser: 'a97b65f3-24c7-4388-baec-2e87135dc908'
   keyVaultSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6'
   keyVaultSecretsOfficer: 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
   containerRegistryTasksContributor: 'fb382eab-e894-4461-af04-94435c366c3f'
@@ -476,6 +491,7 @@ resource matchCentre 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
             ...(deploySearch ? [{ name: 'Search__Endpoint', value: searchEndpoint }] : []) // ADR-041
             ...squadSettings // the Analyst's models (ADR-030), only when deploySquadModels is on
+            ...nameGuardSettings // the team builder's name guard (ADR-049), only when deployNameGuard is on
           ]
           // The placeholder image has no /alive or /health, so probes only apply to the real image.
           // The startup probe holds off liveness while a cold start from zero replicas
@@ -673,6 +689,9 @@ var cosmosContainerDefinitions = [
   { name: 'commentary', partitionKey: '/matchId' }
   // Each finished match's recaps, written once by the processor at full time (ADR-030, amended 23 Oct).
   { name: 'recaps', partitionKey: '/matchId' }
+  // Fan-built teams (ADR-048). defaultTtl -1 turns time to live on without expiring anything: a delete
+  // sets a per-document ttl, so the change feed sees the flag before Cosmos DB removes the document.
+  { name: 'teams', partitionKey: '/id', defaultTtl: -1 }
 ]
 
 resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = [
@@ -682,6 +701,8 @@ resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/co
     properties: {
       resource: {
         id: container.name
+        #disable-next-line BCP187 // The 2024-11-15 type definition omits defaultTtl; the service accepts it.
+        defaultTtl: container.?defaultTtl
         partitionKey: {
           paths: [container.partitionKey]
           kind: 'Hash'
@@ -1171,6 +1192,41 @@ resource cosmosReaderForMatchCentre 'Microsoft.DocumentDB/databaseAccounts/sqlRo
     }
   }
 ]
+
+// Match Centre identity: write the teams container, and nothing else (ADR-048). Fan teams are the one thing
+// the Match Centre stores. Data Contributor on this one container also covers its reads and queries.
+resource cosmosContributorForMatchCentreTeams 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmos.id, appIdentity.id, cosmosDataContributorRoleId, 'teams')
+  dependsOn: [cosmosContainers]
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
+    principalId: appIdentity.properties.principalId
+    scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/teams'
+  }
+}
+
+// Content Safety checks team-builder names (ADR-049), and needs its own role on the Foundry account.
+resource contentSafetyUserForApps 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(foundry.id, appIdentity.id, roles.cognitiveServicesUser)
+  scope: foundry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.cognitiveServicesUser)
+    principalId: appIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Developer: manage the blocklist from infra/load-name-blocklist.ps1.
+resource contentSafetyUserForDeveloper 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
+  name: guid(foundry.id, principalId, roles.cognitiveServicesUser)
+  scope: foundry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.cognitiveServicesUser)
+    principalId: principalId
+    principalType: 'User'
+  }
+}
 
 // CI identity, continued: deploy the function's package and point the job at a new image.
 resource websiteContributorForCi 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

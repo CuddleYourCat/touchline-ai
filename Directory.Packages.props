@@ -30,6 +30,8 @@
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <!-- Lane C: possession search over Azure AI Search (ADR-039, ADR-040, ADR-057). -->
     <PackageVersion Include="Azure.Search.Documents" Version="11.7.0" />
+    <!-- Lane H: the team-builder name guard, Azure AI Content Safety text analysis with a custom blocklist (ADR-049). -->
+    <PackageVersion Include="Azure.AI.ContentSafety" Version="1.0.0" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.25.0" />
     <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.25.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.11.0" />

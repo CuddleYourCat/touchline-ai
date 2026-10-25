@@ -31,6 +31,7 @@ interface Notice {
 }
 
 const genericFailure = "We couldn't reach the Match Centre just now. Your changes are still here, so try again.";
+const namesUnavailable = "Names can't be checked right now. Nothing was saved; try again in a moment.";
 
 interface NameFieldProps {
   label: string;
@@ -148,6 +149,8 @@ function TeamEditor({ options, detail, onCreated, onReload }: TeamEditorProps) {
         return next;
       });
       setCheckNote(undefined);
+    } else if (outcome.kind === 'namesUnavailable') {
+      setCheckNote(namesUnavailable);
     } else if (outcome.kind === 'rateLimited') {
       // Hold further checks until the limiter's window has passed.
       lastCheckAt.current = Date.now() + (outcome.retryAfterSeconds ?? 60) * 1000;
@@ -237,6 +240,9 @@ function TeamEditor({ options, detail, onCreated, onReload }: TeamEditorProps) {
             text: `Lots of teams have been built from here recently. Try again in ${describeWait(outcome.retryAfterSeconds ?? 3600)}.`,
           });
           return;
+        case 'namesUnavailable':
+          setNotice({ tone: 'alert', text: namesUnavailable });
+          return;
         case 'error':
           setNotice({ tone: 'alert', text: genericFailure });
           return;
@@ -275,6 +281,9 @@ function TeamEditor({ options, detail, onCreated, onReload }: TeamEditorProps) {
         forgetEditKey(teamId);
         setStored(false);
         setNotice({ tone: 'alert', text: 'This team no longer exists.' });
+        return;
+      case 'namesUnavailable':
+        setNotice({ tone: 'alert', text: namesUnavailable });
         return;
       case 'error':
         setNotice({ tone: 'alert', text: genericFailure });

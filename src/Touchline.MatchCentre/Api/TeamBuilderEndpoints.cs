@@ -19,6 +19,7 @@ internal static class TeamBuilderEndpoints
 
     private const int _maxIdempotencyKeyLength = 64;
     private const int _defaultSuggestions = 5;
+    private const int _createAttempts = 3;
 
     /// <summary>Maps the team and team-builder endpoints, and match creation.</summary>
     /// <param name="api">The <c>/api</c> group.</param>
@@ -32,6 +33,7 @@ internal static class TeamBuilderEndpoints
             .ProducesValidationProblem();
         builder.MapPost("/names/check", CheckNames).WithName("CheckNames").WithSummary("Checks names as a fan types them.")
             .ProducesValidationProblem().ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting(RateLimiting.PaidCalls);
 
         var teams = api.MapGroup("/teams").WithTags("Teams");
@@ -41,10 +43,12 @@ internal static class TeamBuilderEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
         teams.MapPost("/", CreateTeam).WithName("CreateTeam").WithSummary("Creates a fan team, and returns its edit key once.")
             .ProducesValidationProblem().ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status409Conflict).ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting(RateLimiting.TeamCreation);
         teams.MapPut("/{teamId}", ReplaceTeam).WithName("ReplaceTeam").WithSummary("Replaces a fan team. Needs its edit key.")
             .ProducesValidationProblem().ProducesProblem(StatusCodes.Status403Forbidden)
-            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status412PreconditionFailed);
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         teams.MapDelete("/{teamId}", DeleteTeam).WithName("DeleteTeam").WithSummary("Deletes a fan team. Needs its edit key.")
             .ProducesProblem(StatusCodes.Status403Forbidden).ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
@@ -160,7 +164,7 @@ internal static class TeamBuilderEndpoints
         return TypedResults.Ok(team.Detail);
     }
 
-    private static async Task<Results<Created<TeamCreated>, ValidationProblem>> CreateTeam(
+    private static async Task<Results<Created<TeamCreated>, ValidationProblem, ProblemHttpResult>> CreateTeam(
         TeamDraft draft,
         INameGuard guard,
         ITeamStore store,
@@ -173,11 +177,24 @@ internal static class TeamBuilderEndpoints
         }
 
         var (key, hash) = EditKeys.Create();
-        var detail = TeamViews.FromDraft(draft, TeamViews.NewTeamId(draft.Name), previous: null);
-        await store.AddAsync(new StoredTeam(detail, hash), cancellationToken);
+        for (var attempt = 0; attempt < _createAttempts; attempt++)
+        {
+            var detail = TeamViews.FromDraft(draft, TeamViews.NewTeamId(draft.Name), previous: null);
+            try
+            {
+                await store.AddAsync(new StoredTeam(detail, hash), cancellationToken);
+            }
+            catch (TeamAlreadyExistsException)
+            {
+                // A freak collision of the random ID suffix: try a fresh ID.
+                continue;
+            }
 
-        response.Headers.ETag = ETagFor(detail.Version);
-        return TypedResults.Created($"/api/teams/{Uri.EscapeDataString(detail.Team.Id)}", new TeamCreated(detail, key));
+            response.Headers.ETag = ETagFor(detail.Version);
+            return TypedResults.Created($"/api/teams/{Uri.EscapeDataString(detail.Team.Id)}", new TeamCreated(detail, key));
+        }
+
+        return TypedResults.Problem(title: "Couldn't create the team", detail: "We couldn't give the team a unique ID. Try again.", statusCode: StatusCodes.Status409Conflict);
     }
 
     private static async Task<Results<Ok<TeamDetail>, ValidationProblem, ProblemHttpResult>> ReplaceTeam(
@@ -369,10 +386,12 @@ internal static class TeamBuilderEndpoints
 
     private static ProblemHttpResult? Forbidden(StoredTeam team, string? editKey) =>
         team.EditKeyHash is null
-            ? TypedResults.Problem(title: "Read-only team", detail: "Built-in teams can't be changed. Build your own instead.", statusCode: StatusCodes.Status403Forbidden)
+            ? TypedResults.Problem(title: "Read-only team", detail: "Built-in teams can't be changed. Build your own instead.",
+                statusCode: StatusCodes.Status403Forbidden, type: ProblemTypes.ReadOnlyTeam)
             : EditKeys.Matches(editKey, team.EditKeyHash)
                 ? null
-                : TypedResults.Problem(title: "Wrong edit key", detail: $"Send this team's edit key in the {EditKeys.Header} header.", statusCode: StatusCodes.Status403Forbidden);
+                : TypedResults.Problem(title: "Wrong edit key", detail: $"Send this team's edit key in the {EditKeys.Header} header.",
+                    statusCode: StatusCodes.Status403Forbidden, type: ProblemTypes.WrongEditKey);
 
     private static ProblemHttpResult Stale() =>
         TypedResults.Problem(title: "Team has changed", detail: "Someone saved this team since you loaded it. Reload it and try again.",

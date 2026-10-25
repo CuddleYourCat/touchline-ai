@@ -1660,3 +1660,76 @@ ADR-047 left viewer shaping to this slice: a Casual viewer wants a plain title a
 - **The hub does a little work per subscriber per event** (a new message list when the event has an overlay or a minor moment; the shared list itself otherwise). It is small beside the channel writes.
 - **The match xG subtitle shows both sides' totals without names,** home first, because the card carries no team names. It is shown only to an Analyst who asked for xG.
 - **A Cosmos read model change:** `GetMomentsAsync` now depends on the viewer's mode for minor moments.
+
+---
+
+## ADR-048 — The teams container
+
+**Status:** Accepted · 24 Oct, lane H (builds on ADR-031)
+
+**Question**
+ADR-031 puts fan teams in a Cosmos DB `teams` container. How is it partitioned, where do the built-in teams live, how does a delete work given the change feed, and how does `If-Match` become a real concurrency check?
+
+**Decision**
+- **Partitioned by `/id`.** Every get, add, replace and delete is a point operation on one team, which is the cheapest Cosmos DB call. Listing fan teams and finding a player by ID are cross-partition queries; at demo scale on a serverless account they cost a few request units each and are fine.
+- **Built-in teams are not written to Cosmos DB.** They are served from the embedded catalogue (`TeamProfileCatalog`) by the store, which merges them ahead of the fan teams. No seed step, no write on start-up, and a built-in team cannot be edited by a bug in the write path. Fan team IDs start `fan-` and a built-in ID never does, so the store knows which side to ask without a lookup.
+- **Soft delete.** The container has `defaultTtl: -1` (time to live on, nothing expires by default). A delete sets `deleted: true` and a per-document `ttl` (7 days, `MatchCentre:Teams:DeletedRetention`) and replaces the document. Every read and query filters `deleted`. The change feed sees the flagged document, which it would never see for a hard delete, and Cosmos DB removes it a week later.
+- **The edit key stays a plain SHA-256 hash,** compared in constant time (`EditKeys`). The key is 256 random bits, so there is no dictionary to guess from.
+- **Optimistic concurrency uses the document's version and its `_etag`.** `ReplaceAsync` reads the team, returns false unless its `version` is the one the caller read, then replaces with `IfMatchEtag` set to the `_etag` it just read. A `412` from Cosmos DB, or a missing document, returns false, and the endpoint answers `412 Precondition Failed`. The version is what the API shows as the `ETag`; the `_etag` closes the gap between the read and the write.
+- **`PlayerExistsAsync` is a cross-partition query** on `c.detail.squad` player IDs, skipping deleted teams. Built-in squads are checked in memory first.
+- **When Cosmos DB is not configured** (tests, a plain `dotnet run`) the in-memory demo store stays, switched the same way as the read model (ADR-036). A Cosmos DB outage reads as a `503` through the existing source-unavailable handler.
+- **Identity:** the Match Centre identity holds *Cosmos DB Built-in Data Contributor* on the `teams` container only; the rest stays read-only (ADR-038).
+
+**Alternatives considered**
+- **Partition by `/origin`.** Only two values (built-in, fan), so one hot partition holding every fan team, with a 20 GB logical partition cap, and no gain: lists would still fan out within it.
+- **Hierarchical partition key `/origin`, `/id`.** Makes the by-origin list a single-prefix query, but it needs a more complex container for a list that is already cheap at this scale.
+- **Seed the built-in teams into Cosmos DB.** One uniform read path, but a seed step to run and keep in step with the catalogue, and built-ins would become writable data.
+- **A Key Vault pepper on the edit key** (an HMAC rather than a plain hash). Protects against a stolen container with a weak key, but the key is 256 random bits; it would add a secret to rotate and a Key Vault call to every write. Skipped.
+- **A hard delete.** Simpler, but invisible to the change feed.
+
+**Trade-offs**
+- **Listing is a cross-partition query.** It is slow and costly only if there are thousands of teams; a rate limit of 10 creates an hour per client keeps that far away.
+- **A delete leaves the document for a week,** so a deleted team's name and squad are still in the container until the TTL fires.
+- **The local emulator container has no default TTL,** so a deleted team stays flagged there for good. It is hidden by every read.
+- **Replace is a read then a conditional write,** two round trips, in exchange for a clean conflict.
+
+---
+
+## ADR-049 — The name guard fails closed
+
+**Status:** Accepted · 24 Oct, lane H (builds on ADR-031, ADR-044)
+
+**Question**
+ADR-031 sends every fan-supplied name through Azure AI Content Safety and a blocklist of real names. What does the guard do when Content Safety cannot answer?
+
+**Decision**
+- **Order of checks:** the format rule first (`NameFormat`, `NameRules`: no Content Safety call is made for a name that already fails), then Content Safety text analysis.
+- **One call per name** to `ContentSafetyClient.AnalyzeTextAsync`, with `BlocklistNames` set to the custom blocklist (`touchline-real-names`), `HaltOnBlocklistHit` on, and the four harm categories at four severity levels. A blocklist hit refuses the name with a clear reason ("looks like a real club, ground or person"); a harm score at or above `MinBlockedSeverity` (default 4, medium) refuses it with a generic one ("isn't allowed"), which says nothing about what was flagged. The blocklist lives in the Foundry account (kind `AIServices`), loaded by `infra/load-name-blocklist.ps1` from a private file, never from the repo.
+- **Keyless.** `DefaultAzureCredential` (the user-assigned identity named by `AZURE_CLIENT_ID` in Azure, the developer's sign-in locally). The identity holds *Cognitive Services User* on the account: the *OpenAI User* role it already has does not cover Content Safety.
+- **Fail closed.** If Content Safety throws, times out (`MatchCentre:ContentSafety:Timeout`, 5 s) or throttles, the guard throws `NameGuardUnavailableException` and the API answers **`503`** with a plain "try again" problem. This covers `POST /api/teams`, `PUT /api/teams/{id}` and `POST /api/team-builder/names/check`. Nothing is stored. Teams already stored still play, because nothing on the read or match path calls the guard.
+- **Cached verdicts.** `IMemoryCache`, keyed by kind and the normalised name (trimmed, whitespace collapsed, case-folded), for `VerdictCacheTtl` (default 1 hour). Only definite verdicts, allowed or refused, are cached; a failure never is, so a recovered service is used at once.
+- **Batches.** A request checks up to 30 names. Each distinct name is one call, run with bounded concurrency (`MaxConcurrency`, default 4), so one request cannot flood the account.
+- **Problem types.** Each 403 and the new 503 carry a stable `type` URI (`https://touchline.example/problems/read-only-team`, `.../wrong-edit-key`, `.../name-check-unavailable`; `ProblemTypes`). The web client matches on `type`, not on the title, and keeps a generic fallback for an unknown 403.
+- **Not configured,** the demo's format-only guard stays: Bicep sets the endpoint only when `deployNameGuard` is on, which is turned on after the blocklist is loaded, because with the guard on and no blocklist every create would be a `503`.
+- **Fan names stay untrusted text.** They pass the guard before storage, are rendered as text and never as HTML, and no new path skips the guard. Agent prompts are unchanged in this slice.
+
+**Alternatives considered**
+- **Fail open on a Content Safety outage.** Judges could always build a team, but during an outage a real club or player name could slip into a stored team and from there into commentary. The IP rule in the hackathon terms matters more than a short outage.
+- **Fail open on the format rule only,** with Content Safety advisory. Same risk, and the format rule is what keeps instructions out of names that reach prompts.
+- **A local blocklist in the repo.** No outage, but it puts real names into a public repo, which CLAUDE.md forbids.
+- **Batch all names in one text.** One call, but one verdict for the whole batch and no per-field reason.
+
+**Trade-offs**
+- **An outage blocks create, edit and name checks.** It is a short, honest failure with a clear message, and the demo's existing teams keep playing.
+- **Blocklist changes take about five minutes to apply,** so a term added just before a demo may not be live.
+- **Cached verdicts are per replica** and last an hour, so a term added to the blocklist can take that long to bite on a name checked recently.
+- **Each name is a paid call.** The name check shares the `PaidCalls` rate limit, and the cache makes repeats free.
+- **The Content Safety client retries once;** the timeout caps the whole call, so a request cannot hang.
+
+**As built: review fixes (24 Oct)**
+- **Names are normalised before anything else** (`NameNormaliser`): NFKD, combining marks dropped, Cyrillic and Greek look-alikes folded to Latin (upper and lower case), a few Latin letters NFKD leaves alone (ø, ł, đ, ð, ı) folded, lower-cased, apostrophes, full stops and hyphens removed, white space collapsed. The normalised text is what is sent to Content Safety and what the cache is keyed on, so "Blöcked Üníted", a Cyrillic-lettered spelling and "Block.ed Un'ited" all reach the blocklist as the plain term. The blocklist loader writes terms in the same form, each with and without spaces, because removing hyphens turns "Blocked-United" into one word.
+- **The format rule refuses a name that mixes Latin letters with Cyrillic or Greek ones** (`NameRules`). A name wholly in another alphabet is still allowed; it only reaches the blocklist if folding makes it Latin.
+- **The cache is keyed by normalised text alone,** not kind: the analysis doesn't depend on the kind, so a team and a player of the same text share one call.
+- **A team ID collision** (Cosmos DB 409 on create) throws `TeamAlreadyExistsException`; the create endpoint retries with a fresh ID up to 3 times, then answers a 409 problem.
+- **A teams outage says so:** the store passes its own `503` detail ("The teams aren't available right now") through a `GuardAsync` overload; the match wording is unchanged.
+- **Residual risk:** the blocklist only catches what it lists. Spellings that change letters (a "z" for an "s", a missing letter) or non-folded scripts still pass, and Content Safety's own matching rules apply on top.
