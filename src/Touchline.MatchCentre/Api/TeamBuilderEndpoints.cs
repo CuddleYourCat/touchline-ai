@@ -17,7 +17,7 @@ internal static class TeamBuilderEndpoints
     /// <summary>The request header that makes a match request safe to repeat.</summary>
     public const string IdempotencyHeader = "Idempotency-Key";
 
-    private const int _maxIdempotencyKeyLength = 64;
+    private const int _maxIdempotencyKeyLength = 100;
     private const int _defaultSuggestions = 5;
     private const int _createAttempts = 3;
 
@@ -292,9 +292,10 @@ internal static class TeamBuilderEndpoints
         HttpResponse response,
         CancellationToken cancellationToken)
     {
-        if (idempotencyKey is { Length: 0 or > _maxIdempotencyKeyLength })
+        if (idempotencyKey is not null && !IsValidIdempotencyKey(idempotencyKey))
         {
-            return MatchCentreEndpoints.Invalid(IdempotencyHeader, $"An idempotency key is 1 to {_maxIdempotencyKeyLength} characters.");
+            return MatchCentreEndpoints.Invalid(
+                IdempotencyHeader, $"An idempotency key is 1 to {_maxIdempotencyKeyLength} visible ASCII characters, with no spaces.");
         }
 
         var missing = new Dictionary<string, string[]>();
@@ -341,11 +342,15 @@ internal static class TeamBuilderEndpoints
             case { Outcome: LaunchOutcome.Busy }:
                 var retryAfter = launch.RetryAfter ?? TimeSpan.FromMinutes(1);
                 response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-                return TypedResults.Problem(title: "Too many matches", detail: launch.Reason, statusCode: StatusCodes.Status429TooManyRequests);
+                return TypedResults.Problem(title: "Too many matches", detail: launch.Reason, statusCode: StatusCodes.Status429TooManyRequests, type: ProblemTypes.FanMatchLimit);
             default:
                 return MatchCentreEndpoints.Unavailable(launch.Reason ?? "Matches can't be started right now.");
         }
     }
+
+    // 1 to 100 visible ASCII characters (0x21 to 0x7E): no spaces, controls or anything a header could mangle.
+    private static bool IsValidIdempotencyKey(string key) =>
+        key.Length is >= 1 and <= _maxIdempotencyKeyLength && key.All(c => c is >= '!' and <= '~');
 
     private static void SheetProblems(string side, MatchdaySheet? sheet, StoredTeam team, Dictionary<string, string[]> problems)
     {

@@ -75,5 +75,7 @@ describe('problems', () => {
     expect(retryAfterSeconds('soon')).toBeNull();
     expect(describeWait(1)).toBe('about 1 second');
     expect(describeWait(61)).toBe('about 2 minutes');
+    expect(describeWait(7199)).toBe('about 120 minutes');
+    expect(describeWait(15 * 3600)).toBe('about 15 hours');
   });
 });

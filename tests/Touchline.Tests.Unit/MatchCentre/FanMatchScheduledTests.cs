@@ -174,5 +174,5 @@ public class FanMatchScheduledTests
     private FanMatchReadModel ReadModel() => new(_inner.Object, _requests.Object, Options.Create(new FanMatchOptions()), _time);
 
     private FanMatchLauncher Launcher() => new(
-        Mock.Of<ITeamStore>(), _requests.Object, Mock.Of<ISimulatorJob>(), _time, Options.Create(new FanMatchOptions()), NullLogger<FanMatchLauncher>.Instance);
+        Mock.Of<ITeamStore>(), _requests.Object, Mock.Of<IFanMatchLimitStore>(), Mock.Of<ISimulatorJob>(), _time, Options.Create(new FanMatchOptions()), NullLogger<FanMatchLauncher>.Instance);
 }

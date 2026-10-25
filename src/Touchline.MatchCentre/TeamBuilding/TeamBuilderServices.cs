@@ -41,6 +41,7 @@ internal static class TeamBuilderServices
             // Fan match requests (ADR-050): the rosters of record for fan matches, read by every
             // name lookup, and written by the launcher.
             builder.Services.AddSingleton<IFanMatchRequestStore, CosmosFanMatchRequestStore>();
+            builder.Services.AddSingleton<IFanMatchLimitStore, CosmosFanMatchLimitStore>();
             builder.Services.AddSingleton<IMatchTeamProfiles, FanMatchTeamProfiles>();
 
             // The deadlines are read by the read model (a scheduled match) as well as the launcher.

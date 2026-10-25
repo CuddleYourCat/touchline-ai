@@ -22,4 +22,7 @@ public static class ProblemTypes
 
     /// <summary>410: a fan match that couldn't be started, or that its job never picked up (ADR-050).</summary>
     public const string MatchNotStarted = Base + "/match-not-started";
+
+    /// <summary>429: a fan match is already being played, or the day's fan matches are used (ADR-032). <c>Retry-After</c> says when to try again.</summary>
+    public const string FanMatchLimit = Base + "/fan-match-limit";
 }

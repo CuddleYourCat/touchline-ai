@@ -31,6 +31,7 @@ public class FanMatchLauncherTests
     private Mock<ITeamStore> _teams = null!;
     private Mock<IFanMatchRequestStore> _requests = null!;
     private Mock<ISimulatorJob> _job = null!;
+    private Mock<IFanMatchLimitStore> _limits = null!;
     private List<string> _calls = null!;
     private FanMatchRequest? _written;
 
@@ -55,6 +56,10 @@ public class FanMatchLauncherTests
         _requests.Setup(r => r.SetStatusAsync(It.IsAny<string>(), It.IsAny<FanMatchStatus>(), It.IsAny<string?>(), It.IsAny<IReadOnlyCollection<FanMatchStatus>>(), It.IsAny<CancellationToken>()))
             .Callback(() => _calls.Add("status"))
             .ReturnsAsync(true);
+
+        _limits = new Mock<IFanMatchLimitStore>();
+        _limits.Setup(l => l.TryTakeDaySlotAsync(It.IsAny<DateOnly>(), It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _requests.Setup(r => r.ListActiveAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
 
         _job = new Mock<ISimulatorJob>();
         _job.Setup(j => j.StartAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Callback(() => _calls.Add("start")).Returns(Task.CompletedTask);
@@ -222,5 +227,5 @@ public class FanMatchLauncherTests
         1);
 
     private FanMatchLauncher Launcher() => new(
-        _teams.Object, _requests.Object, _job.Object, _time, Options.Create(new FanMatchOptions()), NullLogger<FanMatchLauncher>.Instance);
+        _teams.Object, _requests.Object, _limits.Object, _job.Object, _time, Options.Create(new FanMatchOptions()), NullLogger<FanMatchLauncher>.Instance);
 }

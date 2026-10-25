@@ -254,6 +254,27 @@ public class TeamBuilderApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         response.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(90));
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        problem.RootElement.GetProperty("type").GetString().Should().Be(ProblemTypes.FanMatchLimit);
+        problem.RootElement.GetProperty("detail").GetString().Should().Be("A fan match is already live.");
+    }
+
+    [TestCase("has space")]
+    [TestCase("tab\tkey")]
+    [TestCase("x")]
+    public async Task An_idempotency_key_must_be_1_to_100_visible_ASCII_characters(string key)
+    {
+        var tooLong = key == "x" ? new string('k', 101) : key;
+        using var request = new HttpRequestMessage(HttpMethod.Post, Url("/api/matches"))
+        {
+            Content = JsonContent.Create(new MatchRequest("north-bank-fc", "thames-valley-united"), options: _json)
+        };
+        request.Headers.TryAddWithoutValidation(TeamBuilderEndpoints.IdempotencyHeader, tooLong).Should().BeTrue();
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(TeamBuilderEndpoints.IdempotencyHeader);
     }
 
     [Test]

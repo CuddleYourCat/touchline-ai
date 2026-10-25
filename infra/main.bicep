@@ -698,9 +698,10 @@ var cosmosContainerDefinitions = [
   // Fan-built teams (ADR-048). defaultTtl -1 turns time to live on without expiring anything: a delete
   // sets a per-document ttl, so the change feed sees the flag before Cosmos DB removes the document.
   { name: 'teams', partitionKey: '/id', defaultTtl: -1 }
-  // Fan match requests (ADR-050): written by the Match Centre, played by the simulator job. No time to
-  // live: each is tiny, and its team snapshots are the roster of record for every later read of its match.
-  { name: 'match-requests', partitionKey: '/id' }
+  // Fan match requests (ADR-050): written by the Match Centre, played by the simulator job. defaultTtl -1:
+  // requests never expire (their snapshots are the roster of record), but the limits' day counters and
+  // Idempotency-Key claims beside them set a per-document ttl and clear themselves.
+  { name: 'match-requests', partitionKey: '/id', defaultTtl: -1 }
 ]
 
 resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = [

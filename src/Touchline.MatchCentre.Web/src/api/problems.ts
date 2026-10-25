@@ -46,9 +46,13 @@ export function retryAfterSeconds(header: string | null | undefined, now: number
   return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
-/** A wait in words: "about 45 seconds", "about 2 minutes". */
+/** A wait in words: "about 45 seconds", "about 2 minutes", "about 15 hours" (the day's fan matches reset at midnight UTC). */
 export function describeWait(seconds: number): string {
   if (seconds < 60) return `about ${seconds} second${seconds === 1 ? '' : 's'}`;
+  if (seconds >= 2 * 60 * 60) {
+    const hours = Math.round(seconds / 3600);
+    return `about ${hours} hours`;
+  }
   const minutes = Math.ceil(seconds / 60);
   return `about ${minutes} minute${minutes === 1 ? '' : 's'}`;
 }

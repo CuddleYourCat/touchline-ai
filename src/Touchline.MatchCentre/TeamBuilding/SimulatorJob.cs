@@ -37,6 +37,20 @@ public sealed class FanMatchOptions
     /// </summary>
     [Range(typeof(TimeSpan), "00:00:30", "00:30:00")]
     public TimeSpan ScheduledFor { get; set; } = TimeSpan.FromMinutes(3);
+
+    /// <summary>
+    /// How many fan matches may start in a UTC day (ADR-032). Each is about 14 MB of telemetry
+    /// against the 0.1 GB daily cap (ADR-011), so this also protects monitoring.
+    /// </summary>
+    [Range(0, 100)]
+    public int DailyLimit { get; set; } = 5;
+
+    /// <summary>
+    /// About how long a fan match takes from its request to full time, at the job's default 10x:
+    /// the estimate behind the <c>Retry-After</c> while one is live.
+    /// </summary>
+    [Range(typeof(TimeSpan), "00:01:00", "01:00:00")]
+    public TimeSpan TypicalMatchLength { get; set; } = TimeSpan.FromMinutes(10);
 }
 
 /// <summary>

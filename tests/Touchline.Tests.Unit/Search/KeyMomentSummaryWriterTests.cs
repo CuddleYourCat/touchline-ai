@@ -81,14 +81,21 @@ public sealed class KeyMomentSummaryWriterTests
 
         await Writer().WriteAsync(_possessions, _roster, 1, CancellationToken.None);
 
-        var request = _chat.Requests[0];
-        request.Messages[0].Role.Should().Be(ChatRole.System);
-        request.Messages[0].Text.Should().Be(KeyMomentSummaryWriter.SystemPrompt);
-        request.Messages[1].Role.Should().Be(ChatRole.User);
-        request.Messages[1].Text.Should().StartWith("<possession-data>").And.EndWith("</possession-data>");
-        request.Messages[1].Text.Should().Contain("Lindqvist", "names come from the profiles").And.NotContain("nbk-");
-        request.Options!.AdditionalProperties![SquadAgentChatOptions.AgentPropertyKey].Should().Be(nameof(SquadAgent.Indexer));
-        request.Options.MaxOutputTokens.Should().Be(_squad.MaxOutputTokens.Indexer);
+        // The writer sends its requests concurrently, so their order varies: every one is checked.
+        var requests = _chat.Requests;
+        requests.Should().NotBeEmpty();
+        foreach (var request in requests)
+        {
+            request.Messages[0].Role.Should().Be(ChatRole.System);
+            request.Messages[0].Text.Should().Be(KeyMomentSummaryWriter.SystemPrompt);
+            request.Messages[1].Role.Should().Be(ChatRole.User);
+            request.Messages[1].Text.Should().StartWith("<possession-data>").And.EndWith("</possession-data>");
+            request.Messages[1].Text.Should().NotContain("nbk-", "player IDs never reach the model");
+            request.Options!.AdditionalProperties![SquadAgentChatOptions.AgentPropertyKey].Should().Be(nameof(SquadAgent.Indexer));
+            request.Options.MaxOutputTokens.Should().Be(_squad.MaxOutputTokens.Indexer);
+        }
+
+        requests.Should().Contain(r => r.Messages[1].Text.Contains("Lindqvist"), "names come from the profiles");
     }
 
     [Test]
