@@ -82,9 +82,15 @@ builder.AddProject<Projects.Touchline_Simulator>("simulator")
     .WaitFor(cosmos)
     .WaitFor(eventProcessor);
 
+// The Match Centre's cache (ADR-061): verdicts, finished-match reads and the fan-match limits.
+// Locally a Redis container; in Azure, Azure Managed Redis behind deployRedis.
+var redis = builder.AddRedis("redis");
+
 // No WaitFor(cosmos): the Match Centre must start, and serve its demo match, without the emulator.
+// No WaitFor(redis) either: without Redis the caches stay in memory and the limits in Cosmos DB.
 var matchcentre = builder.AddProject<Projects.Touchline_MatchCentre>("matchcentre")
     .WithReference(cosmos)
+    .WithReference(redis)
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health");
 foreach (var (name, value) in squadSettings)

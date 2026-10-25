@@ -35,6 +35,13 @@
               -Force is supplied. Follow it with '-Action deploy -NoSearch' so the
               apps lose their Search__Endpoint setting and a deploy doesn't
               recreate the service.
+    teardown-redis
+              Delete only Azure Managed Redis (ADR-061, billed by the hour),
+              leaving everything else. Asks for confirmation unless -Force is
+              supplied. Follow it with '-Action deploy -NoRedis' so the Match
+              Centre loses its MatchCentre__Redis__Endpoint setting and a deploy
+              doesn't recreate the cache. The app carries on without it: the
+              caches stay in memory and the fan-match limits in Cosmos DB.
     create-index
               Create or update the Azure AI Search index from
               infra/search/possessions-index.json (ADR-040). Needs the Search
@@ -124,6 +131,18 @@
     The kill switch: force fan matches off, so POST /api/matches answers 503.
     Can't be combined with -DeployFanMatches.
 
+.PARAMETER DeployRedis
+    Create Azure Managed Redis (Balanced B0, high availability off, ADR-061)
+    and give the Match Centre its endpoint, for the name-guard verdicts, the
+    finished-match output cache and the fan-match limits. Billed by the hour, so
+    record a teardown date in the resource ledger. Once the cache exists, later
+    deploys keep it without the switch.
+
+.PARAMETER NoRedis
+    Force deployRedis off, even when the cache exists, so the deploy leaves
+    MatchCentre__Redis__Endpoint out. Run it after '-Action teardown-redis'.
+    Can't be combined with -DeployRedis.
+
 .PARAMETER Force
     Skip the teardown confirmation. Intended for scripted use only.
 
@@ -132,6 +151,9 @@
 
 .EXAMPLE
     ./infra/deploy.ps1 -Action deploy -DeployNameGuard -DeployFanMatches
+
+.EXAMPLE
+    ./infra/deploy.ps1 -Action deploy -DeployRedis
 
 .EXAMPLE
     ./infra/deploy.ps1 -Action deploy -DeploySquadModels
@@ -145,7 +167,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('whatif', 'deploy', 'teardown', 'principal', 'create-index', 'teardown-search', 'wipe-data')]
+    [ValidateSet('whatif', 'deploy', 'teardown', 'principal', 'create-index', 'teardown-search', 'teardown-redis', 'wipe-data')]
     [string]$Action,
 
     [string]$ResourceGroup = 'rg-touchline-ai',
@@ -181,6 +203,10 @@ param(
 
     [switch]$NoFanMatches,
 
+    [switch]$DeployRedis,
+
+    [switch]$NoRedis,
+
     [switch]$Force
 )
 
@@ -190,6 +216,7 @@ $ErrorActionPreference = 'Stop'
 if ($DeploySearch -and $NoSearch) { throw "-DeploySearch and -NoSearch contradict each other." }
 if ($DeployNameGuard -and $NoNameGuard) { throw "-DeployNameGuard and -NoNameGuard contradict each other." }
 if ($DeployFanMatches -and $NoFanMatches) { throw "-DeployFanMatches and -NoFanMatches contradict each other." }
+if ($DeployRedis -and $NoRedis) { throw "-DeployRedis and -NoRedis contradict each other." }
 
 $TemplateFile = Join-Path $PSScriptRoot 'main.bicep'
 
@@ -381,6 +408,15 @@ function Get-TemplateParameterFile {
     $values.deploySearch = if ($NoSearch) { $false } else { [bool]($DeploySearch -or (-not [string]::IsNullOrWhiteSpace($searchLive))) }
     $values.searchLocation = $searchRegion # ADR-058
 
+    # Keep Azure Managed Redis once it exists (ADR-061), as Search above: dropping the flag would
+    # remove the Match Centre's MatchCentre__Redis__Endpoint. A failed lookup stops the run.
+    $redisLive = $null
+    if (-not $NoRedis -and (az group exists --name $ResourceGroup) -eq 'true') {
+        $redisLive = az resource list --resource-group $ResourceGroup --resource-type Microsoft.Cache/redisEnterprise --query "[0].name" -o tsv
+        if ($LASTEXITCODE -ne 0) { throw "Could not check whether Azure Managed Redis exists. Re-run, or pass -NoRedis to leave it out." }
+    }
+    $values.deployRedis = if ($NoRedis) { $false } else { [bool]($DeployRedis -or (-not [string]::IsNullOrWhiteSpace($redisLive))) }
+
     # The name guard (ADR-049) and fan matches (ADR-050): on when switched on, and kept on when the
     # live Match Centre already has the setting each one adds, so a redeploy that forgets the switch
     # can't turn the guard back into the format-only check or switch fan matches off.
@@ -396,6 +432,8 @@ function Get-TemplateParameterFile {
     Write-Host "  Deploying as: $($Deployer.Kind)" -ForegroundColor DarkGray
     Write-Host "  Squad models: $($squad.Why)$capacity" -ForegroundColor DarkGray
     Write-Host "  Azure AI Search: $(if ($values.deploySearch) { "deployed in $searchRegion (about 2 pounds a day)" } else { 'not deployed' })" -ForegroundColor DarkGray
+    $redisWhy = if ($NoRedis) { 'off (-NoRedis)' } elseif ($DeployRedis) { 'on (-DeployRedis, billed by the hour)' } elseif ($values.deployRedis) { "on (kept: '$redisLive' exists, billed by the hour)" } else { 'off (pass -DeployRedis to turn it on)' }
+    Write-Host "  Azure Managed Redis: $redisWhy" -ForegroundColor DarkGray
     Write-Host "  Name guard: $($nameGuard.Why)" -ForegroundColor DarkGray
     Write-Host "  Fan matches: $($fanMatches.Why)" -ForegroundColor DarkGray
     if ($values.maintenanceMode) { Write-Host "  Maintenance mode: kept on (wipe-data in progress)" -ForegroundColor DarkGray }
@@ -557,6 +595,37 @@ function Invoke-TeardownSearch {
     }
 
     Write-Host "`nSearch deleted. Run '-Action deploy -NoSearch' next, and record the date in the resource ledger.`n" -ForegroundColor Green
+}
+
+# Deletes only Azure Managed Redis (ADR-061). Nothing in it has to be kept: the caches refill, and
+# the fan-match limits fall back to Cosmos DB, which the next deploy (-NoRedis) makes permanent.
+function Invoke-TeardownRedis {
+    $names = @(az resource list --resource-group $ResourceGroup --resource-type Microsoft.Cache/redisEnterprise --query "[].name" -o tsv)
+    if ($LASTEXITCODE -ne 0) { throw "Could not list Azure Managed Redis." }
+    $names = @($names | Where-Object { $_ })
+    if ($names.Count -eq 0) {
+        Write-Host "`nNo Azure Managed Redis in '$ResourceGroup'. Nothing to delete.`n" -ForegroundColor Green
+        return
+    }
+
+    Write-Host "`nAbout to delete Azure Managed Redis '$($names -join ', ')' and everything cached in it." -ForegroundColor Yellow
+    Write-Host "Everything else in '$ResourceGroup' is kept. The Match Centre falls back to memory and Cosmos DB."
+
+    if (-not $Force) {
+        $confirm = (Read-Host "Type the resource group name to confirm").Trim()
+        if ($confirm -ne $ResourceGroup) {
+            Write-Host "`nCancelled. No changes made." -ForegroundColor Green
+            return
+        }
+    }
+
+    foreach ($name in $names) {
+        Write-Host "  Deleting '$name'..." -ForegroundColor Cyan
+        az resource delete --resource-group $ResourceGroup --resource-type Microsoft.Cache/redisEnterprise --name $name
+        if ($LASTEXITCODE -ne 0) { throw "Could not delete '$name'." }
+    }
+
+    Write-Host "`nRedis deleted. Run '-Action deploy -NoRedis' next, and record the date in the resource ledger.`n" -ForegroundColor Green
 }
 
 # The name of the one resource of a type in the group, or $null if there is none. More than one
@@ -819,5 +888,6 @@ switch ($Action) {
     'principal' { Show-Principal }
     'create-index' { Invoke-CreateIndex }
     'teardown-search' { Invoke-TeardownSearch }
+    'teardown-redis' { Invoke-TeardownRedis }
     'wipe-data' { Invoke-WipeData }
 }

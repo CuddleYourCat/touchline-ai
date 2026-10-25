@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Touchline.Domain.Analytics;
 using Touchline.Domain.Season;
 using Touchline.Domain.Squad;
+using Touchline.MatchCentre.Caching;
 using Touchline.MatchCentre.Demo;
 using Touchline.MatchCentre.Live;
 using Touchline.MatchCentre.Squad;
@@ -60,13 +61,15 @@ internal static partial class MatchCentreEndpoints
             .ProducesValidationProblem();
         matches.MapGet("/{matchId}", GetMatch).WithName("GetMatch").WithSummary("A match in full.")
             .WithDescription(_scheduledDescription)
-            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .CacheWhenFinished(FinishedMatchRead.Detail);
         matches.MapGet("/{matchId}/events", GetEvents).WithName("GetEvents").WithSummary("A page of a match's events.")
             .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/momentum", GetMomentum).WithName("GetMomentum").WithSummary("Momentum so far, in five-minute windows.")
             .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/moments", GetMoments).WithName("GetMoments").WithSummary("Key and notable moments so far, with commentary for the viewer.")
-            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .CacheWhenFinished(FinishedMatchRead.Moments);
         matches.MapGet("/{matchId}/stream", Stream).WithName("StreamMatch").WithSummary("The live match, as server-sent events.")
             .WithDescription(_streamDescription)
             .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
@@ -76,7 +79,8 @@ internal static partial class MatchCentreEndpoints
         matches.MapGet("/{matchId}/recap", GetRecap).WithName("GetRecap").WithSummary("The full-time recap.")
             .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict).ProducesProblem(StatusCodes.Status503ServiceUnavailable)
-            .ProducesProblem(StatusCodes.Status429TooManyRequests).RequireRateLimiting(RateLimiting.PaidCalls);
+            .ProducesProblem(StatusCodes.Status429TooManyRequests).RequireRateLimiting(RateLimiting.PaidCalls)
+            .CacheWhenFinished(FinishedMatchRead.Recap);
 
         api.MapTeamBuilder();
 

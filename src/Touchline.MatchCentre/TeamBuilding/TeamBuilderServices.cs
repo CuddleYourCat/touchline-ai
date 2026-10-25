@@ -72,7 +72,7 @@ internal static class TeamBuilderServices
                 .BindConfiguration(ContentSafetyOptions.SectionName)
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
-            builder.Services.AddMemoryCache();
+            builder.Services.AddHybridCache(); // verdicts: memory, then Redis when configured (ADR-061)
 
             // Keyless: the registered credential, or DefaultAzureCredential, which signs in as the
             // user-assigned identity named by AZURE_CLIENT_ID in Azure and as the developer locally.

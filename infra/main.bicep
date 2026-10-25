@@ -73,6 +73,9 @@ param deployNameGuard bool = false
 @description('Let fans start matches on the pipeline (ADR-050): gives the Match Centre the simulator job\'s resource ID. Off until the limits slice (one live, five a day) is deployed, because without it every POST /api/matches starts a billed job execution; a kill switch afterwards. The job role and the match-requests container are deployed either way.')
 param deployFanMatches bool = false
 
+@description('Create Azure Managed Redis (Balanced B0, high availability off) for the Match Centre\'s caches and fan-match limits (ADR-061). Off by default: it bills by the hour while it exists. Once it exists, deploy.ps1 keeps it on; it needs a teardown date in the resource ledger.')
+param deployRedis bool = false
+
 @description('Maintenance mode (ADR-060): the Match Centre answers everything but its health probes with a 503 maintenance page or problem. deploy.ps1 sets it only while -Action wipe-data runs, so the wipe\'s own redeploy keeps the page up.')
 param maintenanceMode bool = false
 
@@ -180,6 +183,11 @@ var searchName = 'srch-touchline-${suffix}'
 var searchIndexName = 'possessions'
 var searchSubscriptionName = 'search-index'
 var searchEndpoint = 'https://${searchName}.search.windows.net'
+
+// Azure Managed Redis (ADR-061). The database's port is fixed at create time, and the Match Centre
+// reads host:port from MatchCentre__Redis__Endpoint.
+var redisName = 'redis-touchline-${suffix}'
+var redisPort = 10000
 
 // Cosmos DB's data-plane roles are its own, not Azure RBAC (ADR-024).
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
@@ -502,6 +510,9 @@ resource matchCentre 'Microsoft.App/containerApps@2024-03-01' = {
             // launcher stays unconnected and answers 503.
             ...(deployFanMatches ? [{ name: 'MatchCentre__FanMatches__JobResourceId', value: simulatorJob.id }] : [])
             ...(maintenanceMode ? [{ name: 'MatchCentre__Maintenance__Enabled', value: 'true' }] : []) // ADR-060
+            // The caches and fan-match limits in Redis (ADR-061), only while deployRedis is on; without it
+            // the caches stay in memory and the limits in Cosmos DB.
+            ...(deployRedis ? [{ name: 'MatchCentre__Redis__Endpoint', value: '${redis!.properties.hostName}:${redisPort}' }] : [])
           ]
           // The placeholder image has no /alive or /health, so probes only apply to the real image.
           // The startup probe holds off liveness while a cold start from zero replicas
@@ -1358,6 +1369,53 @@ resource secretsOfficerForDeveloper 'Microsoft.Authorization/roleAssignments@202
 }
 
 // ============================================================
+// Azure Managed Redis (ADR-061)
+// ============================================================
+// Balanced B0 with high availability off: half the price and no SLA, which suits a judged demo.
+// It bills by the hour from creation, so it's behind deployRedis and needs a teardown date in the
+// resource ledger. Keyless: access keys are off on the database, and the Match Centre's identity
+// signs in with Entra ID through an access policy assignment (Managed Redis has no Entra RBAC data
+// roles). TLS only, OSS clustering (StackExchange.Redis follows the cluster; every key the app uses
+// is a single key, so no command spans slots).
+
+resource redis 'Microsoft.Cache/redisEnterprise@2025-07-01' = if (deployRedis) {
+  name: redisName
+  location: location
+  tags: tags
+  sku: { name: 'Balanced_B0' }
+  properties: {
+    highAvailability: 'Disabled'
+    minimumTlsVersion: '1.2'
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource redisDatabase 'Microsoft.Cache/redisEnterprise/databases@2025-07-01' = if (deployRedis) {
+  parent: redis
+  name: 'default'
+  properties: {
+    clientProtocol: 'Encrypted'
+    clusteringPolicy: 'OSSCluster'
+    // Only keys with an expiry are evicted under memory pressure; every key the app writes has one.
+    evictionPolicy: 'VolatileLRU'
+    accessKeysAuthentication: 'Disabled'
+    port: redisPort
+  }
+}
+
+// Match Centre identity: the "default" access policy (full data access) on this one database.
+resource redisAccessForMatchCentre 'Microsoft.Cache/redisEnterprise/databases/accessPolicyAssignments@2025-07-01' = if (deployRedis) {
+  parent: redisDatabase
+  name: 'matchcentre'
+  properties: {
+    accessPolicyName: 'default'
+    user: {
+      objectId: appIdentity.properties.principalId
+    }
+  }
+}
+
+// ============================================================
 // Budget (ADR-011)
 // ============================================================
 // A budget alerts but doesn't stop spending. Hourly-billed resources still
@@ -1419,3 +1477,4 @@ output eventHubsNamespace string = eventHubs.name
 output serviceBusNamespace string = serviceBus.name
 output searchEndpoint string = deploySearch ? searchEndpoint : ''
 output searchIndexName string = searchIndexName
+output redisEndpoint string = deployRedis ? '${redis!.properties.hostName}:${redisPort}' : ''

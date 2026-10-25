@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 using Azure;
 using Azure.AI.ContentSafety;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Options;
 using Touchline.MatchCentre.Api;
 
@@ -37,6 +37,14 @@ public sealed class ContentSafetyOptions
     [Range(typeof(TimeSpan), "00:00:00", "1.00:00:00")]
     public TimeSpan VerdictCacheTtl { get; set; } = TimeSpan.FromHours(1);
 
+    /// <summary>
+    /// How long a replica keeps a verdict in its own memory (ADR-061). Short, because an entry
+    /// refilled from Redis starts a fresh local lifetime: the worst case is
+    /// <see cref="VerdictCacheTtl"/> plus this. Never more than <see cref="VerdictCacheTtl"/>.
+    /// </summary>
+    [Range(typeof(TimeSpan), "00:00:01", "1.00:00:00")]
+    public TimeSpan VerdictLocalCacheTtl { get; set; } = TimeSpan.FromMinutes(5);
+
     /// <summary>The most calls in flight at once for one request. A name check carries up to 30 names.</summary>
     [Range(1, 16)]
     public int MaxConcurrency { get; set; } = 4;
@@ -63,12 +71,13 @@ public sealed class NameGuardUnavailableException(string message, Exception? inn
 /// </summary>
 /// <remarks>
 /// Names are normalised first (see <see cref="NameNormaliser"/>), and verdicts are cached per normalised text, so the same text typed twice, or as a team and a player, costs one call.
-/// Only definite verdicts are cached; a failure never is. A request's names are checked with
+/// Verdicts go through <see cref="HybridCache"/>: this replica's memory first, then Redis when it's configured (ADR-061), so every replica
+/// sees a verdict at once. Only definite verdicts are cached; a failure throws, and HybridCache never stores a factory that threw. A request's names are checked with
 /// bounded concurrency, one call per distinct name.
 /// </remarks>
 internal sealed partial class ContentSafetyNameGuard(
     ContentSafetyClient client,
-    IMemoryCache cache,
+    HybridCache cache,
     IOptions<ContentSafetyOptions> options,
     ILogger<ContentSafetyNameGuard> logger) : INameGuard
 {
@@ -122,19 +131,24 @@ internal sealed partial class ContentSafetyNameGuard(
             return new Decision(false, NotAllowedReason);
         }
 
-        var key = _cachePrefix + text;
-        if (cache.TryGetValue(key, out Decision cached))
+        if (_options.VerdictCacheTtl <= TimeSpan.Zero)
         {
-            return cached;
+            return await AnalyseAsync(text, cancellationToken);
         }
 
-        var decision = await AnalyseAsync(text, cancellationToken);
-        if (_options.VerdictCacheTtl > TimeSpan.Zero)
+        // Concurrent checks of the same text share one call. A call that throws stores nothing,
+        // so an outage is never remembered and a recovered service is used at once (ADR-049).
+        var lifetime = new HybridCacheEntryOptions
         {
-            cache.Set(key, decision, _options.VerdictCacheTtl);
-        }
-
-        return decision;
+            Expiration = _options.VerdictCacheTtl,
+            LocalCacheExpiration = _options.VerdictLocalCacheTtl < _options.VerdictCacheTtl ? _options.VerdictLocalCacheTtl : _options.VerdictCacheTtl,
+        };
+        return await cache.GetOrCreateAsync(
+            _cachePrefix + text,
+            (Guard: this, Text: text),
+            static (state, token) => new ValueTask<Decision>(state.Guard.AnalyseAsync(state.Text, token)),
+            lifetime,
+            cancellationToken: cancellationToken);
     }
 
     private async Task<Decision> AnalyseAsync(string text, CancellationToken cancellationToken)
@@ -171,5 +185,8 @@ internal sealed partial class ContentSafetyNameGuard(
     [LoggerMessage(Level = LogLevel.Warning, Message = "Content Safety couldn't check a name, so the request is refused")]
     private static partial void LogUnavailable(ILogger logger, Exception exception);
 
-    private readonly record struct Decision(bool Allowed, string? Reason);
+    /// <summary>A verdict as cached: serialised to JSON when Redis holds it.</summary>
+    /// <param name="Allowed">Whether the name may be used.</param>
+    /// <param name="Reason">Why not, for the fan.</param>
+    internal sealed record Decision(bool Allowed, string? Reason);
 }

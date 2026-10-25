@@ -13,6 +13,8 @@
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.6.1" />
     <!-- The Match Centre's React UI, run as a Vite dev server under the AppHost (ADR-033). -->
     <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.1" />
+    <!-- The Redis container the Match Centre caches in locally (ADR-061). -->
+    <PackageVersion Include="Aspire.Hosting.Redis" Version="13.6.1" />
     <PackageVersion Include="Aspire.Azure.Messaging.EventHubs" Version="13.6.1" />
     <PackageVersion Include="Aspire.Azure.Messaging.ServiceBus" Version="13.6.1" />
     <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.6.1" />
@@ -34,6 +36,10 @@
     <PackageVersion Include="Azure.AI.ContentSafety" Version="1.0.0" />
     <!-- Lane H: the Match Centre starts the simulator job for a fan match through ARM (ADR-050). -->
     <PackageVersion Include="Azure.ResourceManager.AppContainers" Version="1.6.0" />
+    <!-- The Redis cache (ADR-061): HybridCache for name-guard verdicts, and StackExchange.Redis with Entra ID sign-in to Azure Managed Redis. -->
+    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.10.0" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.13.17" />
+    <PackageVersion Include="Microsoft.Azure.StackExchangeRedis" Version="3.3.1" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.25.0" />
     <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.25.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.11.0" />

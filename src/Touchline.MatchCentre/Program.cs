@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Touchline.Domain.Moments;
 using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Api;
+using Touchline.MatchCentre.Caching;
 using Touchline.MatchCentre.Demo;
 using Touchline.MatchCentre.Maintenance;
 using Touchline.MatchCentre.Squad;
@@ -52,6 +53,10 @@ if (MatchSources.IsCosmosConfigured(builder.Configuration))
 
 builder.Services.AddMatchSourceRouting();
 builder.AddTeamBuilderBackends();
+
+// The caches (ADR-061): finished-match reads, name-guard verdicts and, with Redis, the fan-match limits.
+// After the team builder, whose Cosmos DB limit store it wraps.
+builder.AddTouchlineCaching();
 builder.Services.AddDemoTeamBuilder();
 
 // The Analyst answers fan questions (ADR-030) when Squad:FoundryEndpoint is set; without it the
@@ -69,6 +74,9 @@ app.UseExceptionHandler();
 app.UseMaintenanceMode();
 app.UseStatusCodePages();
 app.UseRateLimiter();
+
+// After the rate limiter, so a cached recap still counts against PaidCalls, as it did before (ADR-061).
+app.UseOutputCache();
 
 app.MapDefaultEndpoints();
 app.MapOpenApi();

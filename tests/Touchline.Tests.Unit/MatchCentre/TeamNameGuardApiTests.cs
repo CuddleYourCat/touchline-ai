@@ -7,7 +7,7 @@ using Azure.AI.ContentSafety;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -219,7 +219,7 @@ public class TeamNameGuardApiTests
         var client = new Mock<ContentSafetyClient>();
         client.Setup(c => c.AnalyzeTextAsync(It.IsAny<AnalyzeTextOptions>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new RequestFailedException(503, "Content Safety is down"));
-        var guard = new ContentSafetyNameGuard(client.Object, new MemoryCache(new MemoryCacheOptions()), Options.Create(new ContentSafetyOptions()), NullLogger<ContentSafetyNameGuard>.Instance);
+        var guard = new ContentSafetyNameGuard(client.Object, new ServiceCollection().AddHybridCache().Services.BuildServiceProvider().GetRequiredService<HybridCache>(), Options.Create(new ContentSafetyOptions()), NullLogger<ContentSafetyNameGuard>.Instance);
         return _factory.WithWebHostBuilder(host => host.ConfigureTestServices(s =>
         {
             s.AddSingleton<INameGuard>(guard);

@@ -1804,6 +1804,10 @@ ADR-031 sends every fan-supplied name through Azure AI Content Safety and a bloc
 - **Real clubs' abbreviations are no longer on the blocklist,** which replaces ADR-032's review fix ("the blocklist gains real clubs' abbreviations"). Broadcasters use different codes for the same club, so there's no agreed set to block, and a three-letter list would keep refusing fans hunting for a short name. Short names and crest initials still go to the guard as `Abbreviation` and are still checked by Content Safety for abuse; only the blocklist match is gone.
 - **The trade-off:** a fan team can use a real club's initials on its scoreboard or crest. The full name, nicknames and ground are still blocked, initials rarely identify a club on their own, and fan teams are labelled as fan-made.
 
+**As built: verdicts in Redis (25 Oct, ADR-061)**
+- **Verdicts are now shared across replicas and survive redeploys.** With Redis on, HybridCache keeps each verdict in Redis (`touchline:hc:name-guard|{normalised text}`) for `VerdictCacheTtl` (1 hour), and in each replica's memory for `VerdictLocalCacheTtl` (5 minutes, never more than the TTL). An entry refilled from Redis starts a fresh local lifetime, so the worst case is `VerdictCacheTtl` plus the local expiry, about 65 minutes. The keys carry no revision, on purpose: loading the blocklist doesn't make a new revision, so a revision prefix wouldn't help.
+- **So after `load-name-blocklist.ps1`,** a name allowed in the last hour can stay allowed for up to that long. To make a new term bite at once, delete the `touchline:hc:*` keys in Redis, or wait the hour (plus the five minutes).
+
 ## ADR-059 — Wiping the stored matches before judging
 
 **Status:** Accepted · 25 Oct, Tracey's call
@@ -1853,3 +1857,100 @@ While `wipe-data` (ADR-059) deletes and recreates the containers, the Match Cent
 
 **As built: open tabs follow maintenance (25 Oct, Tracey's call)**
 - **A tab opened before maintenance began reloads by itself.** The typed API client's response hook reloads the page when a response carries `X-Touchline-Maintenance: on`, so the reload lands on the server's maintenance page. The live stream's `EventSource` can't see headers, so when it drops, the stream sends one `HEAD /api/matches` to ask; outside maintenance that is a cheap 405. The page reloads once at most, and the maintenance page has no scripts, so it can't loop. Only reads reload: a save (team builder, a fan question) shows its 503 and keeps the form, because reloading would throw away what the fan typed. A tab coming back into view also asks once, so pages that never poll (the recap, the team builder) switch too; a background tab never asks, so it can't wake a Match Centre that has scaled to zero. When maintenance ends, the page's own refresh brings the visitor back to the URL they were on.
+
+## ADR-061 — A Redis cache, and what goes in it
+
+**Status:** Accepted · 25 Oct, Tracey's call: A with 1, 2 and 3
+
+**Question**
+Stage 4 keeps Redis in scope (Tracey, 25 Oct). Which Redis service, what does it cache, and how do the apps reach it?
+
+**Options: the service**
+- **A. Azure Managed Redis, Balanced B0, high availability off.** The current service. Non-HA halves the price and has no SLA, which suits a judged demo. Entra ID sign-in through an access policy assignment (it has no Entra RBAC data roles), so the apps stay keyless.
+- **B. Azure Cache for Redis Basic C0.** Familiar and cheap, but Microsoft has announced the retirement of every tier and recommends Managed Redis for new work.
+- **C. No Redis in Azure.** Use Redis under Aspire locally only, with the in-memory cache deployed. Free, but the "shared across replicas" story is never shown running.
+
+**Options: what it caches** (any mix)
+- **1. Name-guard verdicts** (ADR-049) through `HybridCache`: memory first, Redis second. Fixes ADR-049's trade-off that verdicts are per replica, so every replica sees a refusal at once.
+- **2. Output cache for finished matches:** the match list, summaries, moments and recaps, keyed by match and viewer. A finished match never changes, so this is safe to cache for a long time; live matches are never cached.
+- **3. The fan-match daily counters and Idempotency-Keys** (ADR-050). Moves state off Cosmos DB, but these must not be lost, and a non-HA cache can lose data in maintenance. Not recommended.
+
+**Decision**
+- **Azure Managed Redis, Balanced B0, high availability off,** keyless through an Entra access policy assignment for the Match Centre's identity. Behind a `deployRedis` parameter, off by default, like `deploySearch`.
+- **It caches all three:** name-guard verdicts through `HybridCache`, the output cache for finished-match reads, and the fan-match daily counters and Idempotency-Keys.
+- **Counters and keys in Redis:** a counter is an `INCR` on a key per edit key and UTC day, expiring at the next UTC midnight; an Idempotency-Key is a `SET NX` with the same lifetime, holding the started match ID. The refund (ADR-050) is a `DECR`.
+- **With `deployRedis` off, or Redis unreachable,** the caches fall back to memory and the counters and keys fall back to the existing Cosmos DB store, so the app keeps working and the limits still hold.
+
+**Recommendation (as proposed)**
+A with 1 and 2. Tracey added 3.
+
+**Trade-offs**
+- **It is billed by the hour** from the moment it is created, so it goes in the resource ledger with a teardown date in the same session. Check the price for B0 non-HA in Sweden Central on the pricing page before deploying.
+- **Managed Redis is clustered by default.** StackExchange.Redis handles OSS clustering, but each key must live in one slot; no multi-key commands are used here.
+- **A cache outage must not take the app down:** every Redis call has a short timeout, and a failure is a miss, logged.
+- **Non-HA Redis can lose the counters and keys in maintenance.** Lost counters reset a fan's day (they could start up to five more matches); a lost Idempotency-Key lets a retry of the same request start a second match. Both are bounded by the one-live-match rule, which stays in Cosmos DB.
+- **Two stores for the limits** while the fallback exists: a day that switches between Redis and Cosmos DB mid-way counts in each separately. Accepted for a demo.
+
+**As built (G1, 25 Oct)**
+- **One counter per UTC day, not per edit key.** The decision says "per edit key", but the Cosmos DB store it falls back to counts the whole app's day (ADR-050's five a day), so Redis does the same: `touchline:fan-matches:day-yyyyMMdd`, an atomic check-and-`INCR` in Lua against the limit, expiring at the next UTC midnight. The refund is a `DECR` that never goes below zero and keeps the expiry.
+- **An Idempotency-Key lasts a day, not until midnight.** `touchline:fan-matches:idem-{32 hex of its SHA-256}`, a `SET NX` for one day, as in Cosmos DB, so a retry just after midnight is still a repeat. It holds the claim time and the request ID (`{Unix ms}:{request ID}`). Moving a claim to a new request and releasing it are Lua scripts that compare the request ID first, so one request can't overwrite or release another's. Every script touches one key, so it runs in one cluster slot.
+- **The fallback** (`FallbackFanMatchLimitStore`) sends a call to Cosmos DB when Redis is disconnected, times out or refuses the command, and logs it. A bug or a cancellation is not retried there. A command that timed out after Redis ran it can be repeated in Cosmos DB and spend a slot twice; the one-live rule bounds that too. **The other direction leaks a slot:** a slot taken in Cosmos DB while Redis is down, then refunded in Redis once it's back, leaves the Redis day one too low, so one extra match can start that day.
+- **What the output cache stores.** `GET /api/matches/{id}` at full time. Its moments only when the match was at full time *before* they were read, and every key moment's line is the model's in exactly the viewer's language and mode. Its recap only when it's the model's in exactly the viewer's language and mode. The read side falls back to a template, the base language or English while the right line is still being written, and none of those is cached (`es-MX` is not `es`). **If the models are never deployed, moments and recaps simply never cache.** **Demo laps are never cached:** each replica replays the recording on its own clock, so a lap that has finished on one may be live on another. The viewer's `mode`, `lang`, `team`, `player` and `metric` vary the moments and recap.
+- **The match list isn't cached.** The running demo lap is always on it, so a "finished matches only" rule would never store it. There's no list policy, so nobody should expect one.
+- **Lifetime.** `MatchCentre:Caching:FinishedMatchTtl` (10 minutes), shorter than "a long time" to bound memory and any late correction.
+- **Memory first, Redis second, for both caches.** HybridCache's own first level, and a small in-memory level in front of the Redis output cache store (2,000 entries), so a Redis outage still leaves each replica its own cache. Output cache keys carry the Container Apps revision, so a new revision starts empty; `wipe-data` always ends on a new revision, so nothing deleted can be served from Redis afterwards. The counters and claims aren't wiped from Redis; they clear themselves within a day.
+- **Middleware order:** the output cache sits after the rate limiter, so a cached recap still counts against `PaidCalls`, as before.
+- **The moments cost one extra match read on a cache miss**, to know the match is over before the moments are read.
+- **Connection.** One multiplexer, connected in the background at start-up: connect 3 s, commands 1 s, fail-fast while disconnected, a fresh attempt 30 s after one that failed outright (for example no Entra ID token). Locally Aspire's Redis container (`ConnectionStrings:redis`); in Azure `MatchCentre__Redis__Endpoint` with the app's identity through `Microsoft.Azure.StackExchangeRedis`. The access policy assignment uses the `default` policy, which is full data access on that one database.
+- **Tests** run one contract against both limit stores. The Lua scripts were also run against a real Redis 7 container (`TOUCHLINE_TEST_REDIS`, opt-in, skipped in CI). Not yet checked against Managed Redis's cluster, and the Bicep is compiled but not deployed.
+
+## ADR-062 — App Configuration: which settings and flags move
+
+**Status:** Accepted · 25 Oct, Tracey's call: the recommendation (Free tier, flags and the squad's settings)
+
+**Question**
+Which settings move from `appsettings` and Bicep environment variables into Azure App Configuration, which tier, and how do the apps pick up a change?
+
+**Options: the tier**
+- **A. Free.** No charge. 1,000 requests a day for the whole store, no SLA, 10 MB. The Free tier counts every refresh check against the daily limit, so refresh intervals have to be long.
+- **B. Developer.** A small daily charge, 6,000 requests an hour, 500 MB.
+- **C. Standard.** About £1 a day, 30,000 requests an hour, an SLA. More than this app needs.
+
+**Options: what moves**
+- **1. Feature flags** through `Microsoft.FeatureManagement`: fan matches, fan Q&A, possession search, the squad's model calls. A judge-day switch with no redeploy and no new revision.
+- **2. The squad's settings:** model deployment names, token caps, languages (ADR-043, ADR-045).
+- **3. Rate limits and fan-match limits** (ADR-050).
+- **Stays where it is:** endpoints and identity client IDs (Bicep knows them at deploy time), the maintenance flag (ADR-060 relies on it making a new revision), and anything secret (Key Vault).
+
+**Recommendation**
+A with 1 and 2. Keyless, with **App Configuration Data Reader** for each app's identity. One sentinel key, refreshed every 5 minutes; feature flags refreshed on the same interval. `appsettings` keeps every default, and the provider is optional at startup, so a 429 or an outage leaves the app on its last good values. Behind a `deployAppConfig` parameter, off by default.
+
+**Trade-offs**
+- **Free tier arithmetic:** the Match Centre and the processor each checking every 5 minutes is about 600 requests a day, inside the 1,000, but a scale-out to several replicas would pass it. On a 429 the provider keeps the values it has, so the cost is staleness, not an outage. Developer is the fallback if it bites.
+- **Two sources of truth for a while:** a value set in both App Configuration and an environment variable resolves by provider order, which is set explicitly and tested.
+- **Changing a model deployment name live** only works if the new deployment exists; the squad already falls back to template lines on a failed call.
+
+## ADR-063 — The synthetic dataset export
+
+**Status:** Accepted · 25 Oct, Tracey's call: the recommendation (A, committed if small, otherwise a release asset)
+
+**Question**
+The brief asks for a synthetic dataset as a deliverable. What does the season contain, how is it produced, and where is it published?
+
+**Options: the fixtures** (the catalogue has two fictional clubs)
+- **A. A 38-match head-to-head season** between the two catalogue clubs, home and away alternating, seeds 1 to 38.
+- **B. A 20-club league** using fan-style archetype teams (ADR-050) for the other 18 clubs: 380 matches, a real league table. Far bigger, and the 18 clubs need generated fictional names that pass the name guard.
+- **C. A 38-round season for a 20-club league, one fixture per round** (one club's season). Smaller than B, but still needs the 18 generated clubs.
+
+**Options: where it lives**
+- **1. Committed to the repo:** `dataset/` with gzipped JSON lines, a schema and the calibration table. Simple for judges, but only if it is small.
+- **2. A GitHub Release asset,** with a small sample match committed. Keeps the repo light; publishing a release needs Tracey's go-ahead.
+- **3. Reproducible only:** the export command and a fixed seed list, with no data committed. Anyone can rebuild it byte for byte, but a judge has to run it.
+
+**Recommendation**
+A, published as 1 if the gzipped season is under about 20 MB, otherwise 2, with the export always reproducible. An `export` mode on the simulator (no Azure needed) writes `events.jsonl.gz` (one event per line, the same JSON as Event Hubs), `matches.jsonl` (metadata, line-ups, final score, totals), `schema.json` (JSON Schema for both) and `CALIBRATION.md` (the season's averages against the ranges in `CalibrationTests`). Every file says the data is synthetic and every name fictional.
+
+**Trade-offs**
+- **A head-to-head season has no league table,** but it is the honest size for two clubs, and the calibration numbers are the same.
+- **Determinism is the selling point:** a test exports two matches twice and compares the bytes, so the published files can be checked against the code.
+- **The schema can drift from the events** unless a test validates every exported line against `schema.json`.

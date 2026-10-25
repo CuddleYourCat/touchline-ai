@@ -1,7 +1,8 @@
 using Azure;
 using Azure.AI.ContentSafety;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -15,20 +16,22 @@ namespace Touchline.Tests.Unit.MatchCentre;
 public class ContentSafetyNameGuardTests
 {
     private Mock<ContentSafetyClient> _client = null!;
-    private MemoryCache _cache = null!;
+    private ServiceProvider _services = null!;
+    private HybridCache _cache = null!;
     private AnalyzeTextOptions? _lastRequest;
 
     [SetUp]
     public void SetUp()
     {
         _client = new Mock<ContentSafetyClient>();
-        _cache = new MemoryCache(new MemoryCacheOptions());
+        _services = new ServiceCollection().AddHybridCache().Services.BuildServiceProvider();
+        _cache = _services.GetRequiredService<HybridCache>();
         _lastRequest = null;
         Respond(Clean());
     }
 
     [TearDown]
-    public void TearDown() => _cache.Dispose();
+    public void TearDown() => _services.Dispose();
 
     [Test]
     public async Task A_clean_name_is_allowed_and_the_blocklist_halts_on_a_hit()
