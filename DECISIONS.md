@@ -1252,7 +1252,7 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 - The endpoint validates the request and the sheets, then answers `503` ("fan matches need the live pipeline") from the demo launcher. The job launch, the request document, the limits and the idempotency store are lane work.
 
 **Review fixes (PR #22, 22 Oct)**
-- **Abbreviations are names too.** Short names and crest initials go to the name guard as `Abbreviation`, so a crest or scoreboard can't spell a real club's initials. The blocklist gains real clubs' abbreviations.
+- **Abbreviations are names too.** Short names and crest initials go to the name guard as `Abbreviation`, so a crest or scoreboard can't spell a real club's initials. The blocklist gains real clubs' abbreviations. *(Replaced 25 Oct: abbreviations are no longer on the blocklist, and are checked for abuse only; see ADR-049.)*
 - **Every endpoint that costs money is rate limited per client:** fan questions, recaps and name checks share a `paid-calls` policy (10 a minute), beside team creation (10 an hour). Both live under `MatchCentre:RateLimits`.
 - **`If-Match` follows RFC 9110:** `*` and lists of tags are accepted; weak tags never match.
 - **Malformed requests are `400`s:** a null name entry, an undefined name kind, or a match request with a missing team ID.
@@ -1799,3 +1799,7 @@ ADR-031 sends every fan-supplied name through Azure AI Content Safety and a bloc
 - **A team ID collision** (Cosmos DB 409 on create) throws `TeamAlreadyExistsException`; the create endpoint retries with a fresh ID up to 3 times, then answers a 409 problem.
 - **A teams outage says so:** the store passes its own `503` detail ("The teams aren't available right now") through a `GuardAsync` overload; the match wording is unchanged.
 - **Residual risk:** the blocklist only catches what it lists. Spellings that change letters (a "z" for an "s", a missing letter) or non-folded scripts still pass, and Content Safety's own matching rules apply on top.
+
+**As built: no abbreviations on the blocklist (25 Oct, Tracey's call)**
+- **Real clubs' abbreviations are no longer on the blocklist,** which replaces ADR-032's review fix ("the blocklist gains real clubs' abbreviations"). Broadcasters use different codes for the same club, so there's no agreed set to block, and a three-letter list would keep refusing fans hunting for a short name. Short names and crest initials still go to the guard as `Abbreviation` and are still checked by Content Safety for abuse; only the blocklist match is gone.
+- **The trade-off:** a fan team can use a real club's initials on its scoreboard or crest. The full name, nicknames and ground are still blocked, initials rarely identify a club on their own, and fan teams are labelled as fan-made.
