@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { checkForMaintenance } from '../api/maintenance';
 import { defaultViewer, viewerForMatch, viewerQuery, type Viewer } from '../viewer/viewer';
 import {
   applyMessage,
@@ -220,6 +221,8 @@ export function useMatchStream(
         if (cancelled || finished || source !== es || es.readyState !== EventSource.CLOSED) return;
         close();
         dispatch({ type: 'stale', stale: true });
+        // EventSource can't see the 503's headers, so ask whether it was maintenance (ADR-060).
+        void checkForMaintenance();
         failures += 1;
         reopenTimer = setTimeout(() => {
           reopenTimer = undefined;

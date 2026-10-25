@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
+import { maintenanceDeps, maintenanceHeader, resetMaintenanceForTests } from '../api/maintenance';
 import type { CommentaryLine, LiveState, MatchDetail, MomentView } from '../live/matchStreamReducer';
 import { staleAfterMs, useMatchStream } from '../live/useMatchStream';
 import { momentAnchor } from '../questions/askQuestion';
@@ -116,6 +117,8 @@ function renderPage(id = 'm1') {
 describe('MatchPage', () => {
   beforeEach(() => {
     FakeEventSource.install();
+    resetMaintenanceForTests();
+    vi.spyOn(maintenanceDeps, 'fetch').mockResolvedValue(new Response(null, { status: 405 }));
   });
 
   afterEach(() => {
@@ -268,6 +271,21 @@ describe('MatchPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't load this match just now.");
     expect(screen.queryByText(/secret stack trace/)).not.toBeInTheDocument();
+  });
+
+  it('reloads onto the maintenance page when a dropped stream turns out to be maintenance', async () => {
+    const reload = vi.spyOn(maintenanceDeps, 'reload').mockImplementation(() => {});
+    const probe = vi.spyOn(maintenanceDeps, 'fetch').mockResolvedValue(
+      new Response(null, { status: 503, headers: { [maintenanceHeader]: 'on' } }),
+    );
+    stubApi(found(detail()));
+
+    renderPage();
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    act(() => FakeEventSource.latest().fail());
+
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    expect(probe).toHaveBeenCalledWith('/api/matches', { method: 'HEAD', cache: 'no-store' });
   });
 
   it('reopens a stream the browser gave up on, with backoff, resuming after the last id seen', async () => {

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router';
+import { watchForMaintenanceOnFocus } from './api/maintenance';
 import { router } from './router';
 // Self-hosted fonts (bundled by Vite), so the page makes no third-party font request.
 import '@fontsource/chakra-petch/500.css';
@@ -15,6 +16,9 @@ import './styles.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('The #root element is missing from index.html.');
+
+// A tab coming back into view checks whether maintenance began while it was away (ADR-060).
+watchForMaintenanceOnFocus();
 
 createRoot(root).render(
   <StrictMode>

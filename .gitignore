@@ -3,6 +3,8 @@
 **/.github/instructions.md
 **/*.code-workspace
 
+.claude/
+
 # Build output
 bin/
 obj/
@@ -74,5 +76,4 @@ local.settings.json
 .DS_Store
 Thumbs.db
 desktop.ini
-
 
