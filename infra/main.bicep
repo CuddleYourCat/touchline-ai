@@ -709,16 +709,20 @@ resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/co
     parent: cosmosDatabase
     name: container.name
     properties: {
-      resource: {
-        id: container.name
+      // defaultTtl goes in only when a container sets it. A null defaultTtl reaches Cosmos DB as an
+      // explicit null, which it rejects with "One of the specified inputs is invalid".
+      resource: union(
+        {
+          id: container.name
+          partitionKey: {
+            paths: [container.partitionKey]
+            kind: 'Hash'
+            version: 2
+          }
+        },
         #disable-next-line BCP187 // The 2024-11-15 type definition omits defaultTtl; the service accepts it.
-        defaultTtl: container.?defaultTtl
-        partitionKey: {
-          paths: [container.partitionKey]
-          kind: 'Hash'
-          version: 2
-        }
-      }
+        contains(container, 'defaultTtl') ? { defaultTtl: container.defaultTtl } : {}
+      )
     }
   }
 ]
