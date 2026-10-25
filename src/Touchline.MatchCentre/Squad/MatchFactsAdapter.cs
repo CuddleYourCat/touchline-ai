@@ -1,7 +1,9 @@
 using Touchline.Domain.Matches;
 using Touchline.Domain.Squad;
+using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
 using Touchline.MatchCentre.Api;
+using Touchline.MatchCentre.TeamBuilding;
 
 namespace Touchline.MatchCentre.Squad;
 
@@ -31,7 +33,11 @@ namespace Touchline.MatchCentre.Squad;
 /// <param name="matches">The read model.</param>
 /// <param name="teams">The team profiles, or null to use the line-ups alone.</param>
 /// <param name="time">The clock for the cache, or null for the system clock.</param>
-internal sealed class MatchFactsAdapter(IMatchReadModel matches, ITeamStore? teams = null, TimeProvider? time = null) : IMatchFacts
+/// <param name="matchTeams">
+/// Each match's team profiles (ADR-050). A fan match's squads come from the snapshot in its request,
+/// the roster of record, before the team store, whose team may have been edited since kick-off.
+/// </param>
+internal sealed class MatchFactsAdapter(IMatchReadModel matches, ITeamStore? teams = null, TimeProvider? time = null, IMatchTeamProfiles? matchTeams = null) : IMatchFacts
 {
     /// <summary>Events read per page while scanning for a minute range.</summary>
     internal const int EventPageSize = 500;
@@ -189,16 +195,24 @@ internal sealed class MatchFactsAdapter(IMatchReadModel matches, ITeamStore? tea
     /// <summary>Player ID to name, for both squads, or both line-ups where there's no profile.</summary>
     private async Task<IReadOnlyDictionary<string, string>> NamesAsync(MatchDetail detail, CancellationToken cancellationToken)
     {
+        var profiles = matchTeams is null ? null : await matchTeams.ForMatchAsync(detail.Summary.Id, cancellationToken);
         var players = new List<PlayerSummary>(detail.HomeLineup.Count + detail.AwayLineup.Count);
-        players.AddRange(await SquadAsync(detail.Summary.Home.Id, detail.HomeLineup, cancellationToken));
-        players.AddRange(await SquadAsync(detail.Summary.Away.Id, detail.AwayLineup, cancellationToken));
+        players.AddRange(await SquadAsync(detail.Summary.Home.Id, detail.HomeLineup, profiles, cancellationToken));
+        players.AddRange(await SquadAsync(detail.Summary.Away.Id, detail.AwayLineup, profiles, cancellationToken));
         return players
             .GroupBy(p => p.Id, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Name, StringComparer.Ordinal);
     }
 
-    private async Task<IEnumerable<PlayerSummary>> SquadAsync(string teamId, IReadOnlyList<PlayerSummary> lineup, CancellationToken cancellationToken)
+    private async Task<IEnumerable<PlayerSummary>> SquadAsync(
+        string teamId, IReadOnlyList<PlayerSummary> lineup, IReadOnlyDictionary<string, TeamProfile>? profiles, CancellationToken cancellationToken)
     {
+        // A fan team in a fan match: the snapshot is the squad, whatever the store says now.
+        if (teamId.StartsWith(TeamViews.FanPrefix, StringComparison.Ordinal) && profiles?.GetValueOrDefault(teamId) is { } snapshot)
+        {
+            return lineup.Concat(snapshot.Squad.Select(p => PlayerSummary.From(p, teamId)));
+        }
+
         if (teams is null)
         {
             return lineup;

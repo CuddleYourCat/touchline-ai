@@ -70,6 +70,9 @@ param deploySquadModels bool = false
 @description('Point the Match Centre at Content Safety for the team builder\'s name guard (ADR-049). Off by default: the guard fails closed, so with it on and the blocklist not yet loaded every team create returns 503. Load the blocklist (infra/load-name-blocklist.ps1) first, then turn it on.')
 param deployNameGuard bool = false
 
+@description('Let fans start matches on the pipeline (ADR-050): gives the Match Centre the simulator job\'s resource ID. Off until the limits slice (one live, five a day) is deployed, because without it every POST /api/matches starts a billed job execution; a kill switch afterwards. The job role and the match-requests container are deployed either way.')
+param deployFanMatches bool = false
+
 @description('Tokens-per-minute limit, in thousands, for the small chat model (Commentator, Localiser).')
 @minValue(1)
 param smallModelCapacity int = 50
@@ -492,6 +495,9 @@ resource matchCentre 'Microsoft.App/containerApps@2024-03-01' = {
             ...(deploySearch ? [{ name: 'Search__Endpoint', value: searchEndpoint }] : []) // ADR-041
             ...squadSettings // the Analyst's models (ADR-030), only when deploySquadModels is on
             ...nameGuardSettings // the team builder's name guard (ADR-049), only when deployNameGuard is on
+            // The job a fan match starts (ADR-050), only while deployFanMatches is on; without it the
+            // launcher stays unconnected and answers 503.
+            ...(deployFanMatches ? [{ name: 'MatchCentre__FanMatches__JobResourceId', value: simulatorJob.id }] : [])
           ]
           // The placeholder image has no /alive or /health, so probes only apply to the real image.
           // The startup probe holds off liveness while a cold start from zero replicas
@@ -692,6 +698,9 @@ var cosmosContainerDefinitions = [
   // Fan-built teams (ADR-048). defaultTtl -1 turns time to live on without expiring anything: a delete
   // sets a per-document ttl, so the change feed sees the flag before Cosmos DB removes the document.
   { name: 'teams', partitionKey: '/id', defaultTtl: -1 }
+  // Fan match requests (ADR-050): written by the Match Centre, played by the simulator job. No time to
+  // live: each is tiny, and its team snapshots are the roster of record for every later read of its match.
+  { name: 'match-requests', partitionKey: '/id' }
 ]
 
 resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = [
@@ -1203,6 +1212,62 @@ resource cosmosContributorForMatchCentreTeams 'Microsoft.DocumentDB/databaseAcco
     roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
     principalId: appIdentity.properties.principalId
     scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/teams'
+  }
+}
+
+// Fan match requests (ADR-050), one Data Contributor assignment per identity on this one container.
+// The Match Centre writes requests and reads them for rosters; the simulator reads one and moves its
+// status on. The processor reads them for rosters, which its Data Contributor role on the whole
+// touchline database (above) already covers, so it needs no assignment of its own here.
+resource cosmosContributorForMatchCentreRequests 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmos.id, appIdentity.id, cosmosDataContributorRoleId, 'match-requests')
+  dependsOn: [cosmosContainers]
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
+    principalId: appIdentity.properties.principalId
+    scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/match-requests'
+  }
+}
+
+resource cosmosContributorForSimulatorRequests 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmos.id, simulatorIdentity.id, cosmosDataContributorRoleId, 'match-requests')
+  dependsOn: [cosmosContainers]
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
+    principalId: simulatorIdentity.properties.principalId
+    scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/match-requests'
+  }
+}
+
+// Match Centre identity: read and start job-simulator, and nothing else (ADR-050). A custom role,
+// because both built-in job roles (Operator and Contributor) grant Microsoft.App/jobs/*/action, which
+// includes listSecrets. Starting a job can still reference the job's secrets from an execution
+// template, so this is the narrowest grant that works, not a harmless one.
+resource simulatorJobStarterRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
+  name: guid(resourceGroup().id, 'touchline-simulator-job-starter')
+  properties: {
+    roleName: 'Touchline simulator job starter (${resourceGroup().name})'
+    description: 'Read a Container Apps job and start an execution of it. No listSecrets, stop, write or delete.'
+    type: 'CustomRole'
+    permissions: [
+      {
+        actions: ['Microsoft.App/jobs/read', 'Microsoft.App/jobs/start/action']
+        notActions: []
+      }
+    ]
+    assignableScopes: [resourceGroup().id]
+  }
+}
+
+resource jobStarterForMatchCentre 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(simulatorJob.id, appIdentity.id, simulatorJobStarterRole.id)
+  scope: simulatorJob
+  properties: {
+    roleDefinitionId: simulatorJobStarterRole.id
+    principalId: appIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

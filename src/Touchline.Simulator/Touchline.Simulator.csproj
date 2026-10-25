@@ -18,5 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
     <ProjectReference Include="..\Touchline.ServiceDefaults\Touchline.ServiceDefaults.csproj" />
+    <!-- The match-requests store (ADR-050): a fan match's request is read and its status moved on. -->
+    <ProjectReference Include="..\Touchline.Storage\Touchline.Storage.csproj" />
   </ItemGroup>
 </Project>

@@ -36,13 +36,18 @@ namespace Touchline.MatchCentre.Storage;
 /// Finds the notable moments (ADR-046), whose template lines are worked out here and not stored.
 /// Null for one over <paramref name="detector"/> and <paramref name="teams"/>.
 /// </param>
+/// <param name="matchTeams">
+/// Each match's team profiles (ADR-050): a fan match's line-ups and moments name its fan players
+/// from the snapshot in its request. Null for <paramref name="teams"/> alone.
+/// </param>
 public sealed partial class CosmosMatchReadModel(
     CosmosClient client,
     IReadOnlyDictionary<string, TeamProfile> teams,
     KeyMomentDetector detector,
     ICommentaryStore commentary,
     ILogger<CosmosMatchReadModel> logger,
-    NotableMomentDetector? notable = null) : IMatchReadModel
+    NotableMomentDetector? notable = null,
+    IMatchTeamProfiles? matchTeams = null) : IMatchReadModel
 {
     private readonly NotableMomentDetector _notable = notable ?? new NotableMomentDetector(detector, teams.Values);
 
@@ -114,12 +119,13 @@ public sealed partial class CosmosMatchReadModel(
             return null;
         }
 
+        var profiles = await TeamsForAsync(matchId, cancellationToken) ?? teams;
         return new MatchDetail(
             Summary(match, metadata),
             metadata.Venue,
             metadata.Referee.Name,
-            Lineup(metadata.Home),
-            Lineup(metadata.Away),
+            Lineup(metadata.Home, profiles),
+            Lineup(metadata.Away, profiles),
             LiveState.From(match.State));
     }
 
@@ -155,6 +161,11 @@ public sealed partial class CosmosMatchReadModel(
         // it's read fresh every time, even for a finished match: one single-partition query.
         var lines = (await ReadCommentaryAsync(matchId, cancellationToken)).ToLookup(line => line.MomentId);
 
+        // A fan match names its fan players from its request's snapshot; any other keeps the detectors as injected.
+        var (keyDetector, notableDetector) = await TeamsForAsync(matchId, cancellationToken) is { } profiles
+            ? (detector.ForTeams(profiles), _notable.ForTeams(profiles))
+            : (detector, _notable);
+
         var moments = new List<MomentView>();
         var state = MatchState.KickOff(matchId);
         foreach (var matchEvent in events)
@@ -166,12 +177,12 @@ public sealed partial class CosmosMatchReadModel(
                 state = state.Skip(missing);
             }
 
-            if (detector.Detect(matchEvent, state) is { } moment)
+            if (keyDetector.Detect(matchEvent, state) is { } moment)
             {
                 var line = CommentarySelection.Pick(lines[MomentIds.For(matchId, matchEvent.Sequence)], viewer.Mode, viewer.Language);
                 moments.Add(MomentViews.From(moment, matchId, line));
             }
-            else if (_notable.DetectAfterKey(matchEvent, state) is { } notableMoment && (!notableMoment.IsMinor || viewer.Mode == ViewingMode.Analyst))
+            else if (notableDetector.DetectAfterKey(matchEvent, state) is { } notableMoment && (!notableMoment.IsMinor || viewer.Mode == ViewingMode.Analyst))
             {
                 // A notable moment's line is a template worked out here, so it needs no stored commentary.
                 // A minor moment is listed for the Analyst only (ADR-055).
@@ -262,9 +273,9 @@ public sealed partial class CosmosMatchReadModel(
             metadata.Round,
             _dataSource);
 
-    private IReadOnlyList<PlayerSummary> Lineup(TeamSheet sheet)
+    private static IReadOnlyList<PlayerSummary> Lineup(TeamSheet sheet, IReadOnlyDictionary<string, TeamProfile> profiles)
     {
-        var profile = teams.GetValueOrDefault(sheet.Id);
+        var profile = profiles.GetValueOrDefault(sheet.Id);
         return
         [
             .. sheet.StartingEleven.Select((id, index) =>
@@ -274,8 +285,13 @@ public sealed partial class CosmosMatchReadModel(
         ];
     }
 
-    // A fan team isn't in the built-in catalogue until the team-builder lane stores them, so its
-    // players are shown by ID, numbered in team-sheet order, with the first as the goalkeeper.
+    // The match's profiles, or null for the catalogue. The lookup degrades to null on its own, so
+    // this never fails a read.
+    private Task<IReadOnlyDictionary<string, TeamProfile>?> TeamsForAsync(string matchId, CancellationToken cancellationToken) =>
+        matchTeams?.ForMatchAsync(matchId, cancellationToken) ?? Task.FromResult<IReadOnlyDictionary<string, TeamProfile>?>(null);
+
+    // A team none of the profiles know (a fan match whose request can't be read right now) has its
+    // players shown by ID, numbered in team-sheet order, with the first as the goalkeeper.
     private static PlayerSummary Unknown(string playerId, int index, string teamId) =>
         new(playerId, playerId, index + 1, index == 0 ? PlayerPosition.Goalkeeper : PlayerPosition.Midfielder, teamId, null, PreferredFoot.Right);
 

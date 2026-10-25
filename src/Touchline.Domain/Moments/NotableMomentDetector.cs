@@ -30,6 +30,33 @@ public sealed class NotableMomentDetector
     }
 
     /// <summary>
+    /// A detector that names players from other squads, the teams of one match (ADR-050), over a
+    /// key detector that does the same, so a key moment and a notable one name players alike.
+    /// </summary>
+    /// <param name="teams">The squads to name players from.</param>
+    /// <returns>The new detector.</returns>
+    public NotableMomentDetector WithTeams(IEnumerable<TeamProfile> teams)
+    {
+        ArgumentNullException.ThrowIfNull(teams);
+        IReadOnlyCollection<TeamProfile> squads = [.. teams];
+        return new NotableMomentDetector(_key.WithTeams(squads), squads);
+    }
+
+    /// <summary>
+    /// <see cref="WithTeams"/> for one match's profiles, built once per profiles instance and
+    /// reused (see <see cref="KeyMomentDetector.ForTeams"/>).
+    /// </summary>
+    /// <param name="teams">One match's profiles, by team ID.</param>
+    /// <returns>The detector for those teams.</returns>
+    public NotableMomentDetector ForTeams(IReadOnlyDictionary<string, TeamProfile> teams)
+    {
+        ArgumentNullException.ThrowIfNull(teams);
+        return _forTeams.GetValue(teams, t => new NotableMomentDetector(_key.ForTeams(t), t.Values));
+    }
+
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<IReadOnlyDictionary<string, TeamProfile>, NotableMomentDetector> _forTeams = new();
+
+    /// <summary>
     /// Decides whether an event is a notable moment.
     /// </summary>
     /// <param name="matchEvent">The event that has just happened.</param>

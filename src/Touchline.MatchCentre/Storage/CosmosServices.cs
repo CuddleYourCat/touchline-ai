@@ -6,6 +6,7 @@ using Touchline.Domain.Moments;
 using Touchline.Domain.Squad;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Live;
+using Touchline.MatchCentre.TeamBuilding;
 using Touchline.Storage;
 
 namespace Touchline.MatchCentre.Storage;
@@ -29,7 +30,17 @@ internal static class CosmosServices
         builder.AddAzureCosmosClient("cosmos", settings => settings.DisableHealthChecks = true);
         builder.Services.AddSingleton<ICommentaryStore, CosmosCommentaryStore>();
         builder.Services.AddSingleton<IRecapStore, CosmosRecapStore>();
-        builder.Services.AddKeyedSingleton<IMatchReadModel, CosmosMatchReadModel>(MatchSources.Cosmos);
+        // A fan match waiting for its first event is served from its request (ADR-050), when the
+        // request store is registered (AddTeamBuilderBackends does it under the same condition).
+        builder.Services.AddSingleton<CosmosMatchReadModel>();
+        builder.Services.AddKeyedSingleton<IMatchReadModel>(MatchSources.Cosmos, (provider, _) =>
+            provider.GetService<IFanMatchRequestStore>() is { } requests
+                ? new FanMatchReadModel(
+                    provider.GetRequiredService<CosmosMatchReadModel>(),
+                    requests,
+                    provider.GetRequiredService<IOptions<FanMatchOptions>>(),
+                    provider.GetRequiredService<TimeProvider>())
+                : provider.GetRequiredService<CosmosMatchReadModel>());
         return builder;
     }
 

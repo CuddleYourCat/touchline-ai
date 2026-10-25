@@ -30,12 +30,15 @@ export type { Viewer } from '../viewer/viewer';
 export type MatchStreamState =
   | { kind: 'loading' }
   | { kind: 'notFound' }
+  /** A fan match that couldn't be started, or that was never picked up (a 410). */
+  | { kind: 'notStarted' }
   | { kind: 'error' }
   | { kind: 'ready'; match: LiveMatch; stale: boolean; momentsFailed: boolean };
 
 type Action =
   | { type: 'reset' }
   | { type: 'notFound' }
+  | { type: 'notStarted' }
   | { type: 'error' }
   | { type: 'loaded'; detail: MatchDetail; moments: MomentView[] | undefined; language: string }
   | { type: 'moments'; matchId: string; moments: MomentView[] | undefined }
@@ -67,6 +70,8 @@ function reducer(state: MatchStreamState, action: Action): MatchStreamState {
       return state.kind === 'loading' ? state : { kind: 'loading' };
     case 'notFound':
       return { kind: 'notFound' };
+    case 'notStarted':
+      return { kind: 'notStarted' };
     case 'error':
       return { kind: 'error' };
     case 'loaded': {
@@ -91,14 +96,16 @@ function reducer(state: MatchStreamState, action: Action): MatchStreamState {
   }
 }
 
-type DetailResult = { kind: 'found'; detail: MatchDetail } | { kind: 'notFound' } | { kind: 'error' };
+type DetailResult = { kind: 'found'; detail: MatchDetail } | { kind: 'notFound' } | { kind: 'notStarted' } | { kind: 'error' };
 
 /** Loads the detail. Server error text is deliberately dropped. */
 async function fetchDetail(matchId: string): Promise<DetailResult> {
   try {
     const { data, response } = await api.GET('/api/matches/{matchId}', { params: { path: { matchId } } });
     if (data) return { kind: 'found', detail: data };
-    return response.status === 404 ? { kind: 'notFound' } : { kind: 'error' };
+    if (response.status === 404) return { kind: 'notFound' };
+    if (response.status === 410) return { kind: 'notStarted' };
+    return { kind: 'error' };
   } catch {
     return { kind: 'error' };
   }

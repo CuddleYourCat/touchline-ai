@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Touchline.Agents;
 using Touchline.Domain.Moments;
 using Touchline.Domain.Squad;
+using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
 
 namespace Touchline.EventProcessor.Processing;
@@ -49,6 +50,7 @@ public sealed partial class RecapWriter
     private readonly SquadMetrics _metrics;
     private readonly ILoggerFactory _loggers;
     private readonly ILogger<RecapWriter> _logger;
+    private readonly IMatchTeamProfiles? _teams;
 
     /// <summary>Creates the writer.</summary>
     /// <param name="matches">The stored matches and events, which the facts are built from.</param>
@@ -58,6 +60,7 @@ public sealed partial class RecapWriter
     /// <param name="options">The squad's settings: the languages, and whether models are available.</param>
     /// <param name="metrics">Where recaps and fallbacks are counted.</param>
     /// <param name="loggers">Creates the Producer's logger.</param>
+    /// <param name="teams">The team profiles of each match (ADR-050); null for the embedded catalogue alone.</param>
     public RecapWriter(
         IMatchStore matches,
         IRecapStore recaps,
@@ -65,8 +68,10 @@ public sealed partial class RecapWriter
         [FromKeyedServices(SquadModels.Large)] IChatClient chatClient,
         IOptions<SquadOptions> options,
         SquadMetrics metrics,
-        ILoggerFactory loggers)
+        ILoggerFactory loggers,
+        IMatchTeamProfiles? teams = null)
     {
+        _teams = teams;
         ArgumentNullException.ThrowIfNull(loggers);
         _matches = matches ?? throw new ArgumentNullException(nameof(matches));
         _recaps = recaps ?? throw new ArgumentNullException(nameof(recaps));
@@ -99,8 +104,10 @@ public sealed partial class RecapWriter
         }
 
         var events = await _matches.GetEventsAsync(matchId, cancellationToken);
+        var profiles = _teams is null ? null : await _teams.ForMatchAsync(matchId, cancellationToken);
+        var detector = profiles is null ? _detector : _detector.ForTeams(profiles);
         var producer = new ProducerRecap(
-            _chatClient, StoredMatchFacts.From(match, events, _detector), _options, _metrics, _loggers.CreateLogger<ProducerRecap>());
+            _chatClient, StoredMatchFacts.From(match, events, detector, profiles), _options, _metrics, _loggers.CreateLogger<ProducerRecap>());
 
         int written = 0, skipped = 0, fallbacks = 0, storeFailures = 0, givenUp = 0, transient = 0;
         foreach (var language in options.Languages.Distinct(StringComparer.OrdinalIgnoreCase))

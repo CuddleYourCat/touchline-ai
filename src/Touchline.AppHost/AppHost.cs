@@ -41,6 +41,12 @@ database.AddContainer("recaps", "/matchId");
 // so a deleted team stays flagged here; in Azure the container's TTL removes it after a week.
 database.AddContainer("teams", "/id");
 
+// Fan match requests (ADR-050), written by the Match Centre and played by the simulator. Locally there's
+// no Container Apps job to start, so the Match Centre's launcher stays unconnected (503) unless
+// MatchCentre:FanMatches:JobResourceId is set; a request can still be played by running the simulator
+// with Simulator__RequestId pointing at one written by hand in Data Explorer.
+database.AddContainer("match-requests", "/id");
+
 // The Functions host's own storage (AzureWebJobsStorage), which also holds the Event Hubs
 // trigger's checkpoints.
 var storage = builder.AddAzureStorage("storage").RunAsEmulator();

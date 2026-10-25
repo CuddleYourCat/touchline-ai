@@ -32,6 +32,12 @@ public static class CosmosNames
     /// <summary>Fan-built teams, one document per team, partitioned by <c>/id</c> (ADR-048). Built-in teams aren't stored.</summary>
     public const string Teams = "teams";
 
+    /// <summary>
+    /// Fan match requests, one document per match, partitioned by <c>/id</c> (ADR-050). No time to
+    /// live: each is tiny, and it's the roster of record for every later read of its match.
+    /// </summary>
+    public const string MatchRequests = "match-requests";
+
     /// <summary>The change feed trigger's checkpoints, partitioned by <c>/id</c>.</summary>
     public const string Leases = "leases";
 }

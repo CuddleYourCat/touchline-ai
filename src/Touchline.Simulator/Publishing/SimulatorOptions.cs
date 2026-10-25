@@ -19,6 +19,49 @@ public sealed class SimulatorOptions
     /// an execution ends with its matches (ADR-024). Off locally, where the worker idles.
     /// </summary>
     public bool ExitWhenDone { get; set; }
+
+    /// <summary>
+    /// A fan match request to play (ADR-050), or null to play <see cref="Matches"/>. The Match
+    /// Centre sets it, as <c>Simulator__RequestId</c>, on the one execution it starts. When set,
+    /// the request is the whole run: <see cref="Matches"/> is ignored.
+    /// </summary>
+    public string? RequestId { get; set; }
+
+    /// <summary>How many times faster than the match clock a fan match is published. 10 plays one in about 9 minutes.</summary>
+    public double RequestSpeed { get; set; } = 10;
+
+    /// <summary>Whether this run plays a fan match request rather than the configured matches.</summary>
+    public bool PlaysRequest => !string.IsNullOrWhiteSpace(RequestId);
+}
+
+/// <summary>Builds the engine for a fan match request (ADR-050).</summary>
+public static class FanMatchPlans
+{
+    /// <summary>
+    /// The simulator for a request: each side's profile (the embedded catalogue for a built-in
+    /// team, <see cref="Touchline.Domain.Teams.Builder.FanTeamProfiles.Build"/> for a fan
+    /// snapshot), its sheets, its seed, and the request ID as the match ID.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <returns>A simulator ready to play.</returns>
+    /// <exception cref="ArgumentException">A team can't be found or built, or a sheet doesn't fit its squad.</exception>
+    public static MatchSimulator CreateSimulator(FanMatchRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var catalogue = TeamProfileCatalog.LoadEmbedded();
+        return new MatchSimulator(
+            FanMatchRequest.ProfileOf(request.Home, catalogue),
+            FanMatchRequest.ProfileOf(request.Away, catalogue),
+            request.Seed,
+            new MatchOptions
+            {
+                MatchId = request.Id,
+                Kind = MatchKind.Exhibition,
+                KickOffUtc = request.KickOffUtc,
+                HomeSheet = request.Home.Sheet,
+                AwaySheet = request.Away.Sheet
+            });
+    }
 }
 
 /// <summary>One match for the worker to play and publish.</summary>

@@ -230,6 +230,37 @@ describe('MatchPage', () => {
     expect(FakeEventSource.instances).toHaveLength(0);
   });
 
+  it('shows a scheduled fan match as kicking off in a moment, keeps the stream open, and goes live with the first state', async () => {
+    const scheduled = detail(liveState({ lastSequence: 0, clock: { period: 'FirstHalf', minute: 0, second: 0, display: '00:00' } }));
+    stubApi(found({ ...scheduled, summary: { ...scheduled.summary, kind: 'Exhibition', status: 'Scheduled' } }));
+
+    renderPage();
+
+    expect(await screen.findByText('Kick-off in a moment…')).toBeInTheDocument();
+    expect(screen.queryByText('LIVE')).not.toBeInTheDocument();
+    const source = FakeEventSource.latest();
+    expect(streamUrl(source).searchParams.get('after')).toBe('0');
+
+    act(() => source.emit('heartbeat', {}));
+    expect(screen.getByText('Kick-off in a moment…')).toBeInTheDocument();
+
+    act(() => source.emit('state', liveState({ lastSequence: 1, clock: { period: 'FirstHalf', minute: 0, second: 1, display: '00:01' } }), 1));
+    expect(await screen.findByText('LIVE')).toBeInTheDocument();
+    expect(screen.queryByText('Kick-off in a moment…')).not.toBeInTheDocument();
+  });
+
+  it('says calmly that a fan match did not start on a 410, without server text, and opens no stream', async () => {
+    stubApi({ data: undefined, error: { detail: 'secret stack trace' }, response: new Response(null, { status: 410 }) });
+
+    renderPage('exh-202610241530-0a1b2c3d');
+
+    expect(await screen.findByRole('heading', { name: "This match didn't start" })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Pick the teams again' })).toHaveAttribute('href', '/kickoff');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/secret stack trace/)).not.toBeInTheDocument();
+    expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
   it('shows a plain error when the detail fails', async () => {
     stubApi({ data: undefined, error: { detail: 'secret stack trace' }, response: new Response(null, { status: 503 }) });
 

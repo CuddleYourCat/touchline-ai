@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Options;
 using Touchline.Domain.Matches;
+using Touchline.Simulator.Engine;
+using Touchline.Storage;
 
 namespace Touchline.Simulator.Publishing;
 
@@ -13,20 +15,35 @@ namespace Touchline.Simulator.Publishing;
 /// <param name="season">Who is suspended, read before each fixture (ADR-025).</param>
 /// <param name="lifetime">Stopped once every match is played, when the worker runs as a job.</param>
 /// <param name="logger">Progress and failures.</param>
+/// <param name="requests">
+/// The fan match requests (ADR-050), read when <see cref="SimulatorOptions.RequestId"/> is set;
+/// null where there are none, which makes a request run fail.
+/// </param>
 public sealed partial class MatchPublisher(
     IOptions<SimulatorOptions> options,
     IMatchEventSender sender,
     TimeProvider time,
     ISeasonReader season,
     IHostApplicationLifetime lifetime,
-    ILogger<MatchPublisher> logger) : BackgroundService
+    ILogger<MatchPublisher> logger,
+    IFanMatchRequestStore? requests = null) : BackgroundService
 {
+    // A status write after a failure still has to land when the host is stopping, but never hang it.
+    private static readonly TimeSpan _statusWriteTimeout = TimeSpan.FromSeconds(10);
+
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var settings = options.Value;
         try
         {
+            if (settings.PlaysRequest)
+            {
+                await PlayRequestAsync(settings.RequestId!, settings.RequestSpeed, stoppingToken);
+                LogAllPlayed(logger, 1, settings.ExitWhenDone ? "Stopping the host." : "Idling until the host stops.");
+                return;
+            }
+
             foreach (var plan in settings.Matches)
             {
                 await PlayAsync(plan, stoppingToken);
@@ -76,8 +93,79 @@ public sealed partial class MatchPublisher(
             LogSuspended(logger, simulator.MatchId, string.Join(", ", banned.Order(StringComparer.Ordinal)));
         }
 
+        await PublishAsync(simulator, plan.Speed, cancellationToken);
+    }
+
+    /// <summary>
+    /// Plays a fan match request (ADR-050): reads it, marks it running, plays it with its own seed,
+    /// match ID, kick-off and sheets through the same publisher path as any match, then marks it
+    /// finished. Any failure after the read marks it failed, with a short reason, and is rethrown so
+    /// the execution shows as failed.
+    /// </summary>
+    /// <param name="requestId">The request.</param>
+    /// <param name="speed">How many times faster than the match clock to publish.</param>
+    /// <param name="cancellationToken">Stops the match part-way, for a graceful shutdown.</param>
+    /// <returns>A task that completes once the whole match has been published.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// There's no request store, no such request, or it isn't scheduled (it already ran, or failed).
+    /// </exception>
+    public async Task PlayRequestAsync(string requestId, double speed, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestId);
+        var store = requests ?? throw new InvalidOperationException("Fan match requests aren't configured, so a request can't be played.");
+
+        var request = await store.GetAsync(requestId, cancellationToken)
+            ?? throw new InvalidOperationException($"There's no fan match request '{requestId}'.");
+
+        // Only a scheduled request runs, so a second execution for the same request (a manual
+        // restart, say) can't publish the match twice under its ID.
+        if (!await store.SetStatusAsync(requestId, FanMatchStatus.Running, null, [FanMatchStatus.Scheduled], cancellationToken))
+        {
+            throw new InvalidOperationException($"Fan match request '{requestId}' isn't scheduled (it's {request.Status}), so it isn't played again.");
+        }
+
+        try
+        {
+            var simulator = FanMatchPlans.CreateSimulator(request);
+            LogKickOff(logger, simulator.MatchId, request.Seed, speed);
+            await PublishAsync(simulator, speed, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            // The type and a short message only: never a stack, and never the request's names.
+            var reason = exception switch
+            {
+                OperationCanceledException => "The match was stopped before full time.",
+                ArgumentException => "The match couldn't be set up from its request.",
+                _ => $"The match failed to publish ({exception.GetType().Name}).",
+            };
+            await MarkFailedAsync(store, requestId, reason);
+            throw;
+        }
+
+        // Outside the try: once every event is out, the match happened, so a lost write here leaves the
+        // request running (the active list stops counting it after a while) rather than calling it failed.
+        await store.SetStatusAsync(requestId, FanMatchStatus.Finished, null, [FanMatchStatus.Running], cancellationToken);
+    }
+
+    private async Task MarkFailedAsync(IFanMatchRequestStore store, string requestId, string reason)
+    {
+        using var timeout = new CancellationTokenSource(_statusWriteTimeout);
+        try
+        {
+            await store.SetStatusAsync(requestId, FanMatchStatus.Failed, reason, [FanMatchStatus.Scheduled, FanMatchStatus.Running], timeout.Token);
+        }
+        catch (Exception exception)
+        {
+            // The match has already failed; a lost status write is logged, not allowed to hide that.
+            LogStatusLost(logger, exception, requestId);
+        }
+    }
+
+    private async Task PublishAsync(MatchSimulator simulator, double speed, CancellationToken cancellationToken)
+    {
         var published = 0;
-        foreach (var batch in MatchPacer.Pace(simulator.Play(), plan.Speed))
+        foreach (var batch in MatchPacer.Pace(simulator.Play(), speed))
         {
             if (batch.DelayBefore > TimeSpan.Zero)
             {
@@ -146,6 +234,9 @@ public sealed partial class MatchPublisher(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "All {Count} configured matches played. {Next}")]
     private static partial void LogAllPlayed(ILogger logger, int count, string next);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Fan match request {RequestId} couldn't be marked as failed")]
+    private static partial void LogStatusLost(ILogger logger, Exception exception, string requestId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "A match failed to publish. The run is marked as failed.")]
     private static partial void LogMatchFailed(ILogger logger, Exception exception);

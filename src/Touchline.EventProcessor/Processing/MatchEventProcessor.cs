@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Touchline.Domain;
 using Touchline.Domain.Matches;
 using Touchline.Domain.Moments;
+using Touchline.Domain.Teams;
 
 namespace Touchline.EventProcessor.Processing;
 
@@ -25,12 +26,17 @@ namespace Touchline.EventProcessor.Processing;
 /// <param name="detector">Decides which events are key moments.</param>
 /// <param name="telemetry">Counters for processed, skipped and duplicate events.</param>
 /// <param name="logger">Skips, gaps and progress.</param>
+/// <param name="teams">
+/// The team profiles of each match (ADR-050), so a fan match's key moments name its fan players;
+/// null for the detector's own squads.
+/// </param>
 public sealed partial class MatchEventProcessor(
     IMatchStore store,
     IKeyMomentPublisher publisher,
     KeyMomentDetector detector,
     PipelineTelemetry telemetry,
-    ILogger<MatchEventProcessor> logger)
+    ILogger<MatchEventProcessor> logger,
+    IMatchTeamProfiles? teams = null)
 {
     /// <summary>
     /// Processes a batch of messages, which may hold events from several matches.
@@ -69,6 +75,12 @@ public sealed partial class MatchEventProcessor(
         var stored = new List<MatchEvent>();
         var moments = new List<KeyMoment>();
 
+        // A fan match's reasons name its fan players, from the snapshot in its request; any other
+        // match keeps the injected detector. The lookup is cached, so this is one read per match.
+        var matchDetector = teams is not null && await teams.ForMatchAsync(matchId, cancellationToken) is { } profiles
+            ? detector.ForTeams(profiles)
+            : detector;
+
         foreach (var (message, check) in messages)
         {
             var sequence = check.Sequence!.Value;
@@ -104,7 +116,7 @@ public sealed partial class MatchEventProcessor(
 
             // The detector reads the state before the event; the published moment carries the
             // score after it, which the commentary needs and only this loop knows.
-            var moment = detector.Detect(matchEvent, state);
+            var moment = matchDetector.Detect(matchEvent, state);
             state = state.Apply(matchEvent);
             if (moment is not null)
             {

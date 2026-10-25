@@ -27,6 +27,10 @@ namespace Touchline.MatchCentre.Storage;
 /// </param>
 /// <param name="teams">The team profiles, for the shape model, or null to send no shapes.</param>
 /// <param name="notable">The notable-moment detector, or null for one over <paramref name="detector"/>.</param>
+/// <param name="matchTeams">
+/// Each match's team profiles (ADR-050), read when its hub is created, so a fan match's moments,
+/// lines and shapes use its fan players. Null for <paramref name="teams"/> alone.
+/// </param>
 internal sealed partial class LiveMatchHubs(
     CosmosClient client,
     ICommentaryStore commentary,
@@ -36,7 +40,8 @@ internal sealed partial class LiveMatchHubs(
     int buffer = LiveMatchHubs.DefaultBuffer,
     IOptions<LiveFeedOptions>? options = null,
     IReadOnlyDictionary<string, TeamProfile>? teams = null,
-    NotableMomentDetector? notable = null)
+    NotableMomentDetector? notable = null,
+    IMatchTeamProfiles? matchTeams = null)
 {
     /// <summary>The default per-stream buffer: several minutes of a busy match.</summary>
     public const int DefaultBuffer = 256;
@@ -110,13 +115,20 @@ internal sealed partial class LiveMatchHubs(
 
         await WaitForFeedAsync(cancellationToken);
 
+        // Read outside the lock; a fan match's roster never changes, so the hub keeps it for life.
+        var profiles = matchTeams is null ? null : await matchTeams.ForMatchAsync(matchId, cancellationToken);
+
         lock (_gate)
         {
             if (!_hubs.TryGetValue(matchId, out hub!))
             {
                 // Line-ups are null until the B-lane wiring reads them from the stored match
                 // document; until then shapes start with the metadata event (sequence 1).
-                hub = new LiveMatchHub(matchId, detector, time, buffer, BackfillAsync, logger, teams, lineups: null, notable);
+                hub = profiles is null
+                    ? new LiveMatchHub(matchId, detector, time, buffer, BackfillAsync, logger, teams, lineups: null, notable)
+                    : new LiveMatchHub(
+                        matchId, detector.ForTeams(profiles), time, buffer, BackfillAsync, logger, profiles, lineups: null,
+                        notable?.ForTeams(profiles));
                 hub.Ready = LoadAsync(hub);
                 _hubs[matchId] = hub;
             }

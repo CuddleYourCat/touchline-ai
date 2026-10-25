@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Touchline.Domain.Matches;
 
 namespace Touchline.Simulator.Publishing;
 
@@ -15,6 +16,23 @@ public sealed class SimulatorOptionsValidator : IValidateOptions<SimulatorOption
         ArgumentNullException.ThrowIfNull(options);
 
         var failures = new List<string>();
+
+        // A fan match request is the whole run (ADR-050): the configured matches are ignored, and
+        // the request itself is read and checked when the run starts, since it lives in Cosmos DB.
+        if (options.PlaysRequest)
+        {
+            if (!FanMatchIds.IsFanMatch(options.RequestId))
+            {
+                failures.Add($"Simulator:RequestId '{options.RequestId}' isn't a fan match ID (exh-yyyyMMddHHmm-xxxxxxxx).");
+            }
+
+            if (!double.IsFinite(options.RequestSpeed) || options.RequestSpeed <= 0)
+            {
+                failures.Add("Simulator:RequestSpeed must be positive.");
+            }
+
+            return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+        }
 
         // A misplaced or missing section binds to an empty list, which would play nothing and
         // still succeed: as a job, an execution that "worked" having published nothing.

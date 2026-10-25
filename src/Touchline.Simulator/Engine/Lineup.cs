@@ -11,14 +11,6 @@ namespace Touchline.Simulator.Engine;
 /// </summary>
 internal sealed class Lineup
 {
-    private static readonly (PlayerPosition Position, int Count)[] _shape =
-    [
-        (PlayerPosition.Goalkeeper, 1),
-        (PlayerPosition.Defender, 4),
-        (PlayerPosition.Midfielder, 3),
-        (PlayerPosition.Forward, 3)
-    ];
-
     // How likely each position is to be involved, by the third the ball is in, from that
     // team's point of view. Defenders act deep, forwards high, midfielders everywhere.
     private static readonly Dictionary<Third, Dictionary<PlayerPosition, double>> _involvement = new()
@@ -49,31 +41,8 @@ internal sealed class Lineup
     /// <see cref="MatchdaySheetRules"/>.
     /// </remarks>
     /// <exception cref="ArgumentException">The sheet names a player who isn't in the squad.</exception>
-    public static IReadOnlyList<Player> StartingEleven(TeamProfile team, MatchdaySheet? sheet = null)
-    {
-        if (sheet is not null)
-        {
-            // OrderBy is a stable sort, so players in the same line keep the sheet's order.
-            return
-            [
-                .. sheet.StartingEleven
-                    .Select(id => team.FindPlayer(id) ?? throw new ArgumentException($"Player '{id}' isn't in {team.Name}'s squad.", nameof(sheet)))
-                    .OrderBy(p => p.Position)
-            ];
-        }
-
-        var eleven = _shape
-            .SelectMany(slot => team.Squad.Where(p => p.Position == slot.Position).Take(slot.Count))
-            .ToList();
-
-        if (eleven.Count < 11)
-        {
-            // A squad short in one position fills the gaps from whoever is left.
-            eleven.AddRange(team.Squad.Except(eleven).Take(11 - eleven.Count));
-        }
-
-        return eleven;
-    }
+    public static IReadOnlyList<Player> StartingEleven(TeamProfile team, MatchdaySheet? sheet = null) =>
+        StartingElevens.For(team, sheet);
 
     public TeamProfile Team { get; }
 

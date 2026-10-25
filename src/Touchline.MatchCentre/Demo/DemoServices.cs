@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Touchline.Domain.Squad;
+using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Storage;
 
@@ -41,7 +42,8 @@ internal static class DemoServices
     {
         services.TryAddSingleton<ITeamStore, InMemoryTeamStore>();
         services.TryAddSingleton<INameGuard, FormatOnlyNameGuard>();
-        services.AddSingleton<IMatchLauncher, UnconnectedMatchLauncher>();
+        services.TryAddSingleton<IMatchLauncher, UnconnectedMatchLauncher>();
+        services.TryAddSingleton<IMatchTeamProfiles>(CatalogueOnlyMatchTeams.Instance);
         return services;
     }
 }

@@ -19,4 +19,7 @@ public static class ProblemTypes
 
     /// <summary>503: names can't be checked right now (Content Safety is unavailable), so nothing was saved.</summary>
     public const string NameCheckUnavailable = Base + "/name-check-unavailable";
+
+    /// <summary>410: a fan match that couldn't be started, or that its job never picked up (ADR-050).</summary>
+    public const string MatchNotStarted = Base + "/match-not-started";
 }

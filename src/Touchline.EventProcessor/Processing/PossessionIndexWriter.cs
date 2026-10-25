@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Touchline.Domain.Moments;
+using Touchline.Domain.Teams;
 using Touchline.Search;
 
 namespace Touchline.EventProcessor.Processing;
@@ -32,7 +33,7 @@ public sealed partial class PossessionIndexWriter
     private readonly KeyMomentSummaryWriter _summaries;
     private readonly IPossessionIndexer _indexer;
     private readonly IEmbeddingGenerator<string, Embedding<float>>? _embeddings;
-    private readonly ITeamProfiles _teams;
+    private readonly IMatchTeamProfiles _teams;
     private readonly SearchMetrics _metrics;
     private readonly PossessionSearchOptions _options;
     private readonly ILogger<PossessionIndexWriter> _logger;
@@ -42,7 +43,7 @@ public sealed partial class PossessionIndexWriter
     /// <param name="detector">Finds the key moments again from the stored events.</param>
     /// <param name="summaries">Writes the key-moment summaries with the small model.</param>
     /// <param name="indexer">Writes to the index; a <see cref="NullPossessionIndexer"/> switches indexing off.</param>
-    /// <param name="teams">The team profiles players are named from (the embedded catalogue by default; the fan-built teams store later).</param>
+    /// <param name="teams">The team profiles players are named from, per match: the catalogue, plus a fan match's snapshots (ADR-050).</param>
     /// <param name="metrics">Where indexed documents are counted.</param>
     /// <param name="options">The search settings, including the embedding call's input caps.</param>
     /// <param name="logger">The logger.</param>
@@ -52,7 +53,7 @@ public sealed partial class PossessionIndexWriter
         KeyMomentDetector detector,
         KeyMomentSummaryWriter summaries,
         IPossessionIndexer indexer,
-        ITeamProfiles teams,
+        IMatchTeamProfiles teams,
         SearchMetrics metrics,
         IOptions<PossessionSearchOptions> options,
         ILogger<PossessionIndexWriter> logger,
@@ -98,8 +99,10 @@ public sealed partial class PossessionIndexWriter
         }
 
         var events = await _matches.GetEventsAsync(matchId, cancellationToken);
-        var roster = PossessionRoster.From(match.Metadata, _teams.All);
-        var possessions = PossessionSummarizer.Summarize(matchId, events, _detector, roster);
+        var profiles = await _teams.ForMatchAsync(matchId, cancellationToken);
+        var roster = PossessionRoster.From(match.Metadata, profiles);
+        var detector = profiles is null ? _detector : _detector.ForTeams(profiles);
+        var possessions = PossessionSummarizer.Summarize(matchId, events, detector, roster);
         if (possessions.Count == 0)
         {
             LogNothing(_logger, matchId);

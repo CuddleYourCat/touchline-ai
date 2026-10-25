@@ -146,7 +146,7 @@ public class PossessionIndexTests
     {
         var matches = new InMemoryMatchStore { OnCall = call => throw new InvalidOperationException($"unexpected read: {call}") };
         var writer = new PossessionIndexWriter(
-            matches, new KeyMomentDetector(), Summaries(), new NullPossessionIndexer(), new EmbeddedTeamProfiles(), Metrics(),
+            matches, new KeyMomentDetector(), Summaries(), new NullPossessionIndexer(), CatalogueOnlyMatchTeams.Instance, Metrics(),
             Options.Create(new PossessionSearchOptions()), NullLogger<PossessionIndexWriter>.Instance, _embeddings.Object);
 
         var run = await writer.WriteAsync(_matchId, 1, CancellationToken.None);
@@ -211,7 +211,7 @@ public class PossessionIndexTests
     {
         var matches = new InMemoryMatchStore { OnCall = call => throw new InvalidOperationException($"unexpected read: {call}") };
         var writer = new PossessionIndexWriter(
-            matches, new KeyMomentDetector(), Summaries(), new NullPossessionIndexer(), new EmbeddedTeamProfiles(), Metrics(),
+            matches, new KeyMomentDetector(), Summaries(), new NullPossessionIndexer(), CatalogueOnlyMatchTeams.Instance, Metrics(),
             Options.Create(new PossessionSearchOptions()), NullLogger<PossessionIndexWriter>.Instance);
 
         await new PossessionIndexFunction(writer, NullLogger<PossessionIndexFunction>.Instance)
@@ -266,15 +266,15 @@ public class PossessionIndexTests
     [Test]
     public async Task Players_are_named_from_the_injected_team_profiles()
     {
-        var profiles = new Mock<ITeamProfiles>();
-        profiles.SetupGet(p => p.All).Returns(new Dictionary<string, TeamProfile>());
+        var profiles = new Mock<IMatchTeamProfiles>();
+        profiles.Setup(p => p.ForMatchAsync(_matchId, It.IsAny<CancellationToken>())).ReturnsAsync(new Dictionary<string, TeamProfile>());
         var writer = new PossessionIndexWriter(
             _matches, new KeyMomentDetector(), Summaries(), _indexer.Object, profiles.Object, Metrics(),
             Options.Create(new PossessionSearchOptions()), NullLogger<PossessionIndexWriter>.Instance, _embeddings.Object);
 
         await writer.WriteAsync(_matchId, 1, CancellationToken.None);
 
-        profiles.VerifyGet(p => p.All, Times.AtLeastOnce);
+        profiles.Verify(p => p.ForMatchAsync(_matchId, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
         _upserts.Single().Should().OnlyContain(d => d.Players.Count == 0, "no profile means no known players");
     }
 
@@ -325,7 +325,7 @@ public class PossessionIndexTests
         new KeyMomentDetector(),
         Summaries(squad),
         _indexer.Object,
-        new EmbeddedTeamProfiles(),
+        CatalogueOnlyMatchTeams.Instance,
         Metrics(),
         Options.Create(options ?? new PossessionSearchOptions()),
         NullLogger<PossessionIndexWriter>.Instance,

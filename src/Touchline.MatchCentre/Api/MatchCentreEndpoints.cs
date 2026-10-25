@@ -30,6 +30,12 @@ internal static partial class MatchCentreEndpoints
         + "with the demo matches alone, and sets the Touchline-Degraded response header to \"cosmos\". "
         + "The API doesn't enable CORS, so a cross-origin client sees the header only if CORS exposes it.";
 
+    private const string _scheduledDescription =
+        "A fan match is Scheduled from its 202 until its first event is stored, 30 to 60 seconds later: it has its teams " +
+        "and line-ups but no events, and its stream stays open with heartbeats until play starts. A fan match that " +
+        "couldn't be started, or whose job never picked it up, answers 410 (type .../match-not-started) here and on " +
+        "its events, moments, momentum and stream.";
+
     private const string _streamDescription =
         "Server-sent events (text/event-stream). Each message has an event name, an id (the last event sequence " +
         "the client has fully seen, for Last-Event-ID resume) and one JSON data line. The event names and their " +
@@ -53,16 +59,17 @@ internal static partial class MatchCentreEndpoints
             .WithDescription(_listDescription)
             .ProducesValidationProblem();
         matches.MapGet("/{matchId}", GetMatch).WithName("GetMatch").WithSummary("A match in full.")
-            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+            .WithDescription(_scheduledDescription)
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/events", GetEvents).WithName("GetEvents").WithSummary("A page of a match's events.")
-            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/momentum", GetMomentum).WithName("GetMomentum").WithSummary("Momentum so far, in five-minute windows.")
-            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/moments", GetMoments).WithName("GetMoments").WithSummary("Key and notable moments so far, with commentary for the viewer.")
-            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapGet("/{matchId}/stream", Stream).WithName("StreamMatch").WithSummary("The live match, as server-sent events.")
             .WithDescription(_streamDescription)
-            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+            .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         matches.MapPost("/{matchId}/questions", AskQuestion).WithName("AskQuestion").WithSummary("Ask the Analyst about a match.")
             .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status429TooManyRequests).RequireRateLimiting(RateLimiting.PaidCalls);

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Touchline.Domain.Matches;
 using Touchline.Domain.Pitch;
 using Touchline.Domain.Teams;
@@ -58,6 +59,34 @@ public sealed class KeyMomentDetector
 
     /// <summary>The xG at or above which a missed shot counts as a big chance.</summary>
     public double BigChanceThreshold { get; }
+
+    /// <summary>
+    /// A detector with the same threshold that names players from other squads: the teams of one
+    /// match, built-in and fan alike (ADR-050). Cheap: it indexes a few dozen players.
+    /// </summary>
+    /// <param name="teams">The squads to name players from.</param>
+    /// <returns>The new detector.</returns>
+    public KeyMomentDetector WithTeams(IEnumerable<TeamProfile> teams)
+    {
+        ArgumentNullException.ThrowIfNull(teams);
+        return new KeyMomentDetector(BigChanceThreshold, teams);
+    }
+
+    /// <summary>
+    /// <see cref="WithTeams"/> for one match's profiles, built once per profiles instance and
+    /// reused: the per-match lookup caches its dictionary, so every batch and every moments
+    /// request of a fan match gets the same detector. The memo holds the dictionary weakly, so it
+    /// goes when the lookup drops the match.
+    /// </summary>
+    /// <param name="teams">One match's profiles, by team ID.</param>
+    /// <returns>The detector for those teams.</returns>
+    public KeyMomentDetector ForTeams(IReadOnlyDictionary<string, TeamProfile> teams)
+    {
+        ArgumentNullException.ThrowIfNull(teams);
+        return _forTeams.GetValue(teams, t => new KeyMomentDetector(BigChanceThreshold, t.Values));
+    }
+
+    private readonly ConditionalWeakTable<IReadOnlyDictionary<string, TeamProfile>, KeyMomentDetector> _forTeams = new();
 
     /// <summary>
     /// Decides whether an event is a key moment.

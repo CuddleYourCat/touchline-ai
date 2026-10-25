@@ -39,7 +39,8 @@ public static class PossessionIndexingServiceCollectionExtensions
         services.TryAddSingleton<SearchMetrics>();
         services.TryAddSingleton<KeyMomentSummaryWriter>();
 
-        services.TryAddSingleton<ITeamProfiles, EmbeddedTeamProfiles>();
+        // Players are named per match (ADR-050): the catalogue alone unless the host registers the fan match lookup first.
+        services.TryAddSingleton<Touchline.Domain.Teams.IMatchTeamProfiles>(Touchline.Domain.Teams.CatalogueOnlyMatchTeams.Instance);
 
         if (!configuration.GetSection(PossessionSearchOptions.SectionName).Get<PossessionSearchOptions>()?.IsConfigured ?? true)
         {

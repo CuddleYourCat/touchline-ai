@@ -21,10 +21,11 @@ public static partial class MatchContexts
     /// <summary>
     /// The context for one key moment. A roster is the team profile's whole squad, so a
     /// substitute who comes on is a name the guardrail allows: the team sheet carries only the
-    /// starting eleven, and the squad is the smallest list that is always right. A team the
-    /// catalogue doesn't know (a fan-built team, until lane H names them) gets an empty roster,
-    /// logged once, so a line naming any of its players falls back to the template rather than
-    /// handing the model raw player IDs.
+    /// starting eleven, and the squad is the smallest list that is always right. A fan team's
+    /// squad comes from its match request's snapshot (ADR-050), passed in as <paramref name="teams"/>.
+    /// A team none of the profiles know (a fan match whose request can't be read) gets an empty
+    /// roster, logged once, so a line naming any of its players falls back to the template rather
+    /// than handing the model raw player IDs.
     /// </summary>
     /// <param name="moment">The key moment, which carries the score after it when the processor published it.</param>
     /// <param name="match">The stored match document, or null if it hasn't been written yet.</param>

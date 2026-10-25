@@ -15,15 +15,33 @@ function kindLabel(kind: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * A fan match between its 202 and its first event (ADR-050): the server sends it as Scheduled, with its line-ups and
+ * no events, and the stream stays open until play starts. The first state message moves `lastSequence` on.
+ */
+function awaitingKickOff(match: LiveMatch): boolean {
+  return match.detail.summary.status === 'Scheduled' && !match.fullTime && match.state.lastSequence === 0;
+}
+
 function Scoreboard({ match }: { match: LiveMatch }) {
   const { home, away } = match.detail.summary;
   const { score, clock } = match.state;
-  const label = `${match.fullTime ? 'Full time' : `Live, ${clock.display}`}, ${home.name} ${score.home}, ${away.name} ${score.away}`;
+  const waiting = awaitingKickOff(match);
+  const status = match.fullTime ? 'Full time' : waiting ? 'Kick-off in a moment' : `Live, ${clock.display}`;
+  const label = `${status}, ${home.name} ${score.home}, ${away.name} ${score.away}`;
 
   return (
     <section className="panel scoreboard" aria-label={label}>
       <div className="match-card-top">
-        {match.fullTime ? <span className="pill">Full time</span> : <span className="pill pill-live">LIVE</span>}
+        {match.fullTime ? (
+          <span className="pill">Full time</span>
+        ) : waiting ? (
+          <span className="pill" role="status">
+            Kick-off in a moment…
+          </span>
+        ) : (
+          <span className="pill pill-live">LIVE</span>
+        )}
         <span className="match-clock data">{clock.display}</span>
       </div>
       <div className="scoreboard-teams">
@@ -119,6 +137,16 @@ export function MatchPage() {
           <h1>Match not found</h1>
           <p className="muted">
             There's no match with that ID. <Link to="/">Back to the matches</Link>.
+          </p>
+        </section>
+      );
+    case 'notStarted':
+      return (
+        <section className="panel">
+          <h1>This match didn't start</h1>
+          <p className="muted">
+            Something went wrong before kick-off, so there's nothing to watch. <Link to="/kickoff">Pick the teams again</Link> or{' '}
+            <Link to="/">go back to the matches</Link>.
           </p>
         </section>
       );

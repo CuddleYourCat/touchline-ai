@@ -3,7 +3,9 @@ using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Touchline.Domain.Moments;
+using Touchline.Domain.Teams;
 using Touchline.EventProcessor.Processing;
+using Touchline.Storage;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -18,6 +20,12 @@ builder.AddAzureCosmosClient("cosmos");
 builder.AddAzureServiceBusClient("servicebus");
 
 builder.Services.AddSingleton<KeyMomentDetector>(_ => new KeyMomentDetector());
+
+// Each match's team profiles (ADR-050): the catalogue, plus a fan match's snapshots from its
+// request in match-requests, read once per match. Registered before the commentary, recap and
+// indexing services, which name players from it.
+builder.Services.AddSingleton<IFanMatchRequestStore, CosmosFanMatchRequestStore>();
+builder.Services.AddSingleton<IMatchTeamProfiles, FanMatchTeamProfiles>();
 builder.Services.AddSingleton<PipelineTelemetry>();
 builder.Services.AddSingleton<IMatchStore, CosmosMatchStore>();
 builder.Services.AddSingleton<IKeyMomentPublisher, ServiceBusKeyMomentPublisher>();

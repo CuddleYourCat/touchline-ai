@@ -6,6 +6,7 @@ using Touchline.Agents;
 using Touchline.Domain;
 using Touchline.Domain.Moments;
 using Touchline.Domain.Squad;
+using Touchline.Domain.Teams;
 using Touchline.Domain.Viewing;
 using Touchline.EventProcessor.Processing;
 
@@ -30,12 +31,17 @@ namespace Touchline.EventProcessor;
 /// <param name="matches">The stored match documents, for the line-ups.</param>
 /// <param name="telemetry">Counts skips and dead letters.</param>
 /// <param name="logger">The logger.</param>
+/// <param name="teams">
+/// The team profiles of each match (ADR-050), so the roster guardrail allows a fan match's fan
+/// players; null for the embedded catalogue alone.
+/// </param>
 public sealed partial class CommentaryFunction(
     CommentaryWorkflow workflow,
     ICommentaryStore commentary,
     IMatchStore matches,
     PipelineTelemetry telemetry,
-    ILogger<CommentaryFunction> logger)
+    ILogger<CommentaryFunction> logger,
+    IMatchTeamProfiles? teams = null)
 {
     /// <summary>The topic the trigger reads.</summary>
     public const string TopicName = ServiceBusKeyMomentPublisher.TopicName;
@@ -100,7 +106,9 @@ public sealed partial class CommentaryFunction(
             LogNoMetadata(logger, momentId);
         }
 
-        var outcome = await workflow.RunAsync(moment, MatchContexts.For(moment, match, logger: logger), cancellationToken);
+        // The names reach the agents as JSON data in the user message, never in the system prompt (ADR-044).
+        var profiles = teams is null ? null : await teams.ForMatchAsync(matchId, cancellationToken);
+        var outcome = await workflow.RunAsync(moment, MatchContexts.For(moment, match, profiles, logger), cancellationToken);
         LogStored(logger, momentId, outcome.Lines.Count);
 
         // An English model line that failed to save would be lost for good if the message were

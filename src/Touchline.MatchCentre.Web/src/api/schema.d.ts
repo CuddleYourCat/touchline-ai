@@ -66,7 +66,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A match in full. */
+        /**
+         * A match in full.
+         * @description A fan match is Scheduled from its 202 until its first event is stored, 30 to 60 seconds later: it has its teams and line-ups but no events, and its stream stays open with heartbeats until play starts. A fan match that couldn't be started, or whose job never picked it up, answers 410 (type .../match-not-started) here and on its events, moments, momentum and stream.
+         */
         get: operations["GetMatch"];
         put?: never;
         post?: never;
@@ -1642,6 +1645,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {
@@ -1694,6 +1706,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {
@@ -1727,6 +1748,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Gone */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1789,6 +1819,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {
@@ -1840,6 +1879,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Gone */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };

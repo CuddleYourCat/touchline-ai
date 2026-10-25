@@ -1,11 +1,14 @@
 using Azure.AI.ContentSafety;
 using Azure.Core;
 using Azure.Identity;
+using Azure.ResourceManager;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Storage;
+using Touchline.Storage;
 
 namespace Touchline.MatchCentre.TeamBuilding;
 
@@ -34,6 +37,32 @@ internal static class TeamBuilderServices
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
             builder.Services.AddSingleton<ITeamStore, CosmosTeamStore>();
+
+            // Fan match requests (ADR-050): the rosters of record for fan matches, read by every
+            // name lookup, and written by the launcher.
+            builder.Services.AddSingleton<IFanMatchRequestStore, CosmosFanMatchRequestStore>();
+            builder.Services.AddSingleton<IMatchTeamProfiles, FanMatchTeamProfiles>();
+
+            // The deadlines are read by the read model (a scheduled match) as well as the launcher.
+            builder.Services.AddOptions<FanMatchOptions>()
+                .BindConfiguration(FanMatchOptions.SectionName)
+                .ValidateDataAnnotations()
+                .Validate(o => string.IsNullOrWhiteSpace(o.JobResourceId)
+                        || (ResourceIdentifier.TryParse(o.JobResourceId, out var id) && id?.ResourceType == "Microsoft.App/jobs"),
+                    "MatchCentre:FanMatches:JobResourceId must be a Container Apps job's resource ID.")
+                .ValidateOnStart();
+            builder.Services.AddExceptionHandler<FanMatchNotStartedHandler>();
+
+            // The launcher only where there's a job to start: locally under Aspire there's none, and
+            // the unconnected launcher answers 503 (ADR-050). In Azure the setting is there only while
+            // deployFanMatches is on, which makes it the kill switch.
+            if (!string.IsNullOrWhiteSpace(builder.Configuration[$"{FanMatchOptions.SectionName}:{nameof(FanMatchOptions.JobResourceId)}"]))
+            {
+                builder.Services.TryAddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
+                builder.Services.AddSingleton(provider => new ArmClient(provider.GetRequiredService<TokenCredential>()));
+                builder.Services.AddSingleton<ISimulatorJob, ArmSimulatorJob>();
+                builder.Services.AddSingleton<IMatchLauncher, FanMatchLauncher>();
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(builder.Configuration[$"{ContentSafetyOptions.SectionName}:Endpoint"]))
@@ -58,6 +87,26 @@ internal static class TeamBuilderServices
         }
 
         return builder;
+    }
+
+    /// <summary>Answers a fan match that didn't start with a calm <c>410</c> problem (ADR-050).</summary>
+    private sealed class FanMatchNotStartedHandler : IExceptionHandler
+    {
+        /// <inheritdoc />
+        public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
+        {
+            if (exception is not FanMatchNotStartedException)
+            {
+                return false;
+            }
+
+            await TypedResults.Problem(
+                title: "Match didn't start",
+                detail: "This match couldn't be started. Pick the teams again to kick off a new one.",
+                statusCode: StatusCodes.Status410Gone,
+                type: ProblemTypes.MatchNotStarted).ExecuteAsync(httpContext);
+            return true;
+        }
     }
 
     /// <summary>Answers an unavailable name guard with a <c>503</c> problem, so nothing is stored (ADR-049).</summary>
