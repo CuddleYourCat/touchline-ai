@@ -22,6 +22,7 @@ WORKDIR /src
 # until a project file or package version changes.
 COPY Directory.Build.props Directory.Packages.props ./
 COPY src/Touchline.Agents/Touchline.Agents.csproj src/Touchline.Agents/
+COPY src/Touchline.Configuration/Touchline.Configuration.csproj src/Touchline.Configuration/
 COPY src/Touchline.Domain/Touchline.Domain.csproj src/Touchline.Domain/
 COPY src/Touchline.Search/Touchline.Search.csproj src/Touchline.Search/
 COPY src/Touchline.ServiceDefaults/Touchline.ServiceDefaults.csproj src/Touchline.ServiceDefaults/

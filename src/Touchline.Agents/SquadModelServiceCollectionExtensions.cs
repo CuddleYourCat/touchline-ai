@@ -103,7 +103,7 @@ public static class SquadModelServiceCollectionExtensions
             chatClient.AsIChatClient(),
             size,
             deployment,
-            options,
+            provider.GetRequiredService<IOptions<SquadOptions>>(), // read per call: caps follow a live change (ADR-062)
             provider.GetRequiredService<SquadMetrics>());
     }
 }

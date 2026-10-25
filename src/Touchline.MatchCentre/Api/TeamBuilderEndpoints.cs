@@ -1,6 +1,8 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.FeatureManagement;
+using Touchline.Configuration;
 using Touchline.Domain.Teams;
 using Touchline.Domain.Teams.Builder;
 using Touchline.MatchCentre.TeamBuilding;
@@ -290,8 +292,15 @@ internal static class TeamBuilderEndpoints
         ITeamStore store,
         IMatchLauncher launcher,
         HttpResponse response,
+        IFeatureManager features,
         CancellationToken cancellationToken)
     {
+        // The FanMatches flag (ADR-062) is read on every request, so it works as a kill switch with no restart.
+        if (!await features.IsEnabledAsync(FeatureNames.FanMatches, cancellationToken))
+        {
+            return MatchCentreEndpoints.Unavailable("Fan matches are switched off right now. Try again later.");
+        }
+
         if (idempotencyKey is not null && !IsValidIdempotencyKey(idempotencyKey))
         {
             return MatchCentreEndpoints.Invalid(

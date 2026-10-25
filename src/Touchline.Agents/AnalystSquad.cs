@@ -105,7 +105,8 @@ public sealed partial class AnalystSquad : ISquad
     private readonly IMatchFacts _facts;
     private readonly IPossessionSearch? _search;
     private readonly ISquad? _recap;
-    private readonly SquadOptions _options;
+    private readonly IOptions<SquadOptions> _options;
+    private readonly ISquadFeatureGate? _gate;
     private readonly SquadMetrics _metrics;
     private readonly ILogger<AnalystSquad> _logger;
 
@@ -117,6 +118,7 @@ public sealed partial class AnalystSquad : ISquad
     /// <param name="logger">The logger.</param>
     /// <param name="search">The possession search (ADR-008), or null to leave that tool out.</param>
     /// <param name="recap">The squad that writes recaps, or null if there isn't one.</param>
+    /// <param name="gate">The feature switches, checked on every call, or null for all on (ADR-062).</param>
     public AnalystSquad(
         [FromKeyedServices(SquadModels.Large)] IChatClient chatClient,
         IMatchFacts facts,
@@ -124,7 +126,8 @@ public sealed partial class AnalystSquad : ISquad
         SquadMetrics metrics,
         ILogger<AnalystSquad> logger,
         IPossessionSearch? search = null,
-        ISquad? recap = null)
+        ISquad? recap = null,
+        ISquadFeatureGate? gate = null)
     {
         ArgumentNullException.ThrowIfNull(chatClient);
         ArgumentNullException.ThrowIfNull(facts);
@@ -133,7 +136,8 @@ public sealed partial class AnalystSquad : ISquad
         ArgumentNullException.ThrowIfNull(logger);
         _chatClient = chatClient;
         _facts = facts;
-        _options = options.Value;
+        _options = options;
+        _gate = gate;
         _metrics = metrics;
         _logger = logger;
         _search = search;
@@ -151,7 +155,7 @@ public sealed partial class AnalystSquad : ISquad
         ArgumentNullException.ThrowIfNull(question);
         ArgumentNullException.ThrowIfNull(viewer);
 
-        if (!_options.ModelsAvailable)
+        if (!await SquadFeatureGates.ModelsAvailableAsync(Options, _gate, cancellationToken).ConfigureAwait(false))
         {
             return Fallback(UnavailableAnswer, viewer, "no-models");
         }
@@ -427,8 +431,11 @@ public sealed partial class AnalystSquad : ISquad
             tools.Add(AIFunctionFactory.Create(
                 async ([Description("What to look for, in plain words.")] string query, CancellationToken token) =>
                 {
+                    // Switched off (ADR-062): the tool stays, and finds nothing.
                     var capped = query.Length <= MaxQuestionLength ? query : query[..MaxQuestionLength];
-                    var hits = await search.SearchAsync(matchId, capped, MaxPossessions, token).ConfigureAwait(false);
+                    IReadOnlyList<PossessionHit> hits = await SquadFeatureGates.PossessionSearchEnabledAsync(_gate, token).ConfigureAwait(false)
+                        ? await search.SearchAsync(matchId, capped, MaxPossessions, token).ConfigureAwait(false)
+                        : [];
                     foreach (var hit in hits.Take(MaxPossessions))
                     {
                         cited[hit.Id] = new Citation(CitationKind.Possession, hit.Id, Label($"{hit.From}–{hit.To} {hit.Team} possession"));
@@ -447,6 +454,9 @@ public sealed partial class AnalystSquad : ISquad
         return tools;
     }
 
+    // Read on every use, so a live change to the options takes effect (ADR-062).
+    private SquadOptions Options => _options.Value;
+
     private FanAnswer Fallback(string answer, Viewer viewer, string reason)
     {
         _metrics.RecordFallback(SquadAgent.Analyst, reason);
@@ -462,7 +472,7 @@ public sealed partial class AnalystSquad : ISquad
     private string Language(Viewer viewer) =>
         LanguageTags.Closest(
             LanguageTag().IsMatch(viewer.Language) ? viewer.Language : null,
-            _options.Languages.Count == 0 ? SquadOptions.DefaultLanguages : _options.Languages);
+            Options.Languages.Count == 0 ? SquadOptions.DefaultLanguages : Options.Languages);
 
     private static AnalystReply? Parse(string text)
     {

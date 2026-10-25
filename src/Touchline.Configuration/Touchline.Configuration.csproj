@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Azure App Configuration and feature flags for both hosts (ADR-062): the provider with its
+    refresh settings and explicit source order, the flag names, and the gates the squad and the
+    Match Centre check on every call. Each host adds its own refresh middleware.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.AzureAppConfiguration" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+    <PackageReference Include="Microsoft.FeatureManagement" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Touchline.Agents\Touchline.Agents.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Touchline.Tests.Unit" />
+  </ItemGroup>
+
+</Project>

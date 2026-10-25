@@ -106,6 +106,16 @@ if (builder.Configuration["MatchCentre:ContentSafety:Endpoint"] is { Length: > 0
     matchcentre.WithEnvironment("MatchCentre__ContentSafety__Endpoint", contentSafetyEndpoint);
 }
 
+// The App Configuration emulator (ADR-062), only when AppConfiguration:Emulator is true in the AppHost's
+// configuration. It starts empty, so the apps keep their appsettings defaults until a flag or value is added
+// to it; WithReference passes both apps ConnectionStrings__appconfig, which they read in place of an endpoint.
+if (string.Equals(builder.Configuration["AppConfiguration:Emulator"], "true", StringComparison.OrdinalIgnoreCase))
+{
+    var appConfig = builder.AddAzureAppConfiguration("appconfig").RunAsEmulator();
+    eventProcessor.WithReference(appConfig);
+    matchcentre.WithReference(appConfig);
+}
+
 // The Match Centre's React UI as a Vite dev server, for local development only: its proxy sends
 // /api and /openapi to the Match Centre endpoint that WithReference injects. AddViteApp runs
 // "npm install" first (a matchcentre-web-installer resource) and passes the port as --port.

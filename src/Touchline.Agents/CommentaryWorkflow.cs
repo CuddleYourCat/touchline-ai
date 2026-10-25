@@ -106,9 +106,13 @@ public sealed partial class CommentaryWorkflow
 
     private readonly IChatClient _chatClient;
     private readonly ICommentaryStore _store;
-    private readonly SquadOptions _options;
+    private readonly IOptions<SquadOptions> _options;
+    private readonly ISquadFeatureGate? _gate;
     private readonly SquadMetrics _metrics;
     private readonly ILogger<CommentaryWorkflow> _logger;
+
+    // Read on every use, so a live change to the options takes effect (ADR-062).
+    private SquadOptions Options => _options.Value;
 
     /// <summary>Creates the workflow.</summary>
     /// <param name="chatClient">The keyed <see cref="SquadModels.Small"/> client, wrapped in the token budget (ADR-043).</param>
@@ -116,12 +120,14 @@ public sealed partial class CommentaryWorkflow
     /// <param name="options">The squad's settings, for the languages to write (ADR-045).</param>
     /// <param name="metrics">Where fallbacks are counted.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="gate">The feature switches, checked for every moment, or null for all on (ADR-062).</param>
     public CommentaryWorkflow(
         [FromKeyedServices(SquadModels.Small)] IChatClient chatClient,
         ICommentaryStore store,
         IOptions<SquadOptions> options,
         SquadMetrics metrics,
-        ILogger<CommentaryWorkflow> logger)
+        ILogger<CommentaryWorkflow> logger,
+        ISquadFeatureGate? gate = null)
     {
         ArgumentNullException.ThrowIfNull(chatClient);
         ArgumentNullException.ThrowIfNull(store);
@@ -130,7 +136,8 @@ public sealed partial class CommentaryWorkflow
         ArgumentNullException.ThrowIfNull(logger);
         _chatClient = chatClient;
         _store = store;
-        _options = options.Value;
+        _options = options;
+        _gate = gate;
         _metrics = metrics;
         _logger = logger;
     }
@@ -166,7 +173,7 @@ public sealed partial class CommentaryWorkflow
         var start = new CommentaryStep(StepKind.Start, moment, context, Attempt: 0, Lines: null, UnknownNames: [], Language: null);
 
         // With no models configured every call would fail, so the template is the whole run.
-        if (!_options.ModelsAvailable)
+        if (!await SquadFeatureGates.ModelsAvailableAsync(Options, _gate, cancellationToken).ConfigureAwait(false))
         {
             _metrics.RecordFallback(SquadAgent.Commentator, "no-models");
             await StoreAsync(Template(start), stored, failed, cancellationToken).ConfigureAwait(false);
@@ -199,7 +206,7 @@ public sealed partial class CommentaryWorkflow
     }
 
     private List<string> Localisations() =>
-        [.. _options.Languages
+        [.. Options.Languages
             .Where(language => !string.Equals(PrimarySubtag(language), English, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)];
 

@@ -5,6 +5,8 @@
     <PackageReference Include="Azure.AI.ContentSafety" />
     <PackageReference Include="Azure.ResourceManager.AppContainers" />
     <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Microsoft.Azure.AppConfiguration.AspNetCore" />
+    <PackageReference Include="Microsoft.FeatureManagement.AspNetCore" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.Azure.StackExchangeRedis" />
     <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
@@ -13,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Touchline.Agents\Touchline.Agents.csproj" />
+    <ProjectReference Include="..\Touchline.Configuration\Touchline.Configuration.csproj" />
     <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
     <ProjectReference Include="..\Touchline.Search\Touchline.Search.csproj" />
     <ProjectReference Include="..\Touchline.ServiceDefaults\Touchline.ServiceDefaults.csproj" />

@@ -224,6 +224,15 @@ public sealed class ProducerRecapTests
     }
 
     [Test]
+    public async Task With_the_SquadModels_flag_off_the_template_is_used_and_no_call_is_made()
+    {
+        var recap = await Producer(new FixedGate(models: false)).RecapAsync(_matchId, Viewer.Default, CancellationToken.None);
+
+        recap.Should().Be(ProducerRecap.Template(_sheet, [_goal], Viewer.Default));
+        _chat.Requests.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task A_model_recap_is_marked_as_the_models_and_a_template_is_not()
     {
         var recaps = new ConcurrentQueue<string>();
@@ -305,12 +314,13 @@ public sealed class ProducerRecapTests
             inputTokens: 100,
             outputTokens: 50);
 
-    private ProducerRecap Producer() => new(
+    private ProducerRecap Producer(ISquadFeatureGate? gate = null) => new(
         _chat,
         _facts.Object,
         Options.Create(_options),
         new SquadMetrics(_provider.GetRequiredService<IMeterFactory>()),
-        NullLogger<ProducerRecap>.Instance);
+        NullLogger<ProducerRecap>.Instance,
+        gate);
 }
 
 internal static class ProducerRecapTestExtensions

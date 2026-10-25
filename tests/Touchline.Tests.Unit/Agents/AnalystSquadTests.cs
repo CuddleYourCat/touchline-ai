@@ -209,6 +209,65 @@ public sealed class AnalystSquadTests
     }
 
     [Test]
+    public async Task With_the_SquadModels_flag_off_the_Analyst_makes_no_model_call_and_gives_the_unavailable_answer()
+    {
+        var gate = new FixedGate(models: false);
+
+        var answer = await Analyst(gate: gate).AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
+
+        answer.Should().BeEquivalentTo(new FanAnswer(AnalystSquad.UnavailableAnswer, [], "en"));
+        _chat.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task With_the_SquadModels_flag_on_the_Analyst_calls_the_model()
+    {
+        _chat.Returns(Reply("Tom Okafor scored.", _goalId));
+
+        await Analyst(gate: new FixedGate(models: true)).AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
+
+        _chat.Requests.Should().NotBeEmpty();
+    }
+
+    [TestCase(false, 0)]
+    [TestCase(true, 1)]
+    public async Task The_PossessionSearch_flag_decides_whether_the_search_tool_finds_anything(bool enabled, int searches)
+    {
+        var search = new Mock<IPossessionSearch>();
+        search.Setup(s => s.SearchAsync("demo-1", It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _chat.Returns(FakeChatClient.ToolCall("search_possessions", new Dictionary<string, object?> { ["query"] = "a quick counter" }))
+            .Returns(Reply("Tom Okafor scored.", _goalId));
+
+        await Analyst(search: search.Object, gate: new FixedGate(possessionSearch: enabled))
+            .AnswerAsync("demo-1", _question, Viewer.Default, CancellationToken.None);
+
+        search.Verify(s => s.SearchAsync("demo-1", It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Exactly(searches));
+    }
+
+    [Test]
+    public async Task A_live_change_to_the_options_applies_to_the_next_answer()
+    {
+        var french = Viewer.Create(ViewingMode.Casual, "fr", null, null, null, _ => true, _ => true).Viewer!;
+        var options = new MutableOptions(new SquadOptions { Languages = ["en"] });
+        var analyst = new AnalystSquad(_chat, _facts.Object, options, Metrics(), NullLogger<AnalystSquad>.Instance);
+        _options.ModelsAvailable = false;
+
+        var before = await analyst.AnswerAsync("demo-1", _question, french, CancellationToken.None);
+        options.Current = new SquadOptions { Languages = ["en", "fr"], ModelsAvailable = false };
+        var after = await analyst.AnswerAsync("demo-1", _question, french, CancellationToken.None);
+
+        before.Language.Should().Be("en", "French wasn't a configured language yet");
+        after.Language.Should().Be("fr");
+    }
+
+    private sealed class MutableOptions(SquadOptions current) : IOptions<SquadOptions>
+    {
+        public SquadOptions Current { get; set; } = current;
+
+        public SquadOptions Value => Current;
+    }
+
+    [Test]
     public async Task The_events_tool_is_bound_to_the_match_being_asked_about()
     {
         _facts.Setup(f => f.GetEventsAsync("demo-1", 20, 25, It.IsAny<CancellationToken>()))
@@ -469,6 +528,6 @@ public sealed class AnalystSquadTests
 
     private SquadMetrics Metrics() => new(_provider.GetRequiredService<System.Diagnostics.Metrics.IMeterFactory>());
 
-    private AnalystSquad Analyst(IChatClient? chat = null, IPossessionSearch? search = null) =>
-        new(chat ?? _chat, _facts.Object, Options.Create(_options), Metrics(), NullLogger<AnalystSquad>.Instance, search);
+    private AnalystSquad Analyst(IChatClient? chat = null, IPossessionSearch? search = null, ISquadFeatureGate? gate = null) =>
+        new(chat ?? _chat, _facts.Object, Options.Create(_options), Metrics(), NullLogger<AnalystSquad>.Instance, search, gate: gate);
 }

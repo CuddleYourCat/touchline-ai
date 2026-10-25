@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 
 namespace Touchline.Agents;
 
@@ -41,7 +42,7 @@ public sealed class TokenBudgetChatClient : DelegatingChatClient
 {
     private readonly string _size;
     private readonly string _model;
-    private readonly SquadOptions _options;
+    private readonly IOptions<SquadOptions> _options;
     private readonly SquadMetrics _metrics;
 
     /// <summary>Wraps a model client in the squad's token budget.</summary>
@@ -51,6 +52,20 @@ public sealed class TokenBudgetChatClient : DelegatingChatClient
     /// <param name="options">The squad's caps.</param>
     /// <param name="metrics">Where token usage is recorded.</param>
     public TokenBudgetChatClient(IChatClient innerClient, string size, string model, SquadOptions options, SquadMetrics metrics)
+        : this(innerClient, size, model, Options.Create(options ?? throw new ArgumentNullException(nameof(options))), metrics)
+    {
+    }
+
+    /// <summary>
+    /// Wraps a model client in the squad's token budget, reading the caps from <paramref name="options"/>
+    /// on every call, so a live change to the options applies without a restart (ADR-062).
+    /// </summary>
+    /// <param name="innerClient">The model client.</param>
+    /// <param name="size">The model size it calls, <see cref="SquadModels.Small"/> or <see cref="SquadModels.Large"/>. A call from an agent that runs on the other size is refused.</param>
+    /// <param name="model">The model deployment it calls, used to tag telemetry.</param>
+    /// <param name="options">The squad's caps, read on each call.</param>
+    /// <param name="metrics">Where token usage is recorded.</param>
+    public TokenBudgetChatClient(IChatClient innerClient, string size, string model, IOptions<SquadOptions> options, SquadMetrics metrics)
         : base(innerClient)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(size);
@@ -113,11 +128,12 @@ public sealed class TokenBudgetChatClient : DelegatingChatClient
         }
 
         var budgeted = options!.Clone();
-        int cap = _options.MaxOutputTokens.For(agent);
+        var settings = _options.Value;
+        int cap = settings.MaxOutputTokens.For(agent);
         budgeted.MaxOutputTokens = budgeted.MaxOutputTokens is int requested ? Math.Min(requested, cap) : cap;
         budgeted.AdditionalProperties = WithoutAgent(budgeted.AdditionalProperties);
 
-        var trimmed = InputBudget.Trim([.. messages], _options.MaxInputTokens, agent, InputBudget.Estimate(budgeted.Tools));
+        var trimmed = InputBudget.Trim([.. messages], settings.MaxInputTokens, agent, InputBudget.Estimate(budgeted.Tools));
         return (agent, budgeted, trimmed);
     }
 

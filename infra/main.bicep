@@ -60,6 +60,12 @@ param matchCentreTraffic array = [
 @description('Create the Azure AI Search service (ADR-026, ADR-041). Off by default: Basic bills about 2 pounds a day while it exists. Flip it on for the retrieval work, and tear it down by the ADR-026 date.')
 param deploySearch bool = false
 
+@description('Create the Azure App Configuration store (Free tier, keyless) and give both apps its endpoint (ADR-062). Off by default. Once the store exists, deploy.ps1 keeps it on for later deploys. Free stores are limited to three per region per subscription.')
+param deployAppConfig bool = false
+
+@description('Write the seed key-values and feature flags (ADR-062). deploy.ps1 turns it on only when the store is first created, or with -ReseedAppConfig, because deploying the template again resets every seeded value and would undo a flag flipped in the portal.')
+param seedAppConfig bool = true
+
 // Global Standard capacity is a rate limit, in thousands of tokens per minute, not a reservation:
 // tokens are billed as used. A higher limit raises the most a runaway loop could spend in a
 // minute, so the defaults are the smallest that carry one live match. They're raised only for demo
@@ -176,7 +182,43 @@ var roles = {
   searchIndexDataContributor: '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
   searchIndexDataReader: '1407120a-92aa-4202-b7e9-c0e197c71c8f'
   searchServiceContributor: '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
+  // App Configuration (ADR-062): the apps read, the developer edits flags and values in the portal.
+  appConfigDataReader: '516239f1-63e1-4d78-a4de-a74fb236a071'
+  appConfigDataOwner: '5ae67dd6-50cb-47e7-96ce-ef5b8b0be5b4'
 }
+
+// Azure App Configuration (ADR-062).
+var appConfigName = 'appcs-touchline-${suffix}'
+var appConfigEndpoint = 'https://${appConfigName}.azconfig.io'
+var appConfigSettings = deployAppConfig
+  ? [{ name: 'AppConfiguration__Endpoint', value: appConfigEndpoint }]
+  : []
+
+// The seed values. Each is the app's own default, so seeding changes nothing until someone edits one.
+// Changing 'Touchline:Sentinel' (to any new value) after editing the others makes the apps reload them all
+// on their next refresh. Deployment names and endpoints are not here: Bicep knows them (squadSettings), and
+// a store outage at start-up must not take them away.
+var appConfigKeyValues = [
+  { key: 'Touchline:Sentinel', value: '1' }
+  { key: 'Squad:MaxInputTokens', value: '4000' }
+  { key: 'Squad:MaxOutputTokens:Commentator', value: '150' }
+  { key: 'Squad:MaxOutputTokens:Localiser', value: '200' }
+  { key: 'Squad:MaxOutputTokens:Analyst', value: '600' }
+  { key: 'Squad:MaxOutputTokens:Producer', value: '1200' }
+  { key: 'Squad:MaxOutputTokens:Indexer', value: '160' }
+  { key: 'Squad:Languages:0', value: 'en' }
+  { key: 'Squad:Languages:1', value: 'es' }
+  { key: 'Squad:Languages:2', value: 'fr' }
+]
+
+// Feature flags, in the Microsoft feature management schema, all on (the apps' appsettings defaults too).
+// The names must match FeatureNames in src/Touchline.Configuration.
+var appConfigFeatureFlags = [
+  { id: 'FanMatches', description: 'Fans can start matches (POST /api/matches). Off answers 503.' }
+  { id: 'FanQa', description: 'Fans can ask the Analyst questions. Off answers 503.' }
+  { id: 'PossessionSearch', description: 'The Analyst\'s possession search returns results. Off means it finds nothing.' }
+  { id: 'SquadModels', description: 'The squad calls its models. Off means template lines and fixed answers.' }
+]
 
 // Azure AI Search (ADR-026, ADR-040, ADR-041).
 var searchName = 'srch-touchline-${suffix}'
@@ -504,6 +546,7 @@ resource matchCentre 'Microsoft.App/containerApps@2024-03-01' = {
             // Keyless and read-only, for the live read model (ADR-038), the same way as the simulator.
             { name: 'Aspire__Microsoft__Azure__Cosmos__AccountEndpoint', value: cosmos.properties.documentEndpoint }
             ...(deploySearch ? [{ name: 'Search__Endpoint', value: searchEndpoint }] : []) // ADR-041
+            ...appConfigSettings // App Configuration's endpoint (ADR-062), only when deployAppConfig is on
             ...squadSettings // the Analyst's models (ADR-030), only when deploySquadModels is on
             ...nameGuardSettings // the team builder's name guard (ADR-049), only when deployNameGuard is on
             // The job a fan match starts (ADR-050), only while deployFanMatches is on; without it the
@@ -837,6 +880,7 @@ resource processorApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'Aspire__Azure__Messaging__ServiceBus__FullyQualifiedNamespace', value: serviceBusHost }
         { name: 'AZURE_CLIENT_ID', value: processorIdentity.properties.clientId }
         ...(deploySearch ? [{ name: 'Search__Endpoint', value: searchEndpoint }] : []) // ADR-041
+        ...appConfigSettings // App Configuration's endpoint (ADR-062), only when deployAppConfig is on
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
         ...squadSettings // the squad's models (ADR-030), only when deploySquadModels is on
       ]
@@ -1000,6 +1044,92 @@ resource searchServiceContributorForDeveloper 'Microsoft.Authorization/roleAssig
     principalType: 'User'
   }
 }
+
+// ============================================================
+// Azure App Configuration (ADR-062)
+// ============================================================
+// Free tier: no charge, 1,000 requests a day for the whole store. Keyless: with local auth off there
+// are no access keys, so each caller needs a data role. Key-values written from a template need the
+// ARM authentication mode 'Pass-through' while local auth is off, and the deployer needs App
+// Configuration Data Owner, which the principalId below is given in the same deployment.
+
+resource appConfig 'Microsoft.AppConfiguration/configurationStores@2024-05-01' = if (deployAppConfig) {
+  name: appConfigName
+  location: location
+  tags: tags
+  sku: { name: 'free' }
+  properties: {
+    disableLocalAuth: true
+    publicNetworkAccess: 'Enabled'
+    dataPlaneProxy: {
+      authenticationMode: 'Pass-through'
+      privateLinkDelegation: 'Disabled'
+    }
+  }
+}
+
+resource appConfigReaderForMatchCentre 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployAppConfig) {
+  name: guid(appConfig.id, appIdentity.id, roles.appConfigDataReader)
+  scope: appConfig
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.appConfigDataReader)
+    principalId: appIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource appConfigReaderForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployAppConfig) {
+  name: guid(appConfig.id, processorIdentity.id, roles.appConfigDataReader)
+  scope: appConfig
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.appConfigDataReader)
+    principalId: processorIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Developer: edit flags and values in the portal, and write the seed values below. Skipped when CI deploys.
+resource appConfigOwnerForDeveloper 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployAppConfig && !empty(principalId)) {
+  name: guid(appConfig.id, principalId, roles.appConfigDataOwner)
+  scope: appConfig
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.appConfigDataOwner)
+    principalId: principalId
+    principalType: 'User'
+  }
+}
+
+// Seed key-values, written only when a user deploys (principalId is set), because only that deployer is given Data Owner. The role can take a minute to propagate, so a first deploy may need running twice.
+resource appConfigKeyValueSeeds 'Microsoft.AppConfiguration/configurationStores/keyValues@2024-05-01' = [
+  for item in appConfigKeyValues: if (deployAppConfig && seedAppConfig && !empty(principalId)) {
+    parent: appConfig
+    name: item.key
+    properties: {
+      value: item.value
+      contentType: 'text/plain'
+    }
+    dependsOn: [appConfigOwnerForDeveloper]
+  }
+]
+
+// Seed feature flags: key '.appconfig.featureflag/<id>' (the '/' written '~2F' in a resource name), the
+// feature flag content type, and a JSON value in the Microsoft feature management schema.
+resource appConfigFeatureFlagSeeds 'Microsoft.AppConfiguration/configurationStores/keyValues@2024-05-01' = [
+  for flag in appConfigFeatureFlags: if (deployAppConfig && seedAppConfig && !empty(principalId)) {
+    parent: appConfig
+    name: '.appconfig.featureflag~2F${flag.id}'
+    properties: {
+      value: string({
+        id: flag.id
+        description: flag.description
+        enabled: true
+        conditions: { client_filters: [] }
+      })
+      contentType: 'application/vnd.microsoft.appconfig.ff+json;charset=utf-8'
+    }
+    dependsOn: [appConfigOwnerForDeveloper]
+  }
+]
 
 // Processor identity: read its own search-index subscription only.
 resource searchIndexReceiverForProcessor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -1477,4 +1607,5 @@ output eventHubsNamespace string = eventHubs.name
 output serviceBusNamespace string = serviceBus.name
 output searchEndpoint string = deploySearch ? searchEndpoint : ''
 output searchIndexName string = searchIndexName
+output appConfigEndpoint string = deployAppConfig ? appConfigEndpoint : ''
 output redisEndpoint string = deployRedis ? '${redis!.properties.hostName}:${redisPort}' : ''

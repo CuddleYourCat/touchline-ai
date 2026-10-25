@@ -36,6 +36,14 @@
     <PackageVersion Include="Azure.AI.ContentSafety" Version="1.0.0" />
     <!-- Lane H: the Match Centre starts the simulator job for a fan match through ARM (ADR-050). -->
     <PackageVersion Include="Azure.ResourceManager.AppContainers" Version="1.6.0" />
+    <!-- Lane G2: App Configuration (ADR-062): the provider, its ASP.NET Core and Functions refresh middleware, and feature flags. -->
+    <PackageVersion Include="Microsoft.Extensions.Configuration.AzureAppConfiguration" Version="8.6.1" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Azure.AppConfiguration.AspNetCore" Version="8.6.1" />
+    <PackageVersion Include="Microsoft.Azure.AppConfiguration.Functions.Worker" Version="8.6.1" />
+    <PackageVersion Include="Microsoft.FeatureManagement" Version="4.8.0" />
+    <PackageVersion Include="Microsoft.FeatureManagement.AspNetCore" Version="4.8.0" />
+    <PackageVersion Include="Aspire.Hosting.Azure.AppConfiguration" Version="13.6.1" />
     <!-- The Redis cache (ADR-061): HybridCache for name-guard verdicts, and StackExchange.Redis with Entra ID sign-in to Azure Managed Redis. -->
     <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.10.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.17" />

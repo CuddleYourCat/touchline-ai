@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Touchline.Agents/Touchline.Agents.csproj" />
     <Project Path="src/Touchline.AppHost/Touchline.AppHost.csproj" />
+    <Project Path="src/Touchline.Configuration/Touchline.Configuration.csproj" />
     <Project Path="src/Touchline.Domain/Touchline.Domain.csproj" />
     <Project Path="src/Touchline.EventProcessor/Touchline.EventProcessor.csproj" />
     <Project Path="src/Touchline.MatchCentre/Touchline.MatchCentre.csproj" />

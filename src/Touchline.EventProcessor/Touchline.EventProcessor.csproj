@@ -16,12 +16,15 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.CosmosDB" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.OpenTelemetry" />
+    <PackageReference Include="Microsoft.Azure.AppConfiguration.Functions.Worker" />
     <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
     <PackageReference Include="Aspire.Azure.Messaging.ServiceBus" />
   </ItemGroup>
 
   <ItemGroup>
     <None Update="host.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The feature flag defaults (ADR-062): all on, so a processor with no App Configuration store is unchanged. -->
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +34,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Touchline.Agents\Touchline.Agents.csproj" />
+    <ProjectReference Include="..\Touchline.Configuration\Touchline.Configuration.csproj" />
     <ProjectReference Include="..\Touchline.Domain\Touchline.Domain.csproj" />
     <ProjectReference Include="..\Touchline.Search\Touchline.Search.csproj" />
     <ProjectReference Include="..\Touchline.ServiceDefaults\Touchline.ServiceDefaults.csproj" />

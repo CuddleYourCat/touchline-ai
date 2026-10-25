@@ -66,7 +66,8 @@ public static class AnalystServiceCollectionExtensions
             provider.GetRequiredService<SquadMetrics>(),
             provider.GetRequiredService<ILogger<AnalystSquad>>(),
             provider.GetService<IPossessionSearch>(),
-            replaced is null ? null : Resolve(provider, replaced)));
+            replaced is null ? null : Resolve(provider, replaced),
+            provider.GetService<ISquadFeatureGate>()));
         return services;
     }
 

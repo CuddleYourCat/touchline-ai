@@ -42,7 +42,8 @@ public sealed partial class KeyMomentSummaryWriter
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
 
     private readonly IChatClient _chatClient;
-    private readonly SquadOptions _squad;
+    private readonly IOptions<SquadOptions> _squad;
+    private readonly ISquadFeatureGate? _gate;
     private readonly PossessionSearchOptions _search;
     private readonly SearchMetrics _metrics;
     private readonly ILogger<KeyMomentSummaryWriter> _logger;
@@ -53,12 +54,14 @@ public sealed partial class KeyMomentSummaryWriter
     /// <param name="search">The search settings, for the per-match cap.</param>
     /// <param name="metrics">Where fallbacks are counted.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="gate">The feature switches, checked for every match, or null for all on (ADR-062).</param>
     public KeyMomentSummaryWriter(
         [FromKeyedServices(SquadModels.Small)] IChatClient chatClient,
         IOptions<SquadOptions> squad,
         IOptions<PossessionSearchOptions> search,
         SearchMetrics metrics,
-        ILogger<KeyMomentSummaryWriter> logger)
+        ILogger<KeyMomentSummaryWriter> logger,
+        ISquadFeatureGate? gate = null)
     {
         ArgumentNullException.ThrowIfNull(chatClient);
         ArgumentNullException.ThrowIfNull(squad);
@@ -66,7 +69,8 @@ public sealed partial class KeyMomentSummaryWriter
         ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
         _chatClient = chatClient;
-        _squad = squad.Value;
+        _squad = squad;
+        _gate = gate;
         _search = search.Value;
         _metrics = metrics;
         _logger = logger;
@@ -92,7 +96,7 @@ public sealed partial class KeyMomentSummaryWriter
         ArgumentNullException.ThrowIfNull(roster);
 
         var documents = possessions.Select(p => p.Document).ToArray();
-        if (!_squad.ModelsAvailable)
+        if (!await SquadFeatureGates.ModelsAvailableAsync(_squad.Value, _gate, cancellationToken).ConfigureAwait(false))
         {
             return documents;
         }
@@ -142,7 +146,7 @@ public sealed partial class KeyMomentSummaryWriter
         string text;
         try
         {
-            var options = new ChatOptions { MaxOutputTokens = _squad.MaxOutputTokens.Indexer }.ForAgent(SquadAgent.Indexer);
+            var options = new ChatOptions { MaxOutputTokens = _squad.Value.MaxOutputTokens.Indexer }.ForAgent(SquadAgent.Indexer);
             var response = await _chatClient.GetResponseAsync(Messages(possession), options, cancellationToken).ConfigureAwait(false);
             ModelFailures.ThrowIfFiltered(response);
             text = PossessionSummarizer.Truncate(response.Text.Trim());

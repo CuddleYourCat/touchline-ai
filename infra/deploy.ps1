@@ -131,6 +131,31 @@
     The kill switch: force fan matches off, so POST /api/matches answers 503.
     Can't be combined with -DeployFanMatches.
 
+.PARAMETER DeployAppConfig
+    Create the Azure App Configuration store (Free tier, keyless, ADR-062) and
+    give both apps its endpoint, so feature flags and the squad's settings can
+    change with no redeploy. The seed values and flags are written only when the
+    store is first created. Once it's on, later deploys keep it without the
+    switch. Free stores are limited to three per region per subscription. The
+    seed values are written only by a user login, who is given App Configuration
+    Data Owner; a service principal run creates the store but leaves it empty.
+    A flag in the store can't be overridden by FeatureManagement__<Flag>=false
+    (the store's schema wins). To hold a flag off whatever the store says, set
+    Touchline__Kill__<Flag>=true on the app, for example
+    'az containerapp update -n ca-matchcentre -g rg-touchline-ai --set-env-vars Touchline__Kill__FanQa=true'.
+    For fan matches, -NoFanMatches is the other hold-fast switch.
+
+.PARAMETER NoAppConfig
+    Force App Configuration off: the apps lose their AppConfiguration__Endpoint
+    setting and run on their appsettings defaults. The store itself is left in
+    place (the template never deletes it). Can't be combined with -DeployAppConfig.
+
+.PARAMETER ReseedAppConfig
+    Write the seed key-values and feature flags again, even though the store
+    exists. This resets every seeded value to its default, including a flag
+    flipped in the portal, so it's off unless asked for. Use it if the first
+    deploy's seeding failed (the developer's role can take a minute to apply).
+
 .PARAMETER DeployRedis
     Create Azure Managed Redis (Balanced B0, high availability off, ADR-061)
     and give the Match Centre its endpoint, for the name-guard verdicts, the
@@ -153,6 +178,7 @@
     ./infra/deploy.ps1 -Action deploy -DeployNameGuard -DeployFanMatches
 
 .EXAMPLE
+    ./infra/deploy.ps1 -Action deploy -DeployAppConfig
     ./infra/deploy.ps1 -Action deploy -DeployRedis
 
 .EXAMPLE
@@ -203,6 +229,11 @@ param(
 
     [switch]$NoFanMatches,
 
+    [switch]$DeployAppConfig,
+
+    [switch]$NoAppConfig,
+
+    [switch]$ReseedAppConfig,
     [switch]$DeployRedis,
 
     [switch]$NoRedis,
@@ -216,6 +247,8 @@ $ErrorActionPreference = 'Stop'
 if ($DeploySearch -and $NoSearch) { throw "-DeploySearch and -NoSearch contradict each other." }
 if ($DeployNameGuard -and $NoNameGuard) { throw "-DeployNameGuard and -NoNameGuard contradict each other." }
 if ($DeployFanMatches -and $NoFanMatches) { throw "-DeployFanMatches and -NoFanMatches contradict each other." }
+if ($DeployAppConfig -and $NoAppConfig) { throw "-DeployAppConfig and -NoAppConfig contradict each other." }
+if ($ReseedAppConfig -and $NoAppConfig) { throw "-ReseedAppConfig and -NoAppConfig contradict each other." }
 if ($DeployRedis -and $NoRedis) { throw "-DeployRedis and -NoRedis contradict each other." }
 
 $TemplateFile = Join-Path $PSScriptRoot 'main.bicep'
@@ -427,6 +460,27 @@ function Get-TemplateParameterFile {
         -Setting 'MatchCentre__FanMatches__JobResourceId' -OnSwitch '-DeployFanMatches' -OffSwitch '-NoFanMatches'
     $values.deployNameGuard = $nameGuard.On
     $values.deployFanMatches = $fanMatches.On
+
+    # App Configuration (ADR-062): on when switched on, and kept on while the live Match Centre has the
+    # endpoint setting. The seed values are written only when the store doesn't exist yet (or with
+    # -ReseedAppConfig), because deploying the template again resets every seeded value, which would undo a
+    # flag flipped in the portal. A failed lookup stops the run rather than guessing.
+    $appConfig = Resolve-Feature -On:$DeployAppConfig -Off:$NoAppConfig -LiveEnv $liveEnv `
+        -Setting 'AppConfiguration__Endpoint' -OnSwitch '-DeployAppConfig' -OffSwitch '-NoAppConfig'
+    $appConfigExists = $false
+    if ($appConfig.On -and (az group exists --name $ResourceGroup) -eq 'true') {
+        $storeName = az resource list --resource-group $ResourceGroup --resource-type Microsoft.AppConfiguration/configurationStores `
+            --query "[0].name" -o tsv
+        if ($LASTEXITCODE -ne 0) { throw "Could not check whether the App Configuration store exists. Re-run, or pass -NoAppConfig to leave it out." }
+        $appConfigExists = -not [string]::IsNullOrWhiteSpace($storeName)
+    }
+    $values.deployAppConfig = $appConfig.On
+    $values.seedAppConfig = [bool]($ReseedAppConfig -or -not $appConfigExists)
+    if ($appConfig.On -and $values.seedAppConfig -and -not $Deployer.PrincipalId) {
+        # A service principal gets no Data Owner role (principalId is empty), so it can't write key-values.
+        Write-Warning "Deploying as a service principal: the App Configuration store is created but its seed values and flags are not written. Run a user deploy with -ReseedAppConfig to seed them."
+        $values.seedAppConfig = $false
+    }
     $values.maintenanceMode = [bool]$script:MaintenanceOn
 
     Write-Host "  Deploying as: $($Deployer.Kind)" -ForegroundColor DarkGray
@@ -436,6 +490,7 @@ function Get-TemplateParameterFile {
     Write-Host "  Azure Managed Redis: $redisWhy" -ForegroundColor DarkGray
     Write-Host "  Name guard: $($nameGuard.Why)" -ForegroundColor DarkGray
     Write-Host "  Fan matches: $($fanMatches.Why)" -ForegroundColor DarkGray
+    Write-Host "  App Configuration: $($appConfig.Why)$(if ($appConfig.On) { $(if ($values.seedAppConfig) { ', seeding values and flags' } else { ', store exists: values and flags left as they are' }) })" -ForegroundColor DarkGray
     if ($values.maintenanceMode) { Write-Host "  Maintenance mode: kept on (wipe-data in progress)" -ForegroundColor DarkGray }
     Write-Host "  Match Centre image: $(if ($values.Contains('matchCentreImage')) { $values.matchCentreImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     Write-Host "  Simulator image: $(if ($values.Contains('simulatorImage')) { $values.simulatorImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray

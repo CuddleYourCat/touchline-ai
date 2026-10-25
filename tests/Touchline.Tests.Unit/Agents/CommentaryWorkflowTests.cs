@@ -288,6 +288,28 @@ public sealed class CommentaryWorkflowTests
     }
 
     [Test]
+    public async Task With_the_SquadModels_flag_off_the_template_is_stored_without_any_model_call()
+    {
+        _chat.Returns(_cleanLines);
+
+        var outcome = await Workflow(new FixedGate(models: false), "en").RunAsync(_moment, _context, CancellationToken.None);
+
+        _chat.Requests.Should().BeEmpty();
+        _saved.Should().OnlyContain(line => line.Source == CommentarySource.Template);
+        outcome.AllStored.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task With_the_SquadModels_flag_on_the_model_writes_the_lines()
+    {
+        _chat.Returns(_cleanLines);
+
+        await Workflow(new FixedGate(models: true), "en").RunAsync(_moment, _context, CancellationToken.None);
+
+        _chat.Requests.Should().NotBeEmpty();
+    }
+
+    [Test]
     public async Task An_unknown_score_is_left_out_of_the_template_and_the_prompt()
     {
         _chat.Returns(_inventedLines).Returns(_inventedLines);
@@ -431,11 +453,14 @@ public sealed class CommentaryWorkflowTests
             ? "fr"
             : "es";
 
-    private CommentaryWorkflow Workflow(params string[] languages) =>
+    private CommentaryWorkflow Workflow(params string[] languages) => Workflow(null, languages);
+
+    private CommentaryWorkflow Workflow(ISquadFeatureGate? gate, params string[] languages) =>
         new(
             _chat,
             _store.Object,
             Options.Create(new SquadOptions { Languages = languages.Length == 0 ? ["en", "es", "fr"] : [.. languages] }),
             new SquadMetrics(_provider.GetRequiredService<IMeterFactory>()),
-            NullLogger<CommentaryWorkflow>.Instance);
+            NullLogger<CommentaryWorkflow>.Instance,
+            gate);
 }

@@ -4,10 +4,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Touchline.Domain.Moments;
 using Touchline.Domain.Teams;
+using Touchline.EventProcessor.Configuration;
 using Touchline.EventProcessor.Processing;
 using Touchline.Storage;
 
 var builder = FunctionsApplication.CreateBuilder(args);
+
+// App Configuration and feature flags (ADR-062), first, so the store's values are in place for every read below.
+builder.AddProcessorAppConfiguration();
 
 // OpenTelemetry through the service defaults, not a second Application Insights pipeline.
 builder.AddServiceDefaults();

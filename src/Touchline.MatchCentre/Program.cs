@@ -3,6 +3,7 @@ using Touchline.Domain.Moments;
 using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Api;
 using Touchline.MatchCentre.Caching;
+using Touchline.MatchCentre.Configuration;
 using Touchline.MatchCentre.Demo;
 using Touchline.MatchCentre.Maintenance;
 using Touchline.MatchCentre.Squad;
@@ -10,6 +11,9 @@ using Touchline.MatchCentre.Storage;
 using Touchline.MatchCentre.TeamBuilding;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// App Configuration and feature flags (ADR-062), first, so the store's values are in place for every read below.
+builder.AddMatchCentreAppConfiguration();
 
 builder.AddServiceDefaults();
 
@@ -69,6 +73,9 @@ var app = builder.Build();
 // HTTPS before a request reaches the container, which listens on plain HTTP. Redirecting again
 // in here would point clients at a port the container doesn't serve.
 app.UseExceptionHandler();
+
+// Nudges the App Configuration provider to refresh (ADR-062); a no-op with no store.
+app.UseMatchCentreAppConfiguration();
 
 // Maintenance mode (ADR-060) answers before anything else runs, apart from the health probes.
 app.UseMaintenanceMode();

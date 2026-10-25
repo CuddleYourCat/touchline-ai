@@ -51,6 +51,7 @@ public sealed partial class RecapWriter
     private readonly ILoggerFactory _loggers;
     private readonly ILogger<RecapWriter> _logger;
     private readonly IMatchTeamProfiles? _teams;
+    private readonly ISquadFeatureGate? _gate;
 
     /// <summary>Creates the writer.</summary>
     /// <param name="matches">The stored matches and events, which the facts are built from.</param>
@@ -61,6 +62,7 @@ public sealed partial class RecapWriter
     /// <param name="metrics">Where recaps and fallbacks are counted.</param>
     /// <param name="loggers">Creates the Producer's logger.</param>
     /// <param name="teams">The team profiles of each match (ADR-050); null for the embedded catalogue alone.</param>
+    /// <param name="gate">The feature switches, checked for every match, or null for all on (ADR-062).</param>
     public RecapWriter(
         IMatchStore matches,
         IRecapStore recaps,
@@ -69,9 +71,11 @@ public sealed partial class RecapWriter
         IOptions<SquadOptions> options,
         SquadMetrics metrics,
         ILoggerFactory loggers,
-        IMatchTeamProfiles? teams = null)
+        IMatchTeamProfiles? teams = null,
+        ISquadFeatureGate? gate = null)
     {
         _teams = teams;
+        _gate = gate;
         ArgumentNullException.ThrowIfNull(loggers);
         _matches = matches ?? throw new ArgumentNullException(nameof(matches));
         _recaps = recaps ?? throw new ArgumentNullException(nameof(recaps));
@@ -91,7 +95,7 @@ public sealed partial class RecapWriter
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(matchId);
         var options = _options.Value;
-        if (!options.ModelsAvailable)
+        if (!await SquadFeatureGates.ModelsAvailableAsync(options, _gate, cancellationToken))
         {
             LogNoModels(_logger, matchId);
             return new RecapRun(RecapRunStatus.NoModels, 0, 0, 0, 0);
@@ -107,7 +111,7 @@ public sealed partial class RecapWriter
         var profiles = _teams is null ? null : await _teams.ForMatchAsync(matchId, cancellationToken);
         var detector = profiles is null ? _detector : _detector.ForTeams(profiles);
         var producer = new ProducerRecap(
-            _chatClient, StoredMatchFacts.From(match, events, detector, profiles), _options, _metrics, _loggers.CreateLogger<ProducerRecap>());
+            _chatClient, StoredMatchFacts.From(match, events, detector, profiles), _options, _metrics, _loggers.CreateLogger<ProducerRecap>(), _gate);
 
         int written = 0, skipped = 0, fallbacks = 0, storeFailures = 0, givenUp = 0, transient = 0;
         foreach (var language in options.Languages.Distinct(StringComparer.OrdinalIgnoreCase))

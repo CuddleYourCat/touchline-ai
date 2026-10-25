@@ -3,6 +3,8 @@ using System.Net.ServerSentEvents;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.FeatureManagement;
+using Touchline.Configuration;
 using Touchline.Domain.Analytics;
 using Touchline.Domain.Season;
 using Touchline.Domain.Squad;
@@ -228,8 +230,15 @@ internal static partial class MatchCentreEndpoints
         IMatchReadModel matches,
         ISquad squad,
         ILoggerFactory loggers,
+        IFeatureManager features,
         CancellationToken cancellationToken)
     {
+        // The FanQa flag (ADR-062) is read on every request, so it works as a kill switch with no restart.
+        if (!await features.IsEnabledAsync(FeatureNames.FanQa, cancellationToken))
+        {
+            return Unavailable("Fan questions are switched off right now. The match feed carries on; try again later.");
+        }
+
         // Untrusted input (CLAUDE.md): checked here for shape and size; the agents keep it out of
         // their system prompts.
         if (string.IsNullOrWhiteSpace(request.Question) || request.Question.Length > QuestionRequest.MaxLength)

@@ -57,9 +57,13 @@ public sealed partial class ProducerRecap
 
     private readonly IChatClient _chatClient;
     private readonly IMatchFacts _facts;
-    private readonly SquadOptions _options;
+    private readonly IOptions<SquadOptions> _options;
+    private readonly ISquadFeatureGate? _gate;
     private readonly SquadMetrics _metrics;
     private readonly ILogger<ProducerRecap> _logger;
+
+    // Read on every use, so a live change to the options takes effect (ADR-062).
+    private SquadOptions Options => _options.Value;
 
     /// <summary>Creates the Producer.</summary>
     /// <param name="chatClient">The keyed <see cref="SquadModels.Large"/> client, wrapped in the token budget (ADR-043).</param>
@@ -67,12 +71,14 @@ public sealed partial class ProducerRecap
     /// <param name="options">The squad's settings.</param>
     /// <param name="metrics">Where recaps and fallbacks are counted.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="gate">The feature switches, checked for every recap, or null for all on (ADR-062).</param>
     public ProducerRecap(
         [FromKeyedServices(SquadModels.Large)] IChatClient chatClient,
         IMatchFacts facts,
         IOptions<SquadOptions> options,
         SquadMetrics metrics,
-        ILogger<ProducerRecap> logger)
+        ILogger<ProducerRecap> logger,
+        ISquadFeatureGate? gate = null)
     {
         ArgumentNullException.ThrowIfNull(chatClient);
         ArgumentNullException.ThrowIfNull(facts);
@@ -81,7 +87,8 @@ public sealed partial class ProducerRecap
         ArgumentNullException.ThrowIfNull(logger);
         _chatClient = chatClient;
         _facts = facts;
-        _options = options.Value;
+        _options = options;
+        _gate = gate;
         _metrics = metrics;
         _logger = logger;
     }
@@ -112,7 +119,7 @@ public sealed partial class ProducerRecap
         }
 
         var moments = await _facts.GetKeyMomentsAsync(matchId, cancellationToken).ConfigureAwait(false);
-        if (!_options.ModelsAvailable)
+        if (!await SquadFeatureGates.ModelsAvailableAsync(Options, _gate, cancellationToken).ConfigureAwait(false))
         {
             _metrics.RecordFallback(SquadAgent.Producer, "no-models");
             return new ProducedRecap(Template(sheet, moments, viewer), FromModel: false);
@@ -122,7 +129,7 @@ public sealed partial class ProducerRecap
         {
             var events = await _facts.GetEventsAsync(matchId, 0, LastMinute, cancellationToken).ConfigureAwait(false);
             var messages = Messages(sheet, moments, events, viewer);
-            var options = new ChatOptions { MaxOutputTokens = _options.MaxOutputTokens.Producer }.ForAgent(SquadAgent.Producer);
+            var options = new ChatOptions { MaxOutputTokens = Options.MaxOutputTokens.Producer }.ForAgent(SquadAgent.Producer);
 
             for (int attempt = 1; attempt <= MaxAttempts; attempt++)
             {
