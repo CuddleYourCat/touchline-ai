@@ -93,11 +93,34 @@
     script keeps its live region and warns if this value differs. Moving it to
     another region means tearing it down first ('-Action teardown-search').
 
+.PARAMETER DeployNameGuard
+    Point the Match Centre at Content Safety for the team builder's name guard
+    (ADR-049). Load the blocklist first (infra/load-name-blocklist.ps1): the guard
+    fails closed, so with it on and no blocklist, every team create is a 503. Once
+    it's on, later deploys keep it without the switch, so a redeploy can't quietly
+    drop back to the format-only guard.
+
+.PARAMETER NoNameGuard
+    Force the name guard off (the format-only guard). Can't be combined with
+    -DeployNameGuard.
+
+.PARAMETER DeployFanMatches
+    Give the Match Centre the simulator job's ID, which turns fan matches on
+    (ADR-050). The limits (one live, five a day) are built in. Once it's on, later
+    deploys keep it without the switch.
+
+.PARAMETER NoFanMatches
+    The kill switch: force fan matches off, so POST /api/matches answers 503.
+    Can't be combined with -DeployFanMatches.
+
 .PARAMETER Force
     Skip the teardown confirmation. Intended for scripted use only.
 
 .EXAMPLE
     ./infra/deploy.ps1 -Action whatif
+
+.EXAMPLE
+    ./infra/deploy.ps1 -Action deploy -DeployNameGuard -DeployFanMatches
 
 .EXAMPLE
     ./infra/deploy.ps1 -Action deploy -DeploySquadModels
@@ -137,6 +160,14 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$SearchLocation = 'uksouth',
 
+    [switch]$DeployNameGuard,
+
+    [switch]$NoNameGuard,
+
+    [switch]$DeployFanMatches,
+
+    [switch]$NoFanMatches,
+
     [switch]$Force
 )
 
@@ -144,6 +175,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 if ($DeploySearch -and $NoSearch) { throw "-DeploySearch and -NoSearch contradict each other." }
+if ($DeployNameGuard -and $NoNameGuard) { throw "-DeployNameGuard and -NoNameGuard contradict each other." }
+if ($DeployFanMatches -and $NoFanMatches) { throw "-DeployFanMatches and -NoFanMatches contradict each other." }
 
 $TemplateFile = Join-Path $PSScriptRoot 'main.bicep'
 
@@ -233,6 +266,24 @@ function Resolve-SquadModels {
     return [pscustomobject]@{ On = $false; Why = 'off (not deployed yet; pass -DeploySquadModels to add them)' }
 }
 
+# Whether a Match Centre feature stays on: the switches decide if given; otherwise it stays on when
+# the live app already has the setting the feature adds. A first deploy (no app yet) starts it off.
+function Resolve-Feature {
+    param(
+        [switch]$On,
+        [switch]$Off,
+        [string[]]$LiveEnv,
+        [Parameter(Mandatory)][string]$Setting,
+        [Parameter(Mandatory)][string]$OnSwitch,
+        [Parameter(Mandatory)][string]$OffSwitch
+    )
+
+    if ($Off) { return [pscustomobject]@{ On = $false; Why = "off ($OffSwitch)" } }
+    if ($On) { return [pscustomobject]@{ On = $true; Why = "on ($OnSwitch)" } }
+    if ($LiveEnv -contains $Setting) { return [pscustomobject]@{ On = $true; Why = "on (kept: the Match Centre has $Setting)" } }
+    return [pscustomobject]@{ On = $false; Why = "off (pass $OnSwitch to turn it on)" }
+}
+
 function Get-TemplateParameterFile {
     param([Parameter(Mandatory)]$Deployer)
 
@@ -243,7 +294,7 @@ function Get-TemplateParameterFile {
     }
 
     $app = Get-LiveResource -Id "$groupId/providers/Microsoft.App/containerApps/$MatchCentreAppName" `
-        -Query "{image: properties.template.containers[0].image, traffic: properties.configuration.ingress.traffic}"
+        -Query "{image: properties.template.containers[0].image, traffic: properties.configuration.ingress.traffic, env: properties.template.containers[0].env[].name}"
     if ($MatchCentreImage) {
         $values.matchCentreImage = $MatchCentreImage
     }
@@ -299,9 +350,22 @@ function Get-TemplateParameterFile {
     $values.deploySearch = if ($NoSearch) { $false } else { [bool]($DeploySearch -or (-not [string]::IsNullOrWhiteSpace($searchLive))) }
     $values.searchLocation = $searchRegion # ADR-058
 
+    # The name guard (ADR-049) and fan matches (ADR-050): on when switched on, and kept on when the
+    # live Match Centre already has the setting each one adds, so a redeploy that forgets the switch
+    # can't turn the guard back into the format-only check or switch fan matches off.
+    $liveEnv = if ($app -and $app.env) { @($app.env) } else { @() }
+    $nameGuard = Resolve-Feature -On:$DeployNameGuard -Off:$NoNameGuard -LiveEnv $liveEnv `
+        -Setting 'MatchCentre__ContentSafety__Endpoint' -OnSwitch '-DeployNameGuard' -OffSwitch '-NoNameGuard'
+    $fanMatches = Resolve-Feature -On:$DeployFanMatches -Off:$NoFanMatches -LiveEnv $liveEnv `
+        -Setting 'MatchCentre__FanMatches__JobResourceId' -OnSwitch '-DeployFanMatches' -OffSwitch '-NoFanMatches'
+    $values.deployNameGuard = $nameGuard.On
+    $values.deployFanMatches = $fanMatches.On
+
     Write-Host "  Deploying as: $($Deployer.Kind)" -ForegroundColor DarkGray
     Write-Host "  Squad models: $($squad.Why)$capacity" -ForegroundColor DarkGray
     Write-Host "  Azure AI Search: $(if ($values.deploySearch) { "deployed in $searchRegion (about 2 pounds a day)" } else { 'not deployed' })" -ForegroundColor DarkGray
+    Write-Host "  Name guard: $($nameGuard.Why)" -ForegroundColor DarkGray
+    Write-Host "  Fan matches: $($fanMatches.Why)" -ForegroundColor DarkGray
     Write-Host "  Match Centre image: $(if ($values.Contains('matchCentreImage')) { $values.matchCentreImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     Write-Host "  Simulator image: $(if ($values.Contains('simulatorImage')) { $values.simulatorImage } else { 'placeholder (first deploy)' })" -ForegroundColor DarkGray
     if ($values.Contains('matchCentreTraffic')) {
