@@ -184,7 +184,7 @@ var roles = {
   searchServiceContributor: '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
   // App Configuration (ADR-062): the apps read, the developer edits flags and values in the portal.
   appConfigDataReader: '516239f1-63e1-4d78-a4de-a74fb236a071'
-  appConfigDataOwner: '5ae67dd6-50cb-47e7-96ce-ef5b8b0be5b4'
+  appConfigDataOwner: '5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b'
 }
 
 // Azure App Configuration (ADR-062).
