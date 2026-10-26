@@ -57,8 +57,11 @@ export function HomePage() {
     <div className="match-list">
       <h1>Matches</h1>
       {groups.map(({ key, title, matches }) => (
-        <section key={key} aria-label={title} className="match-section">
-          <h2>{title}</h2>
+        <section key={key} aria-label={title} className={key === 'Live' ? 'match-tray match-tray-live' : 'match-tray'}>
+          <header className="match-tray-head">
+            <h2>{title}</h2>
+            <span className="match-tray-count data">{matches.length}</span>
+          </header>
           <ul className="match-grid">
             {matches.map((match) => (
               <li key={match.id}>

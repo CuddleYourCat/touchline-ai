@@ -147,6 +147,30 @@ describe('HomePage', () => {
     expectListRequests(get);
   });
 
+  it('shows stoppage time on a live card as 90+N, in the accessible name too', async () => {
+    vi.spyOn(api, 'GET').mockResolvedValue(
+      respondWith([
+        match('8', 'Live', { clock: { period: 'SecondHalf', minute: 93, second: 40, display: '93:40' } }),
+      ]),
+    );
+
+    renderPage();
+
+    const card = await screen.findByRole('link', { name: "Live, 90+4', Harbourside 8 2, Millbrook 8 1" });
+    expect(within(card).getByText("90+4'")).toBeInTheDocument();
+  });
+
+  it('counts the matches in each section outside its heading', async () => {
+    vi.spyOn(api, 'GET').mockResolvedValue(respondWith([match('1', 'Live'), match('2', 'Live'), match('3', 'FullTime')]));
+
+    renderPage();
+
+    const live = await screen.findByRole('region', { name: 'Live' });
+    expect(within(live).getByRole('heading', { level: 2 })).toHaveTextContent(/^Live$/);
+    expect(within(live).getByText('2')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Full time' })).getByText('1')).toBeInTheDocument();
+  });
+
   it('shows the empty state when there are no matches', async () => {
     vi.spyOn(api, 'GET').mockResolvedValue(respondWith([]));
 

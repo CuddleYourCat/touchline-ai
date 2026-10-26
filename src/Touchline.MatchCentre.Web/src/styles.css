@@ -326,20 +326,76 @@ code,
   color: var(--muted);
 }
 
+.match-tray {
+  margin-top: 20px;
+  padding: 14px 16px 16px;
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.match-tray-live {
+  border-left-color: var(--accent);
+}
+
+.match-tray-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.match-tray-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.match-tray-live .match-tray-head h2 {
+  color: var(--text);
+}
+
+.match-tray-live .match-tray-head h2::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pill-pulse 1.6s ease-in-out infinite;
+}
+
+.match-tray-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-align: center;
+  color: var(--muted);
+}
+
 .match-grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 14px;
 }
 
 .match-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
+  gap: 12px;
+  height: 100%;
+  padding: 14px 14px 12px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -354,8 +410,8 @@ code,
 
 .match-card:hover,
 .match-card:focus-visible {
-  transform: translateY(-2px);
-  border-color: var(--line-strong);
+  transform: translateY(-3px);
+  border-color: var(--accent);
   box-shadow: var(--shadow-md), var(--shadow-glow);
 }
 
@@ -370,6 +426,11 @@ code,
   align-items: center;
 }
 
+.match-card-clock {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
 .match-card-teams {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -379,15 +440,13 @@ code,
 
 .match-team {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   font-family: var(--font-display);
   font-weight: 600;
-}
-
-.match-team-away {
-  justify-content: flex-end;
+  text-align: center;
 }
 
 .match-team img {
@@ -395,9 +454,11 @@ code,
 }
 
 .match-team-name {
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.04em;
 }
 
 .match-score,
@@ -406,24 +467,61 @@ code,
 }
 
 .match-score {
-  font-size: 1.4rem;
+  font-size: 1.9rem;
   font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .match-clock {
   color: var(--highlight);
 }
 
+.match-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+}
+
+.match-card-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  min-width: 0;
+}
+
+.match-source {
+  text-transform: lowercase;
+}
+
+.match-card-cue {
+  flex: none;
+  font-family: var(--font-data);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition:
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.match-card:hover .match-card-cue,
+.match-card:focus-visible .match-card-cue {
+  color: var(--accent);
+  transform: translateX(3px);
+}
+
+/* The match page header's details row. */
 .match-card-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
   font-size: 0.8rem;
-}
-
-.match-source {
-  margin-left: auto;
-  text-transform: lowercase;
 }
 
 .pill {
@@ -452,7 +550,8 @@ code,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pill-live {
+  .pill-live,
+  .match-tray-live .match-tray-head h2::before {
     animation: none;
   }
 }
@@ -823,6 +922,7 @@ code,
   .overlay-toast,
   .button,
   .match-card,
+  .match-card-cue,
   .theme-toggle,
   .nav a,
   .moment {
@@ -830,7 +930,8 @@ code,
   }
 
   .button:hover,
-  .match-card:hover {
+  .match-card:hover,
+  .match-card:hover .match-card-cue {
     transform: none;
   }
 }

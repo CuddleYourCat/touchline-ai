@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { clockLabel } from './clockLabel';
 import type { MatchSummary } from './useMatches';
 
 const kindLabels: Record<MatchSummary['kind'], string> = {
@@ -36,7 +37,7 @@ function accessibleName(match: MatchSummary): string {
   const result = `${home.name} ${score.home}, ${away.name} ${score.away}`;
   switch (match.status) {
     case 'Live':
-      return `Live, ${clock.display}, ${result}`;
+      return `Live, ${clockLabel(clock)}, ${result}`;
     case 'FullTime':
       return `Full time, ${result}`;
     case 'Scheduled': {
@@ -58,24 +59,29 @@ export function MatchCard({ match }: { match: MatchSummary }) {
     <Link to={`/matches/${encodeURIComponent(match.id)}`} className="match-card" aria-label={label}>
       <div className="match-card-top">
         <StatusPill status={match.status} />
-        {showScore && <span className="match-clock data">{clock.display}</span>}
+        {showScore && <span className="match-clock match-card-clock data">{clockLabel(clock)}</span>}
       </div>
       <div className="match-card-teams">
         <span className="match-team">
-          <img src={home.crestUrl} alt={`${home.name} crest`} width={32} height={32} />
+          <img src={home.crestUrl} alt={`${home.name} crest`} width={56} height={56} />
           <span className="match-team-name">{home.shortName}</span>
         </span>
         <span className="match-score data">{showScore ? `${score.home} - ${score.away}` : 'v'}</span>
-        <span className="match-team match-team-away">
+        <span className="match-team">
+          <img src={away.crestUrl} alt={`${away.name} crest`} width={56} height={56} />
           <span className="match-team-name">{away.shortName}</span>
-          <img src={away.crestUrl} alt={`${away.name} crest`} width={32} height={32} />
         </span>
       </div>
-      <div className="match-card-meta muted">
-        <span>{kindLabels[match.kind]}</span>
-        {match.round != null && <span>Round {match.round}</span>}
-        <time dateTime={match.kickOffUtc}>{formatKickOff(match.kickOffUtc)}</time>
-        <span className="match-source data">{match.dataSource}</span>
+      <div className="match-card-foot">
+        <span className="match-card-details muted">
+          <span>{kindLabels[match.kind]}</span>
+          {match.round != null && <span>Round {match.round}</span>}
+          <time dateTime={match.kickOffUtc}>{formatKickOff(match.kickOffUtc)}</time>
+          <span className="match-source data">{match.dataSource}</span>
+        </span>
+        <span className="match-card-cue" aria-hidden="true">
+          {match.status === 'Scheduled' ? 'Details' : 'Watch'} &rarr;
+        </span>
       </div>
     </Link>
   );
