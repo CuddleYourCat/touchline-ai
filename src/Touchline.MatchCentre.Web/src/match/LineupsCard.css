@@ -1,0 +1,129 @@
+.lineups-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--gutter);
+  padding: var(--gutter);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+@media (min-width: 640px) {
+  .lineups-card {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.lineups-team {
+  min-width: 0;
+}
+
+.lineups-team-name {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--accent);
+}
+
+.lineups-subheading {
+  margin: 14px 0 6px;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.lineups-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lineups-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    'num name pos'
+    'num facts facts';
+  align-items: center;
+  column-gap: 8px;
+  padding: 3px 4px;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius);
+}
+
+.lineups-row-selected {
+  background: var(--grid);
+  border-left-color: var(--highlight);
+}
+
+.lineups-row-unused {
+  color: var(--muted);
+}
+
+.lineups-number {
+  grid-area: num;
+  font-family: var(--font-data);
+  font-size: 0.85rem;
+  text-align: right;
+  color: var(--muted);
+}
+
+.lineups-name {
+  grid-area: name;
+  min-width: 0;
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lineups-name:hover {
+  text-decoration: underline;
+}
+
+.lineups-name:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+
+.lineups-name[aria-pressed='true'] {
+  font-weight: 700;
+  color: var(--highlight);
+}
+
+.lineups-position {
+  grid-area: pos;
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.lineups-facts {
+  grid-area: facts;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+
+.lineups-facts:empty {
+  display: none;
+}
+
+.lineups-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.lineups-minute {
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
