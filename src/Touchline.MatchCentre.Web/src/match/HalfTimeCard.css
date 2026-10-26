@@ -1,0 +1,177 @@
+/* The half-time card (ADR-066): centred over the pitch's positioned wrapper. Uses the tokens in styles.css only. */
+.half-time-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  width: min(92%, 26rem);
+  max-height: 96%;
+  overflow-y: auto;
+  padding: 0.75rem 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--text);
+  box-shadow: 0 6px 24px var(--shadow);
+  animation: half-time-in 300ms ease-out both;
+}
+
+.half-time-still {
+  animation: none;
+}
+
+@keyframes half-time-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.half-time-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.half-time-title {
+  margin: 0;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+}
+
+.half-time-replay {
+  padding: 0 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.half-time-score {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.half-time-goals {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  white-space: nowrap;
+}
+
+.half-time-team {
+  flex: 1;
+  min-width: 0;
+}
+
+.half-time-team:first-child {
+  text-align: right;
+}
+
+.half-time-team:last-child {
+  text-align: left;
+}
+
+.half-time-short {
+  display: none;
+}
+
+.half-time-momentum {
+  margin: 0 0 0.5rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.half-time-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.half-time-table th,
+.half-time-table td {
+  padding: 0.25rem 0;
+  font-weight: normal;
+}
+
+.half-time-table thead th {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.half-time-home-head,
+.half-time-away-head {
+  width: 3.5rem;
+}
+
+.half-time-home-head,
+.half-time-table td:first-child {
+  text-align: left;
+}
+
+.half-time-away-head,
+.half-time-table td:last-child {
+  text-align: right;
+}
+
+.half-time-stat-head,
+.half-time-label {
+  text-align: center;
+}
+
+.half-time-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.half-time-value {
+  font-size: 0.95rem;
+}
+
+.half-time-bar {
+  display: flex;
+  height: 4px;
+  margin: 2px 0.5rem 0;
+  gap: 2px;
+}
+
+.half-time-bar-home {
+  background: var(--highlight);
+  border-radius: 2px;
+}
+
+.half-time-bar-away {
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* Phone width: short team names in the score. */
+@media (max-width: 480px) {
+  .half-time-card {
+    width: 94%;
+    padding: 0.5rem 0.6rem 0.75rem;
+  }
+
+  .half-time-full {
+    display: none;
+  }
+
+  .half-time-short {
+    display: inline;
+  }
+}
+
+/* The card scrolls when it does not fit, so it is a focusable scroll region (not a focus trap). */
+.half-time-card:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
