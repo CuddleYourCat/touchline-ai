@@ -223,11 +223,13 @@ public static class DatasetWriter
 
         | File | What it is |
         |---|---|
-        | `events.jsonl.gz` | Every event, one JSON object per line, gzipped. The JSON is the same as the events sent to Event Hubs (`DomainJson`). |
-        | `matches.jsonl` | One line per match: the metadata, both line-ups, the final score and each side's totals. `synthetic` is always `true`. |
+        | `events.jsonl.gz` | Every event, one JSON object per line, gzipped. The JSON is the same as the events sent to Event Hubs (`DomainJson`). It includes `Substitution` events (ADR-064). |
+        | `matches.jsonl` | One line per match: the metadata, both starting elevens and benches, the final score and each side's totals. `synthetic` is always `true`. |
         | `schema.json` | A JSON Schema (draft 2020-12) for both line types, under `$defs/event` and `$defs/match`. |
         | `CALIBRATION.md` | The season's averages against the ranges the simulator is tuned to (`CalibrationTests`). |
         | `README.md` | This file. |
+
+        Each match ID includes its season and round, for example `nbk-tvu-2026-27-r1-1` for seed 1 (ADR-020, ADR-025).
 
         ## Regenerate
 

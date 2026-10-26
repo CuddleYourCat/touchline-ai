@@ -8,9 +8,21 @@ A seeded simulator plays a synthetic, football-realistic match. Every event stre
 
 Built for **Inside the Game: Developer Hackathon** (October 2026).
 
-## Status
+## What it does
 
-1st half: the simulator publishes matches through Event Hubs to a Functions processor, which stores events and state in Cosmos DB and publishes key moments to a Service Bus topic. It runs on emulators locally and keyless in Azure. See [DECISIONS.md](DECISIONS.md) for the architecture decisions.
+- **Simulator.** A seeded engine plays a fictional match in possession chains, with officials, player traits and substitutions from the bench (ADR-014, ADR-019, ADR-020, ADR-064). Each player gets a small, repeatable nudge from their formation slot, so the lines on the pitch aren't a perfect grid (ADR-065).
+- **Event pipeline.** Events stream through Event Hubs to a Functions processor, which stores them in Cosmos DB, publishes key moments to Service Bus and projects season stats and suspensions (ADR-004, ADR-021, ADR-024, ADR-025). It runs on emulators locally and keyless in Azure.
+- **Agent squad.** A Commentator writes live lines for key moments, a Localiser translates them, an Analyst answers "why did that happen?" and a Producer writes the full-time recap (ADR-006, ADR-007, ADR-042). Lines are written in English, Spanish and French (ADR-045). A roster guardrail stops the agents naming anyone outside the two squads, and each model call has a token budget (ADR-043, ADR-044).
+- **Fan Q&A with citations.** The Analyst's answers cite possessions and moments (ADR-027). Azure AI Search retrieves possessions with hybrid keyword and vector search (ADR-039, ADR-040).
+- **Viewing modes.** Analyst or casual fan, with a favourite club, player, metric and language (ADR-027, ADR-055).
+- **Live feed.** The Match Centre streams match state over server-sent events (ADR-029, ADR-037). Timecoded overlay cards cover key and notable moments (ADR-046, ADR-047). The stream also carries milestones, such as a first goal or a personal-best speed (ADR-027).
+- **Match Centre.** A React web app, served by the Match Centre API, with the pitch, momentum, the recap and fan Q&A (ADR-028, ADR-033, ADR-035).
+- **Team builder.** Fans create fictional teams with an edit key and no sign-in (ADR-031, ADR-053). Every name passes a format rule and Azure AI Content Safety, which checks it against a blocklist of real names and refuses it when the check can't answer (ADR-049). Fans then play fan matches, one live at a time and five a day (ADR-032, ADR-050).
+- **Optional services.** Azure Managed Redis caches name-guard verdicts, finished-match reads and the fan-match limits (ADR-061). App Configuration holds settings and feature flags, so a switch can change without a redeploy (ADR-062). Both sit behind deploy switches, and the apps run without them.
+- **Maintenance and wipe.** `deploy.ps1 -Action wipe-data` clears stored matches before judging, and a maintenance page answers while it runs (ADR-059, ADR-060).
+- **Dataset.** A 38-match synthetic season between two fictional clubs, exported from the simulator with a schema and a calibration report. See [dataset/README.md](dataset/README.md) (ADR-063).
+
+The decision behind each piece is in [DECISIONS.md](DECISIONS.md).
 
 ## Run it locally
 
@@ -38,6 +50,20 @@ Every push to `main` then deploys the code: the Match Centre as a new revision (
 ```bash
 gh variable set PROCESSOR_APP_NAME --body <processorAppName output>
 ```
+
+The optional features are off by default. These `deploy.ps1 -Action deploy` switches turn them on. Once a feature is on, later deploys keep it without its switch:
+
+| Switch | What it turns on |
+|---|---|
+| `-DeploySquadModels` | The squad's chat models, their content filter and the `Squad__*` settings (ADR-051) |
+| `-DeploySearch` | Azure AI Search for possession retrieval, in UK South by default (`-SearchLocation`) (ADR-026, ADR-058) |
+| `-DeployNameGuard` | Azure AI Content Safety for team names. Load the blocklist first (ADR-049) |
+| `-DeployFanMatches` | Fan-started matches. `-NoFanMatches` is the kill switch (ADR-050) |
+| `-DeployAppConfig` | Azure App Configuration for settings and feature flags (ADR-062) |
+| `-ReseedAppConfig` | Writes the seed settings and flags again, which undoes changes made in the portal (ADR-062) |
+| `-DeployRedis` | Azure Managed Redis for caching and the fan-match limits (ADR-061) |
+
+The `No` switches turn a feature off: `-NoSquadModels`, `-NoSearch`, `-NoNameGuard`, `-NoFanMatches`, `-NoAppConfig` and `-NoRedis`. After `-Action teardown-search` or `-Action teardown-redis`, run the matching `No` switch, so a later deploy doesn't recreate the service. The script's help lists every action and switch.
 
 ## Run a match in Azure
 
@@ -109,7 +135,7 @@ A match only counts towards the season when it's a **fixture** (ADR-020). Give i
 pwsh ./infra/start-match.ps1 -Seed 201 -Speed 60 -Season 2026-27 -Round 1
 ```
 
-**At full time,** the Event Processor's `ProjectSeason` function picks the finished fixture up from the `matches` container's change feed (ADR-025). For each of the 22 starters it writes:
+**At full time,** the Event Processor's `ProjectSeason` function picks the finished fixture up from the `matches` container's change feed (ADR-025). For each of the 22 starters, and each substitute who came on, it writes:
 - **a `player-matches` document** (`{matchId}:{playerId}`) with their goals, assists, shots, xG, passes, fouls, cards and penalties;
 - **a rebuilt `player-seasons` document**, with their totals, their bans and their last five penalties.
 
@@ -150,6 +176,24 @@ traces
 | Key-moment routing | Azure Service Bus |
 | Retrieval | Azure AI Search (hybrid) |
 | Models and agents | Microsoft Foundry |
+| Name checks | Azure AI Content Safety, in the Foundry account (ADR-049) |
+| Caching and fan-match limits | Azure Managed Redis (ADR-061) |
+| Settings and feature flags | Azure App Configuration (ADR-062) |
+| Web UI | React and TypeScript, served by the Match Centre (ADR-028) |
+| Live stream | Server-sent events from the Match Centre (ADR-029) |
 | Hosting | Azure Container Apps + Container Registry |
 | Identity and secrets | Managed identity + Key Vault |
 | Observability | OpenTelemetry → Azure Monitor |
+
+## API notes
+
+The Match Centre API's OpenAPI document is committed at [contracts/matchcentre.openapi.json](contracts/matchcentre.openapi.json) (ADR-027). The Match Centre web app generates its TypeScript types from it (ADR-033).
+
+Enums such as `CitationKind` may gain members, and the event types gained `Substitution` (ADR-064). An added member is additive on the wire, so clients should treat an unknown value gracefully, for example by showing it as plain text, rather than switching on the enum exhaustively.
+
+The live stream is described in the OpenAPI document's `/api/matches/{matchId}/stream` entry, because OpenAPI can't describe server-sent events fully.
+
+## Not in scope
+
+- **Auto-eventing from video** (the brief's stretch goal) was not attempted. No footage was supplied, and the project has no match footage it has the rights to use.
+- **Offside and VAR** are not modelled. Offside needs every player's exact position, and the engine tracks only the ball (ADR-022). The shape model's positions are modelled, not tracked, so the UI doesn't present them as tracking data (ADR-035).
