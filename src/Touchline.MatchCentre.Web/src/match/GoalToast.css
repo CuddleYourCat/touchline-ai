@@ -1,0 +1,100 @@
+.goal-toast {
+  --goal-toast-team: var(--accent);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 90%;
+  padding: 20px 36px;
+  text-align: center;
+  background: var(--surface);
+  color: var(--text);
+  border: 2px solid var(--goal-toast-team);
+  border-top-width: 8px;
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px var(--shadow);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+
+.goal-toast-animated {
+  animation: goal-toast-pop 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.goal-toast-still {
+  animation: goal-toast-appear 0.25s ease both;
+}
+
+.goal-toast-fading {
+  opacity: 0;
+}
+
+.goal-toast-replay {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: 1px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--on-accent);
+  background: var(--highlight);
+  border-radius: 999px;
+}
+
+.goal-toast-title {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 9vw, 5rem);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: var(--goal-toast-team);
+}
+
+.goal-toast-scorer {
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 4vw, 2rem);
+  font-weight: 600;
+}
+
+.goal-toast-team {
+  font-size: 1rem;
+  font-weight: 600;
+  padding-bottom: 2px;
+  border-bottom: 3px solid var(--goal-toast-team);
+}
+
+.goal-toast-score {
+  font-size: clamp(1rem, 3vw, 1.4rem);
+}
+
+.goal-toast-minute {
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+@keyframes goal-toast-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes goal-toast-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
