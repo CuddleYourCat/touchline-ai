@@ -12,8 +12,15 @@ public sealed record TeamSheet
     /// <param name="name">Full club name.</param>
     /// <param name="shortName">Three-letter abbreviation.</param>
     /// <param name="startingEleven">The IDs of the eleven players who start, goalkeeper first.</param>
-    /// <exception cref="ArgumentException">A name or ID is missing, or the starting eleven isn't eleven different players.</exception>
-    public TeamSheet(string id, string name, string shortName, IReadOnlyList<string> startingEleven)
+    /// <param name="substitutes">
+    /// The IDs of the bench (ADR-064), in sheet order. Null or missing (a document stored before
+    /// substitutions) reads as an empty bench.
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// A name or ID is missing, the starting eleven isn't eleven different players, or the bench
+    /// names a blank, repeated or starting player.
+    /// </exception>
+    public TeamSheet(string id, string name, string shortName, IReadOnlyList<string> startingEleven, IReadOnlyList<string>? substitutes = null)
     {
         Id = DetailRules.Text(id, nameof(id));
         Name = DetailRules.Text(name, nameof(name));
@@ -28,6 +35,16 @@ public sealed record TeamSheet
         }
 
         StartingEleven = [.. startingEleven];
+
+        substitutes ??= [];
+        if (substitutes.Any(string.IsNullOrWhiteSpace)
+            || substitutes.Distinct().Count() != substitutes.Count
+            || substitutes.Any(StartingEleven.Contains))
+        {
+            throw new ArgumentException("The substitutes must be different player IDs, none of them starting.", nameof(substitutes));
+        }
+
+        Substitutes = [.. substitutes];
     }
 
     /// <summary>The team profile ID.</summary>
@@ -43,17 +60,24 @@ public sealed record TeamSheet
     public IReadOnlyList<string> StartingEleven { get; }
 
     /// <summary>
+    /// The IDs of the substitutes on the bench (ADR-064), in sheet order. Empty for a sheet with
+    /// no bench, and for a document stored before substitutions.
+    /// </summary>
+    public IReadOnlyList<string> Substitutes { get; }
+
+    /// <summary>
     /// Compares by value, including the players in order. A record's generated equality would
-    /// compare the list by reference, so two identical sheets read from JSON would differ.
+    /// compare the lists by reference, so two identical sheets read from JSON would differ.
     /// </summary>
     /// <param name="other">The sheet to compare with.</param>
-    /// <returns>True when every field and every starting player matches.</returns>
+    /// <returns>True when every field, every starting player and every substitute matches.</returns>
     public bool Equals(TeamSheet? other) =>
         other is not null
         && Id == other.Id
         && Name == other.Name
         && ShortName == other.ShortName
-        && StartingEleven.SequenceEqual(other.StartingEleven);
+        && StartingEleven.SequenceEqual(other.StartingEleven)
+        && Substitutes.SequenceEqual(other.Substitutes);
 
     /// <inheritdoc/>
     public override int GetHashCode()
@@ -63,6 +87,13 @@ public sealed record TeamSheet
         hash.Add(Name);
         hash.Add(ShortName);
         foreach (var player in StartingEleven)
+        {
+            hash.Add(player);
+        }
+
+        // The count keeps the two lists apart.
+        hash.Add(Substitutes.Count);
+        foreach (var player in Substitutes)
         {
             hash.Add(player);
         }

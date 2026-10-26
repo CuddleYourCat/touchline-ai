@@ -1,4 +1,4 @@
-import { pitchWidth, type BallPath, type MatchEvent, type PitchPosition } from '../live/matchStreamReducer';
+import { hasBall, pitchWidth, type BallPath, type MatchEvent, type PitchPosition } from '../live/matchStreamReducer';
 
 /** Pitch Y runs up from the bottom touchline; SVG Y runs down, so it's flipped. X is unchanged: home attacks left to right. */
 export function toSvg(p: PitchPosition): { x: number; y: number } {
@@ -25,9 +25,15 @@ export function ballPathD(path: BallPath): string | null {
   return `M ${round(from.x)} ${round(from.y)} Q ${round(cx)} ${round(cy)} ${round(to.x)} ${round(to.y)}`;
 }
 
-/** Where the ball was after each of the few events before the latest, oldest first, for the fading trail. */
+/**
+ * Where the ball was after each of the few events before the latest, oldest first, for the fading trail. A
+ * substitution has no ball in it, so it leaves no point.
+ */
 export function ballTrail(events: MatchEvent[], length = 5): PitchPosition[] {
-  return events.slice(-(length + 1), -1).map((e) => e.end ?? e.start);
+  return events
+    .filter(hasBall)
+    .slice(-(length + 1), -1)
+    .map((e) => e.end ?? e.start);
 }
 
 /**

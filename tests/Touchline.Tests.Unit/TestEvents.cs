@@ -59,6 +59,7 @@ internal static class TestEvents
         MatchEventType.Carry => matchEvent with { Carry = new CarryDetail(28) },
         MatchEventType.MatchMetadata => matchEvent with { Metadata = Metadata, PlayerId = null },
         MatchEventType.Card when matchEvent.Sequence > 1 => matchEvent with { FoulSequence = matchEvent.Sequence - 1 },
+        MatchEventType.Substitution => matchEvent with { ReplacementPlayerId = matchEvent.Team == TeamSide.Home ? "nbfc-14" : "tvu-18" },
         _ => matchEvent
     };
 }

@@ -4,6 +4,7 @@ using Touchline.Domain.Analytics;
 using Touchline.Domain.Matches;
 using Touchline.Domain.Matches.Shape;
 using Touchline.Domain.Moments;
+using Touchline.Domain.Pitch;
 using Touchline.Domain.Squad;
 using Touchline.Domain.Teams;
 using Touchline.MatchCentre.Api;
@@ -53,6 +54,8 @@ internal sealed partial class MatchStreamProjector
     private readonly ILogger _logger;
     private readonly List<MatchEvent> _events = [];
     private readonly HashSet<string> _dismissed = new(StringComparer.Ordinal);
+    private static readonly PitchPosition _centreSpot = new(PitchDimensions.Length / 2, PitchDimensions.Width / 2);
+    private PitchPosition? _lastBall;
     private readonly HashSet<string> _defaulted = new(StringComparer.Ordinal);
     private (ShapeTeam Home, ShapeTeam Away)? _shapeTeams;
     private MatchState _state;
@@ -202,7 +205,11 @@ internal sealed partial class MatchStreamProjector
     }
 
     // The shape model runs once the metadata has named both teams. A red card takes its player
-    // off the pitch for the rest of the match.
+    // off the pitch for the rest of the match. A substitution (ADR-064) puts the substitute into
+    // his side's eleven at the departing player's place, and the formation is worked out again
+    // from the new eleven, so a forward who replaces a defender plays up front. A substitution
+    // has no ball in it, so its shape is drawn where the ball stopped (the centre spot at half
+    // time), with play stopped, and the pitch shows the new player at once.
     private ShapeView? ShapeAfter(MatchEvent matchEvent)
     {
         if (matchEvent is { Metadata: { } metadata })
@@ -215,9 +222,51 @@ internal sealed partial class MatchStreamProjector
             _dismissed.Add(sentOff);
         }
 
-        return _shapeTeams is { } teams && ShapeModel.BallAfter(matchEvent) is { } ball
-            ? ShapeView.From(matchEvent.Sequence, ShapeModel.Place(teams.Home, teams.Away, ball, ShapeModel.PossessionAfter(matchEvent), _dismissed))
+        if (matchEvent is { Type: MatchEventType.Substitution, PlayerId: { } off, ReplacementPlayerId: { } on } && _shapeTeams is { } current)
+        {
+            _shapeTeams = matchEvent.Team == TeamSide.Home
+                ? (Substituted(current.Home, off, on), current.Away)
+                : (current.Home, Substituted(current.Away, off, on));
+        }
+
+        var ball = ShapeModel.BallAfter(matchEvent);
+        if (ball is not null)
+        {
+            _lastBall = ball;
+        }
+        else if (matchEvent.Type == MatchEventType.PeriodEnd)
+        {
+            // The next half kicks off from the centre spot, so half-time changes are drawn there.
+            _lastBall = _centreSpot;
+        }
+        else if (matchEvent.Type == MatchEventType.Substitution)
+        {
+            ball = _lastBall;
+        }
+
+        return _shapeTeams is { } teams && ball is { } at
+            ? ShapeView.From(matchEvent.Sequence, ShapeModel.Place(teams.Home, teams.Away, at, ShapeModel.PossessionAfter(matchEvent), _dismissed))
             : null;
+    }
+
+    // The team with the substitute in the departing player's place in the eleven. The copy works
+    // out its formation afresh. A team with no profile has no position for the substitute, so he
+    // plays in the departing player's line.
+    private static ShapeTeam Substituted(ShapeTeam team, string off, string on)
+    {
+        var eleven = team.Sheet.StartingEleven.ToList();
+        var index = eleven.IndexOf(off);
+        if (index < 0 || eleven.Contains(on))
+        {
+            return team;
+        }
+
+        eleven[index] = on;
+        var sheet = new TeamSheet(team.Sheet.Id, team.Sheet.Name, team.Sheet.ShortName, eleven, [.. team.Sheet.Substitutes.Where(id => id != on)]);
+        var positions = team.Positions.ContainsKey(on) || !team.Positions.TryGetValue(off, out var line)
+            ? team.Positions
+            : new Dictionary<string, PlayerPosition>(team.Positions, StringComparer.Ordinal) { [on] = line };
+        return team with { Sheet = sheet, Positions = positions };
     }
 
     // Each team's formation is worked out here, once, and cached in its ShapeTeam.

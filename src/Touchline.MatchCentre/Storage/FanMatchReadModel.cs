@@ -109,12 +109,18 @@ internal sealed class FanMatchReadModel(
             RefereeCatalog.ForSeed(request.Seed).Name,
             Lineup(home, request.Home.Sheet),
             Lineup(away, request.Away.Sheet),
-            LiveState.From(kickOff));
+            LiveState.From(kickOff),
+            Bench(home, request.Home.Sheet),
+            Bench(away, request.Away.Sheet));
     }
 
     // The same eleven, in the same order, as the engine will put in the metadata.
     private static IReadOnlyList<PlayerSummary> Lineup(TeamProfile team, MatchdaySheet? sheet) =>
         [.. StartingElevens.For(team, sheet).Select(p => PlayerSummary.From(p, team.Id))];
+
+    // The same bench as the engine will put in the metadata (ADR-064).
+    private static IReadOnlyList<PlayerSummary> Bench(TeamProfile team, MatchdaySheet? sheet) =>
+        [.. StartingElevens.Bench(team, sheet).Select(p => PlayerSummary.From(p, team.Id))];
 }
 
 /// <summary>

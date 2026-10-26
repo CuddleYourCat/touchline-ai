@@ -1093,6 +1093,7 @@ Everything is under `/api`, JSON in camelCase with enums as strings (as `DomainJ
 - **One projector for both feeds.** `MatchStreamProjector` turns events into stream messages (event, state, moment, momentum, full time), so the demo replay and the change-feed reader produce identical streams.
 - **Stand-ins until their lanes land.** The demo's commentary is the detector's reason, its overlay is a plain card, and its squad answers from the score and moments only, starting with "The Analyst isn't connected in this demo build". No model is called.
 - **Demo seed changed (23 Oct).** The demo moved from seed 174 (a 3–2 with no key moment before 47') to seed 572 for a livelier first half.
+- **Demo seed changed again (26 Oct, ADR-064).** Substitutions change every match from the hour mark, and seed 572 is no longer a 3–3. The demo moved to seed 35600: a 3–3 with ten key moments, the first at 0:36, six in the first half, a stoppage-time penalty and goal, and seven substitutions.
 
 ---
 
@@ -1999,6 +2000,19 @@ A with 2, reaching X but cutting anything that slips to the backlog, in that ord
 - **It changes every match's event stream.** Substitution draws use the seeded random, so the golden hashes, the calibration run and #66's committed dataset all regenerate. The calibration ranges should still hold, because a substitute plays with his own traits but the same tendencies.
 - **A new enum member breaks exhaustive clients** (already in the backlog for the README): the OpenAPI enum and the TypeScript schema gain `Substitution`.
 - **A fan team's bench of 0 means no substitutions,** and a default pick (no sheet) uses the five squad players not in the eleven.
+
+**Settled during the build**
+- **Substitutions draw from their own seeded stream** (the match seed mixed with a constant), not the play's. Deciding a substitution never moves a pass or a shot; play changes only once a different player is on. A match is unchanged, apart from the new fields, up to its first substitution.
+- **Each team plans at kick-off** how many substitutes it uses (1 to 5, weighted towards more, capped by its outfield bench), whether one comes at half time (15%), and 1 to 3 window minutes drawn from 55 to 85. A window opens at the first stoppage at or after its minute; who comes off is chosen then, from the score and the bookings. A plan never has more than three windows, so the window limit needs no check during play.
+- **Stoppages are** a foul that stops play, the ball going out, a goal, and half time. Cards owed are shown first. A keeper holding a save isn't a stoppage. A substitution takes no clock time of its own: it happens inside the stoppage it follows. **A penalty foul shows its cards but makes no substitutions:** they wait for the penalty's own outcome, so a fresh substitute never takes a kick given before he came on.
+- **Only an outfield starter still on can come off;** a substitute who came on stays on. A bench goalkeeper never comes on. The substitute takes the departing player's place in the line-up, so he can inherit set pieces and penalties.
+- **On the pitch, the shape follows the eleven on the pitch.** The projector rebuilds that side's team sheet with the substitute at the departing player's index and works the formation out again, so a forward who replaces a defender plays up front (a 4-3-3 becomes a 3-3-4). A half-time substitution is drawn with the ball on the centre spot.
+- **In the facts the agents read,** substitutions only fill the event slots that goals, cards, shots, fouls and corners leave, so a busy hour of changes never crowds out the play.
+- **Tactical changes** apply from the 70th minute to 60% of a trailing or leading team's changes, when the bench has the right player. A booked player is three times as likely to be picked.
+- **The substitution event** starts on the halfway line at the near touchline (52.5, 0) and has no end. It shares the possession ID of the stoppage, and possession summaries leave it out. Its shape is drawn where the ball stopped.
+- **`TeamSheet.Substitutes`** is optional in JSON (old documents read with an empty bench). `MatchDetail` gains `homeSubstitutes` and `awaySubstitutes`, so the pitch can label a substitute. `PlayerMatch` gains `substitute`, and `PlayerSeason` gains `substituteAppearances`.
+- **`appearances` follows the football convention:** every fixture played, starting or from the bench, and `rounds` lists every round played in. The simulator's "rounds done" read is unchanged by it, since every fixture has starters, and no other reader assumed a start. Season documents are rebuilt from player-match documents, so an old season document takes the new meaning on its next projection.
+- **The demo moved to seed 35600** (see ADR-027's notes).
 
 ---
 

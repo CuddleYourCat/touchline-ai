@@ -44,8 +44,9 @@ public sealed partial class MatchSimulator
             switch (outcome)
             {
                 case ShotOutcome.Goal:
+                    _goals[attacking]++;
                     Advance((GoalStoppageSeconds, GoalStoppageSeconds));
-                    foreach (var e in ShowPendingCards())
+                    foreach (var e in Stoppage())
                     {
                         yield return e;
                     }

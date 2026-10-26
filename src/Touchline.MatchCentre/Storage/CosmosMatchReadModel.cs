@@ -124,9 +124,11 @@ public sealed partial class CosmosMatchReadModel(
             Summary(match, metadata),
             metadata.Venue,
             metadata.Referee.Name,
-            Lineup(metadata.Home, profiles),
-            Lineup(metadata.Away, profiles),
-            LiveState.From(match.State));
+            Players(metadata.Home.Id, metadata.Home.StartingEleven, profiles),
+            Players(metadata.Away.Id, metadata.Away.StartingEleven, profiles),
+            LiveState.From(match.State),
+            Players(metadata.Home.Id, metadata.Home.Substitutes, profiles, _benchNumbersAfter),
+            Players(metadata.Away.Id, metadata.Away.Substitutes, profiles, _benchNumbersAfter));
     }
 
     /// <inheritdoc />
@@ -273,15 +275,18 @@ public sealed partial class CosmosMatchReadModel(
             metadata.Round,
             _dataSource);
 
-    private static IReadOnlyList<PlayerSummary> Lineup(TeamSheet sheet, IReadOnlyDictionary<string, TeamProfile> profiles)
+    // Shirt numbers given to unknown substitutes start after the eleven's.
+    private const int _benchNumbersAfter = 11;
+
+    private static IReadOnlyList<PlayerSummary> Players(string teamId, IReadOnlyList<string> ids, IReadOnlyDictionary<string, TeamProfile> profiles, int numberedAfter = 0)
     {
-        var profile = profiles.GetValueOrDefault(sheet.Id);
+        var profile = profiles.GetValueOrDefault(teamId);
         return
         [
-            .. sheet.StartingEleven.Select((id, index) =>
+            .. ids.Select((id, index) =>
                 profile?.FindPlayer(id) is { } player
-                    ? PlayerSummary.From(player, sheet.Id)
-                    : Unknown(id, index, sheet.Id))
+                    ? PlayerSummary.From(player, teamId)
+                    : Unknown(id, numberedAfter + index, teamId))
         ];
     }
 

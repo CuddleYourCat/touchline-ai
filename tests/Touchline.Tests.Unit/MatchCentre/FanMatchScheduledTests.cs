@@ -79,7 +79,7 @@ public class FanMatchScheduledTests
     [Test]
     public async Task A_stored_match_comes_from_the_read_side_without_reading_the_request()
     {
-        var stored = new MatchDetail(null!, "Venue", "Ref", [], [], null!);
+        var stored = new MatchDetail(null!, "Venue", "Ref", [], [], null!, [], []);
         _inner.Setup(m => m.GetMatchAsync(_matchId, It.IsAny<CancellationToken>())).ReturnsAsync(stored);
 
         (await ReadModel().GetMatchAsync(_matchId, CancellationToken.None)).Should().BeSameAs(stored);

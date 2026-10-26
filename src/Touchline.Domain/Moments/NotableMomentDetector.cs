@@ -9,8 +9,8 @@ namespace Touchline.Domain.Moments;
 /// <see cref="KeyMomentDetector"/>. Nothing it finds wakes a model.
 /// </summary>
 /// <remarks>
-/// Rules: a yellow card; a corner; a shot off the woodwork; and, flagged as minor, a throw-in or
-/// a goal kick. A key moment beats a notable one, so an event the key detector reports (a goal
+/// Rules: a yellow card; a corner; a shot off the woodwork; a substitution (ADR-064); and,
+/// flagged as minor, a throw-in or a goal kick. A key moment beats a notable one, so an event the key detector reports (a goal
 /// that came off the post, a penalty off the bar) is not notable, and one event is never two
 /// moments.
 /// </remarks>
@@ -104,6 +104,9 @@ public sealed class NotableMomentDetector
                 => Moment(NotableMomentKind.ThrowIn, matchEvent, other, $"{matchEvent.Time}: Throw-in to the {Side(other)} team, last touched by {who}."),
             { Restart: RestartKind.GoalKick }
                 => Moment(NotableMomentKind.GoalKick, matchEvent, other, $"{matchEvent.Time}: Goal kick to the {Side(other)} team, last touched by {who}."),
+            { Type: MatchEventType.Substitution }
+                => Moment(NotableMomentKind.Substitution, matchEvent, matchEvent.Team,
+                    $"{matchEvent.Time}: Substitution for the {Side(matchEvent.Team)} team: {_names.Describe(matchEvent.ReplacementPlayerId)} comes on for {who}."),
             _ => null
         };
     }
@@ -121,6 +124,7 @@ public sealed class NotableMomentDetector
             reason.ToString(CultureInfo.InvariantCulture),
             team,
             found?.Name,
-            found?.Team);
+            found?.Team,
+            trigger.ReplacementPlayerId is { } on ? _names.Find(on)?.Name : null);
     }
 }

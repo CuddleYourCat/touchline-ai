@@ -528,6 +528,13 @@ export interface components {
             awayLineup: components["schemas"]["PlayerSummary"][];
             /** @description The score, clock and totals now. */
             state: components["schemas"]["LiveState"];
+            /**
+             * @description The home bench (ADR-064), so a substitute who comes on can be named on the pitch. Empty for a
+             *     match stored before substitutions.
+             */
+            homeSubstitutes: components["schemas"]["PlayerSummary"][];
+            /** @description The away bench. */
+            awaySubstitutes: components["schemas"]["PlayerSummary"][];
         };
         /**
          * @description One thing that happened in a match: the unit the simulator produces, Event Hubs
@@ -593,12 +600,17 @@ export interface components {
             /** @description For a blocked shot: the defender who blocked it (ADR-022). Required on blocked shots, and only valid there. */
             blockedByPlayerId?: null | string;
             restart?: null | components["schemas"]["RestartKind"];
+            /**
+             * @description For a substitution: the player who goes on in place of string? MatchEvent.PlayerId (ADR-064).
+             *     Required on substitutions, and only valid there.
+             */
+            replacementPlayerId?: null | string;
         };
         /**
          * @description What happened in a match event.
          * @enum {unknown}
          */
-        MatchEventType: "MatchMetadata" | "KickOff" | "Pass" | "Carry" | "Pressure" | "Tackle" | "Interception" | "Shot" | "Foul" | "Card" | "PeriodEnd" | "BallOutOfPlay";
+        MatchEventType: "MatchMetadata" | "KickOff" | "Pass" | "Carry" | "Pressure" | "Tackle" | "Interception" | "Shot" | "Foul" | "Card" | "PeriodEnd" | "BallOutOfPlay" | "Substitution";
         /**
          * @description What kind of match this is, which decides whether it counts towards the season (ADR-020, ADR-021).
          * @enum {unknown}
@@ -1035,10 +1047,10 @@ export interface components {
             teamId: string;
             /**
              * Format: int32
-             * @description Fixtures started.
+             * @description Fixtures played, starting or coming on from the bench (ADR-064).
              */
             appearances: number;
-            /** @description The rounds the player started, in order. The simulator reads these to know which rounds are done. */
+            /** @description The rounds the player played in, in order. The simulator reads these to know which rounds are done. */
             rounds: number[];
             /**
              * Format: int32
@@ -1096,6 +1108,12 @@ export interface components {
             recentPenaltiesTaken: components["schemas"]["PenaltyRecord"][];
             /** @description The last five penalties the player faced in goal, newest first. */
             recentPenaltiesFaced: components["schemas"]["PenaltyRecord"][];
+            /**
+             * Format: int32
+             * @description How many of the appearances were from the bench. A document stored before substitutions reads as 0.
+             * @default 0
+             */
+            substituteAppearances: number;
         };
         /** @description A player, as the UI shows one. Ratings and traits stay inside the simulator. */
         PlayerSummary: {
@@ -1358,6 +1376,11 @@ export interface components {
             shortName: string;
             /** @description The IDs of the players who start, goalkeeper first. */
             startingEleven: string[];
+            /**
+             * @description The IDs of the substitutes on the bench (ADR-064), in sheet order. Empty for a sheet with
+             *     no bench, and for a document stored before substitutions.
+             */
+            substitutes?: null | string[];
         };
         /**
          * @description Which of the two teams in a match. The home team attacks towards the far goal line

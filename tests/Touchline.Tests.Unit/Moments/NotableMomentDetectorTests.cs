@@ -68,6 +68,35 @@ public class NotableMomentDetectorTests
     }
 
     [Test]
+    public void A_substitution_is_notable_names_both_players_and_features_the_one_coming_on()
+    {
+        var substitution = Event(MatchEventType.Substitution, TeamSide.Home, new PitchPosition(52.5, 0));
+
+        var moment = _detector.Detect(substitution, KickOff);
+
+        moment.Should().NotBeNull();
+        moment!.Kind.Should().Be(NotableMomentKind.Substitution);
+        moment.Team.Should().Be(TeamSide.Home);
+        moment.IsMinor.Should().BeFalse("a substitution is for every viewer");
+        moment.FeaturedPlayerId.Should().Be("nbfc-14");
+        moment.ReplacementName.Should().Be("Idris Bello");
+        moment.PlayerTeam.Should().Be("NBK");
+        moment.Reason.Should().StartWith("63:12: Substitution for the home team: Idris Bello (NBK) comes on for ");
+        NotableLines.Text(moment, "en").Should().Be($"Substitution: Idris Bello comes on for {moment.PlayerName} (NBK).");
+    }
+
+    [Test]
+    public void A_substitution_whose_player_coming_on_no_squad_has_gets_the_anonymous_line()
+    {
+        var substitution = Event(MatchEventType.Substitution, TeamSide.Home, new PitchPosition(52.5, 0)) with { ReplacementPlayerId = "zz-99" };
+
+        var moment = _detector.Detect(substitution, KickOff)!;
+
+        moment.ReplacementName.Should().BeNull();
+        NotableLines.Text(moment, "en").Should().Be("Substitution. A player comes on.");
+    }
+
+    [Test]
     public void A_red_card_is_a_key_moment_and_so_not_notable()
     {
         _detector.Detect(Card(CardColour.Red), KickOff).Should().BeNull();
@@ -219,15 +248,17 @@ public class NotableMomentDetectorTests
             state = state.Apply(matchEvent);
         }
 
-        notables.GroupBy(n => n.Kind).ToDictionary(g => g.Key, g => g.Count()).Should().Equal(new Dictionary<NotableMomentKind, int>
+        var expected = new Dictionary<NotableMomentKind, int>
         {
             [NotableMomentKind.YellowCard] = _yellowCards,
             [NotableMomentKind.Corner] = _corners,
             [NotableMomentKind.Woodwork] = _woodwork,
             [NotableMomentKind.ThrowIn] = _throwIns,
-            [NotableMomentKind.GoalKick] = _goalKicks
-        });
-        notables.Count(n => !n.IsMinor).Should().Be(_yellowCards + _corners + _woodwork);
+            [NotableMomentKind.GoalKick] = _goalKicks,
+            [NotableMomentKind.Substitution] = _substitutions
+        };
+        notables.GroupBy(n => n.Kind).ToDictionary(g => g.Key, g => g.Count()).Should().BeEquivalentTo(expected.Where(k => k.Value > 0));
+        notables.Count(n => !n.IsMinor).Should().Be(_yellowCards + _corners + _woodwork + _substitutions);
     }
 
     [Test]
@@ -240,12 +271,15 @@ public class NotableMomentDetectorTests
         events.Count(e => e.Restart == RestartKind.ThrowIn).Should().Be(_throwIns);
         events.Count(e => e.Restart == RestartKind.GoalKick).Should().Be(_goalKicks);
         events.Count(e => e.Shot is { HitWoodwork: true } && _key.Detect(e, MatchState.KickOff(e.MatchId)) is null).Should().Be(_woodwork);
+        events.Count(e => e.Type == MatchEventType.Substitution).Should().Be(_substitutions);
     }
 
     // The recording's counts, which a regenerated recording would change (the snapshot test says so).
-    private const int _yellowCards = 5;
-    private const int _corners = 10;
-    private const int _woodwork = 1;
-    private const int _throwIns = 36;
-    private const int _goalKicks = 19;
+    // Seed 35600 since substitutions (ADR-064).
+    private const int _yellowCards = 6;
+    private const int _corners = 11;
+    private const int _woodwork = 0;
+    private const int _throwIns = 42;
+    private const int _goalKicks = 8;
+    private const int _substitutions = 7;
 }

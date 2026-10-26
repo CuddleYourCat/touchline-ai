@@ -196,6 +196,22 @@ internal static class EngineTuning
     public const int CardStoppageSeconds = 30;
     public const int CornerStoppageSeconds = 25;
 
+    // Substitutions (ADR-064): up to five per team, in up to three stoppage windows, plus half
+    // time, which doesn't use a window. A team plans how many it makes (1 to 5, weighted towards
+    // using most of them, capped by its outfield bench), sometimes one at half time, and the
+    // rest in 1 to 3 windows at minutes drawn from 55 to 85. From the 70th minute a team behind
+    // may swap a defender or midfielder for a forward, and a team ahead the reverse. A booked
+    // player is three times as likely to be the one who comes off.
+    public const int MaxSubstitutes = 5;
+    public const int MaxSubstitutionWindows = 3;
+    public static readonly IReadOnlyList<double> SubstitutesUsedWeights = [0.02, 0.06, 0.17, 0.30, 0.45];
+    public static readonly IReadOnlyList<double> SubstitutionWindowWeights = [0.15, 0.40, 0.45];
+    public const double HalfTimeSubstitutionChance = 0.15;
+    public static readonly (int Min, int Max) SubstitutionWindowMinutes = (55, 85);
+    public const int TacticalSubstitutionMinute = 70;
+    public const double TacticalSubstitutionShare = 0.6;
+    public const double BookedSubstitutionFactor = 3;
+
     // Added time at the end of each half, in whole minutes, as (minimum, maximum).
     public static readonly (int Min, int Max) FirstHalfAddedMinutes = (1, 4);
     public static readonly (int Min, int Max) SecondHalfAddedMinutes = (2, 6);

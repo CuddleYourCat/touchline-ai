@@ -42,14 +42,27 @@ public class TeamSheetTests
     }
 
     [Test]
-    public void Only_the_chosen_eleven_play()
+    public void Only_the_chosen_eleven_and_the_substitutes_who_come_on_play()
     {
         var match = Play(seed: 11, home: _fiveFourOne);
+        var cameOn = match.Where(e => e is { Type: MatchEventType.Substitution, Team: TeamSide.Home }).Select(e => e.ReplacementPlayerId!).ToList();
 
-        var homePlayers = match.Where(e => e.Team == TeamSide.Home && e.PlayerId is not null).Select(e => e.PlayerId!).ToHashSet();
+        var homePlayers = match.Where(e => e.Team == TeamSide.Home && e.Type != MatchEventType.Substitution && e.PlayerId is not null).Select(e => e.PlayerId!).ToHashSet();
 
-        homePlayers.Should().BeSubsetOf(_fiveFourOne.StartingEleven);
-        homePlayers.Should().NotContain(_fiveFourOne.Substitutes, "the bench is stored but not played");
+        cameOn.Should().NotBeEmpty().And.BeSubsetOf(_fiveFourOne.Substitutes, "a sheet's bench is its substitutes (ADR-064)");
+        homePlayers.Should().BeSubsetOf(_fiveFourOne.StartingEleven.Concat(cameOn));
+        match[0].Metadata!.Home.Substitutes.Should().Equal(_fiveFourOne.Substitutes);
+    }
+
+    [Test]
+    public void An_empty_bench_makes_no_substitutions()
+    {
+        var noBench = _fiveFourOne with { Substitutes = [] };
+
+        var match = Play(seed: 11, home: noBench);
+
+        match.Should().NotContain(e => e.Type == MatchEventType.Substitution && e.Team == TeamSide.Home);
+        match[0].Metadata!.Home.Substitutes.Should().BeEmpty();
     }
 
     [Test]

@@ -185,14 +185,50 @@ public class MatchSimulatorTests
     }
 
     [Test]
-    public void Only_the_starting_elevens_named_in_the_metadata_take_part()
+    public void Only_the_players_named_in_the_metadata_take_part()
     {
         var match = PlayMatch(seed: 11);
-        var starters = match[0].Metadata!.Home.StartingEleven.Concat(match[0].Metadata!.Away.StartingEleven).ToHashSet();
+        var metadata = match[0].Metadata!;
+        var named = metadata.Home.StartingEleven.Concat(metadata.Away.StartingEleven)
+            .Concat(metadata.Home.Substitutes).Concat(metadata.Away.Substitutes).ToHashSet();
 
-        match.SelectMany(e => new[] { e.PlayerId, e.RecipientPlayerId, e.AssistPlayerId, e.FouledPlayerId })
+        match.SelectMany(e => new[] { e.PlayerId, e.RecipientPlayerId, e.AssistPlayerId, e.FouledPlayerId, e.ReplacementPlayerId })
             .OfType<string>()
-            .Should().OnlyContain(id => starters.Contains(id), "there are no substitutions yet");
+            .Should().OnlyContain(id => named.Contains(id), "only the eleven and the bench can play (ADR-064)");
+    }
+
+    [Test]
+    public void A_substitute_plays_only_after_he_comes_on_and_the_player_he_replaces_never_again()
+    {
+        foreach (var match in _season.Take(20))
+        {
+            var cameOn = new Dictionary<string, long>();
+            var wentOff = new Dictionary<string, long>();
+            foreach (var e in match.Where(e => e.Type == MatchEventType.Substitution))
+            {
+                cameOn[e.ReplacementPlayerId!] = e.Sequence;
+                wentOff[e.PlayerId!] = e.Sequence;
+            }
+
+            var metadata = match[0].Metadata!;
+            var bench = metadata.Home.Substitutes.Concat(metadata.Away.Substitutes).ToHashSet();
+            foreach (var e in match.Where(e => e.Type != MatchEventType.Substitution))
+            {
+                foreach (var id in new[] { e.PlayerId, e.RecipientPlayerId, e.AssistPlayerId, e.FouledPlayerId, e.BlockedByPlayerId }.OfType<string>())
+                {
+                    if (bench.Contains(id))
+                    {
+                        cameOn.Should().ContainKey(id, "an unused substitute never plays");
+                        e.Sequence.Should().BeGreaterThan(cameOn[id], "a substitute plays only once he's on");
+                    }
+
+                    if (wentOff.TryGetValue(id, out var off))
+                    {
+                        e.Sequence.Should().BeLessThan(off, "a substituted player can't return");
+                    }
+                }
+            }
+        }
     }
 
     [Test]

@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ballPathOf,
+  hasBall,
   type MatchDetail,
   type MatchEvent,
   type MomentumReading,
@@ -11,6 +12,7 @@ import {
 import { MomentumBars } from './MomentumBars';
 import { OverlayToast, overlayFadeMs } from './OverlayToast';
 import { Pitch, type PitchProps } from './Pitch';
+import { ballTrail } from './pitchGeometry';
 
 type Player = MatchDetail['homeLineup'][number];
 
@@ -102,6 +104,35 @@ describe('Pitch', () => {
     expect(unnumbered).toHaveTextContent('?');
     expect(numbered!.querySelector('title')).toHaveTextContent('Player not in the line-up');
     expect(screen.queryByText(/nbfc-07|guest-star/)).not.toBeInTheDocument();
+  });
+
+  it("labels a substitute from the bench by his own number and name, in the departing player's place", () => {
+    const sub: Player = { ...lineup('h')[0]!, id: 'h12', name: 'Tavi Rookwell', shirtNumber: 12, position: 'Forward' };
+    const before = shape(30);
+    const after: ShapeView = {
+      sequence: 31,
+      positions: before.positions.map((p) => (p.playerId === 'h7' ? { ...p, playerId: 'h12' } : p)),
+    };
+
+    renderPitch({ shape: after, homeBench: [sub] });
+
+    const dots = screen.getAllByTestId('player-dot');
+    expect(dots).toHaveLength(22);
+    const dot = dots.find((d) => d.getAttribute('data-player') === 'h12')!;
+    expect(dot).toHaveTextContent('12');
+    expect(dot.querySelector('title')).toHaveTextContent('12 Tavi Rookwell');
+    expect(dot.style.transform).toBe(dots[6]!.style.transform);
+    expect(dots.find((d) => d.getAttribute('data-player') === 'h7')).toBeUndefined();
+  });
+
+  it('leaves the ball and its trail alone for a substitution, which happens on the touchline', () => {
+    const carry = event(5, { type: 'Carry', start: { x: 30, y: 20 }, end: { x: 40, y: 20 } });
+    const pass = event(6, { start: { x: 40, y: 20 }, end: { x: 50, y: 30 } });
+    const substitution = event(7, { type: 'Substitution', start: { x: 52.5, y: 0 }, end: null, playerId: 'h7', replacementPlayerId: 'h12' });
+
+    expect(hasBall(substitution)).toBe(false);
+    expect(hasBall(pass)).toBe(true);
+    expect(ballTrail([carry, pass, substitution])).toEqual([{ x: 40, y: 20 }]);
   });
 
   describe('sends a shot where its outcome says', () => {

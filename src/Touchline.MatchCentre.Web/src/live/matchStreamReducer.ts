@@ -92,6 +92,11 @@ export function ballPathOf(event: MatchEvent): BallPath {
   }
 }
 
+/** False for an event with nothing to do with the ball: a substitution (ADR-064) starts on the touchline at halfway. */
+export function hasBall(event: MatchEvent): boolean {
+  return event.type !== 'Substitution';
+}
+
 /** How many recent events the live view keeps; older ones fall off the front. */
 export const maxEvents = 200;
 
@@ -225,7 +230,8 @@ export function applyMessage(live: LiveMatch, message: StreamMessage): LiveMatch
       return {
         ...live,
         events: events.length > maxEvents ? events.slice(-maxEvents) : events,
-        ballPath: ballPathOf(message.data),
+        // A substitution (ADR-064) happens on the touchline with the ball dead, so the ball stays where it was.
+        ballPath: hasBall(message.data) ? ballPathOf(message.data) : live.ballPath,
       };
     }
     case 'moment':

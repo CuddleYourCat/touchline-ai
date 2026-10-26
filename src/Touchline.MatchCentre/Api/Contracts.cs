@@ -175,13 +175,20 @@ public sealed record LiveState(
 /// <param name="HomeLineup">The home starting eleven.</param>
 /// <param name="AwayLineup">The away starting eleven.</param>
 /// <param name="State">The score, clock and totals now.</param>
+/// <param name="HomeSubstitutes">
+/// The home bench (ADR-064), so a substitute who comes on can be named on the pitch. Empty for a
+/// match stored before substitutions.
+/// </param>
+/// <param name="AwaySubstitutes">The away bench.</param>
 public sealed record MatchDetail(
     MatchSummary Summary,
     string Venue,
     string Referee,
     IReadOnlyList<PlayerSummary> HomeLineup,
     IReadOnlyList<PlayerSummary> AwayLineup,
-    LiveState State);
+    LiveState State,
+    IReadOnlyList<PlayerSummary> HomeSubstitutes,
+    IReadOnlyList<PlayerSummary> AwaySubstitutes);
 
 /// <summary>
 /// A page of match events.

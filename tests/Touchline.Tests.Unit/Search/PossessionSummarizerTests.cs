@@ -140,6 +140,24 @@ public sealed class PossessionSummarizerTests
     }
 
     [Test]
+    public void A_substitution_never_ends_or_joins_a_move()
+    {
+        var events = SeededMatch();
+        var roster = SeededRoster(events);
+        var endedByTheBallGoingOut = events
+            .GroupBy(e => e.PossessionId)
+            .Where(g => g.Last().Type == MatchEventType.Substitution && g.Last(e => e.Type != MatchEventType.Substitution).Type == MatchEventType.BallOutOfPlay)
+            .Select(g => g.Key.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .ToHashSet();
+
+        var possessions = PossessionSummarizer.Summarize(MatchId, events, _detector, roster);
+
+        endedByTheBallGoingOut.Should().NotBeEmpty();
+        possessions.Where(p => endedByTheBallGoingOut.Contains(p.Document.PossessionId))
+            .Should().OnlyContain(p => p.Document.EndedIn == "out", "a substitution happens at a stoppage, outside any move (ADR-064)");
+    }
+
+    [Test]
     public void A_seeded_match_gives_the_same_documents_every_time_and_every_summary_is_capped()
     {
         var events = SeededMatch();
@@ -149,7 +167,7 @@ public sealed class PossessionSummarizerTests
         var second = PossessionSummarizer.Summarize(MatchId, [.. events.AsEnumerable().Reverse()], _detector, roster);
 
         Serialize(first).Should().Be(Serialize(second));
-        first.Should().HaveCount(215);
+        first.Should().HaveCount(213);
         first.Select(p => p.Document.Id).Should().OnlyHaveUniqueItems().And.OnlyContain(id => id.StartsWith(MatchId + "_", StringComparison.Ordinal));
         first.Should().OnlyContain(p => p.Document.Summary.Length <= PossessionSummarizer.MaxSummaryChars);
         first.Should().OnlyContain(p => p.Document.Players.All(name => roster.PlayerNames.Values.Contains(name)));

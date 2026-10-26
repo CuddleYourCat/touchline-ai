@@ -165,7 +165,7 @@ public class MatchEventProcessorTests
         var match = Match().Take(50).ToList();
         var messages = match.Select(Message).ToList();
         // A newer producer sends a type this consumer has never heard of, at sequence 20.
-        messages[19] = WithProperty(messages[19], EventEnvelope.TypeProperty, "Substitution");
+        messages[19] = WithProperty(messages[19], EventEnvelope.TypeProperty, "Injury");
 
         await ProcessInBatches(messages);
 

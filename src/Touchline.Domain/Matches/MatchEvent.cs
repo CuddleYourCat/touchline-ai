@@ -47,7 +47,15 @@ public enum MatchEventType
     /// its team and player are the last to touch it; <see cref="MatchEvent.Restart"/> says how
     /// play restarts, which happens on the next event.
     /// </summary>
-    BallOutOfPlay
+    BallOutOfPlay,
+
+    /// <summary>
+    /// A substitution at a stoppage (ADR-064): <see cref="MatchEvent.PlayerId"/> comes off and
+    /// <see cref="MatchEvent.ReplacementPlayerId"/> goes on in his place. It starts on the
+    /// halfway line at the touchline, where substitutes come on, and has nothing to do with the
+    /// ball. Added last, so every earlier type keeps its number.
+    /// </summary>
+    Substitution
 }
 
 /// <summary>How play restarts after the ball goes out (ADR-022).</summary>
@@ -154,6 +162,12 @@ public sealed record MatchEvent
     /// </summary>
     public RestartKind? Restart { get; init; }
 
+    /// <summary>
+    /// For a substitution: the player who goes on in place of <see cref="PlayerId"/> (ADR-064).
+    /// Required on substitutions, and only valid there.
+    /// </summary>
+    public string? ReplacementPlayerId { get; init; }
+
     /// <summary>True when this event is a shot that went in.</summary>
     [JsonIgnore]
     public bool IsGoal => Shot is { Outcome: ShotOutcome.Goal };
@@ -164,8 +178,8 @@ public sealed record MatchEvent
     /// <see cref="Successful"/> flag matches whether it was on target, each second-player
     /// field (ADR-017) appears only on its own event type, only passes, carries and shots
     /// are marked as under pressure, the metadata event names no player and no end, only a
-    /// foul plays advantage, every card names an earlier foul, the lines are respected
-    /// (ADR-022), and the type, team, card colour and restart are defined
+    /// foul plays advantage, every card names an earlier foul, a substitution names two
+    /// different players (ADR-064), the lines are respected (ADR-022), and the type, team, card colour and restart are defined
     /// values (JSON accepts any number for an enum).
     /// </summary>
     /// <exception cref="ArgumentException">The event contradicts itself.</exception>
@@ -198,6 +212,10 @@ public sealed record MatchEvent
                 { Type: MatchEventType.Card, FoulSequence: { } foul } when foul < 1 || foul >= Sequence =>
                     $"a card names foul {foul}, which isn't an earlier event",
                 { Type: not MatchEventType.Card, FoulSequence: not null } => $"a {Type} event names a foul sequence",
+                { Type: not MatchEventType.Substitution, ReplacementPlayerId: not null } => $"a {Type} event names a replacement player",
+                { Type: MatchEventType.Substitution, PlayerId: null } => "a substitution names no player coming off",
+                { Type: MatchEventType.Substitution, ReplacementPlayerId: null } => "a substitution names no player going on",
+                { Type: MatchEventType.Substitution } when ReplacementPlayerId == PlayerId => "a substitution brings on the player it takes off",
                 _ => null
             };
 

@@ -20,8 +20,9 @@ public static partial class MatchContexts
 
     /// <summary>
     /// The context for one key moment. A roster is the team profile's whole squad, so a
-    /// substitute who comes on is a name the guardrail allows: the team sheet carries only the
-    /// starting eleven, and the squad is the smallest list that is always right. A fan team's
+    /// substitute who comes on (ADR-064) is a name the guardrail allows. The team sheet now carries
+    /// the bench too, but a match stored before substitutions has none, so the squad is still the
+    /// smallest list that is always right. A fan team's
     /// squad comes from its match request's snapshot (ADR-050), passed in as <paramref name="teams"/>.
     /// A team none of the profiles know (a fan match whose request can't be read) gets an empty
     /// roster, logged once, so a line naming any of its players falls back to the template rather

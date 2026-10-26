@@ -75,6 +75,7 @@ internal static class OverlayCardBuilder
         NotableMomentKind.Woodwork => "WOODWORK",
         NotableMomentKind.ThrowIn => "THROW-IN",
         NotableMomentKind.GoalKick => "GOAL KICK",
+        NotableMomentKind.Substitution => "SUBSTITUTION",
         _ => kind.ToString().ToUpperInvariant()
     };
 }

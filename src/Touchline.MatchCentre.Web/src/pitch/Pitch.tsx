@@ -25,11 +25,17 @@ export interface PitchProps {
   events: MatchEvent[];
   homeLineup: Player[];
   awayLineup: Player[];
+  /** The benches (ADR-064), so a substitute who comes on is labelled like a starter. */
+  homeBench?: Player[];
+  awayBench?: Player[];
   /** Overlay cards, the newest drawn as a toast over the pitch. */
   overlays?: OverlayCard[];
   homeName?: string;
   awayName?: string;
 }
+
+// One empty bench for every pitch without one, so the default doesn't defeat the memo.
+const noBench: Player[] = [];
 
 const half = pitchWidth / 2;
 const boxWidth = 40.32;
@@ -98,12 +104,17 @@ export const Pitch = memo(function Pitch({
   events,
   homeLineup,
   awayLineup,
+  homeBench = noBench,
+  awayBench = noBench,
   overlays,
   homeName = '',
   awayName = '',
 }: PitchProps) {
   const reducedMotion = useReducedMotion();
-  const players = useMemo(() => new Map([...homeLineup, ...awayLineup].map((p) => [p.id, p])), [homeLineup, awayLineup]);
+  const players = useMemo(
+    () => new Map([...homeLineup, ...awayLineup, ...homeBench, ...awayBench].map((p) => [p.id, p])),
+    [homeLineup, awayLineup, homeBench, awayBench],
+  );
   const trailFrom = ballPath?.from;
   const trail = useMemo(() => trailLayers(trailFrom ? [...ballTrail(events), trailFrom] : ballTrail(events)), [events, trailFrom]);
   const markers = useMemo(() => incidentMarkers(events), [events]);

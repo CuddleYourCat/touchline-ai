@@ -108,7 +108,8 @@ internal sealed class MatchFactsAdapter(IMatchReadModel matches, ITeamStore? tea
             return [];
         }
 
-        var found = new List<EventFact>();
+        var found = new List<(long Sequence, EventFact Fact)>();
+        var substitutions = new List<(long Sequence, EventFact Fact)>();
         var after = EstimateStart(cached.Detail.State, fromMinute);
         var checkStart = after > 0;
         for (var page = 0; page < MaxEventPages; page++)
@@ -132,16 +133,25 @@ internal sealed class MatchFactsAdapter(IMatchReadModel matches, ITeamStore? tea
                 var minute = Minute(e);
                 if (minute > toMinute)
                 {
-                    return found;
+                    return WithSubstitutions(found, substitutions);
                 }
 
-                if (minute >= fromMinute && (_notable.Contains(e.Type) || e.Restart == RestartKind.Corner))
+                if (minute < fromMinute)
                 {
-                    found.Add(ToFact(matchId, e, cached.Names));
+                    continue;
+                }
+
+                if (_notable.Contains(e.Type) || e.Restart == RestartKind.Corner)
+                {
+                    found.Add((e.Sequence, ToFact(matchId, e, cached.Names)));
                     if (found.Count == MatchFactLimits.MaxEvents)
                     {
-                        return found;
+                        return WithSubstitutions(found, substitutions);
                     }
+                }
+                else if (e.Type == MatchEventType.Substitution && substitutions.Count < MatchFactLimits.MaxEvents)
+                {
+                    substitutions.Add((e.Sequence, ToFact(matchId, e, cached.Names)));
                 }
             }
 
@@ -153,8 +163,17 @@ internal sealed class MatchFactsAdapter(IMatchReadModel matches, ITeamStore? tea
             after = next;
         }
 
-        return found;
+        return WithSubstitutions(found, substitutions);
     }
+
+    // Substitutions (ADR-064) only fill the slots the shots, fouls, cards and corners leave, so a
+    // busy hour of changes never crowds out the play. Back in match order.
+    private static List<EventFact> WithSubstitutions(List<(long Sequence, EventFact Fact)> found, List<(long Sequence, EventFact Fact)> substitutions) =>
+    [
+        .. found.Concat(substitutions.Take(MatchFactLimits.MaxEvents - found.Count))
+            .OrderBy(f => f.Sequence)
+            .Select(f => f.Fact)
+    ];
 
     /// <summary>
     /// Where to start scanning for <paramref name="fromMinute"/>: the sequence now, scaled by the
@@ -192,13 +211,13 @@ internal sealed class MatchFactsAdapter(IMatchReadModel matches, ITeamStore? tea
         return cached;
     }
 
-    /// <summary>Player ID to name, for both squads, or both line-ups where there's no profile.</summary>
+    /// <summary>Player ID to name, for both squads, or both line-ups and benches (ADR-064) where there's no profile.</summary>
     private async Task<IReadOnlyDictionary<string, string>> NamesAsync(MatchDetail detail, CancellationToken cancellationToken)
     {
         var profiles = matchTeams is null ? null : await matchTeams.ForMatchAsync(detail.Summary.Id, cancellationToken);
         var players = new List<PlayerSummary>(detail.HomeLineup.Count + detail.AwayLineup.Count);
-        players.AddRange(await SquadAsync(detail.Summary.Home.Id, detail.HomeLineup, profiles, cancellationToken));
-        players.AddRange(await SquadAsync(detail.Summary.Away.Id, detail.AwayLineup, profiles, cancellationToken));
+        players.AddRange(await SquadAsync(detail.Summary.Home.Id, [.. detail.HomeLineup, .. detail.HomeSubstitutes], profiles, cancellationToken));
+        players.AddRange(await SquadAsync(detail.Summary.Away.Id, [.. detail.AwayLineup, .. detail.AwaySubstitutes], profiles, cancellationToken));
         return players
             .GroupBy(p => p.Id, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Name, StringComparer.Ordinal);
@@ -243,6 +262,7 @@ internal sealed class MatchFactsAdapter(IMatchReadModel matches, ITeamStore? tea
                 { Shot: { } shot } => shot.Outcome.ToString(),
                 { Card: { } card } => card.ToString(),
                 { Restart: RestartKind.Corner } => "corner",
+                { Type: MatchEventType.Substitution } => SubstitutionFacts.Outcome(e, names),
                 _ => e.Successful ? null : "unsuccessful"
             });
 

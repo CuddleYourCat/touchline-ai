@@ -25,6 +25,51 @@ public class DomainJsonTests
         Shot = TestEvents.Shot(0.41, ShotOutcome.Goal, ShotSituation.Counter, BodyPart.LeftFoot, weakFoot: true, speedKmh: 88.4)
     };
 
+    // Substitutions (ADR-064)
+
+    [Test]
+    public void A_team_sheet_with_a_bench_and_a_substitution_survive_a_json_round_trip()
+    {
+        var sheet = new TeamSheet("north-bank-fc", "North Bank FC", "NBK", TestEvents.Metadata.Home.StartingEleven, ["nbfc-14", "nbfc-15"]);
+        var substitution = _goal with
+        {
+            Type = MatchEventType.Substitution,
+            Shot = null,
+            UnderPressure = false,
+            End = null,
+            Start = new PitchPosition(52.5, 0),
+            ReplacementPlayerId = "nbfc-14"
+        };
+
+        JsonSerializer.Deserialize<TeamSheet>(JsonSerializer.Serialize(sheet, DomainJson.Options), DomainJson.Options).Should().Be(sheet);
+        var back = JsonSerializer.Deserialize<MatchEvent>(JsonSerializer.Serialize(substitution, DomainJson.Options), DomainJson.Options)!;
+        back.Should().BeEquivalentTo(substitution);
+        JsonSerializer.Serialize(substitution, DomainJson.Options).Should().Contain("\"type\":\"Substitution\"").And.Contain("\"replacementPlayerId\":\"nbfc-14\"");
+    }
+
+    [Test]
+    public void A_team_sheet_stored_before_substitutions_reads_with_an_empty_bench()
+    {
+        var old = """{"id":"north-bank-fc","name":"North Bank FC","shortName":"NBK","startingEleven":["p-1","p-2","p-3","p-4","p-5","p-6","p-7","p-8","p-9","p-10","p-11"]}""";
+
+        var sheet = JsonSerializer.Deserialize<TeamSheet>(old, DomainJson.Options)!;
+
+        sheet.Substitutes.Should().BeEmpty();
+        sheet.Should().Be(new TeamSheet("north-bank-fc", "North Bank FC", "NBK", [.. Enumerable.Range(1, 11).Select(n => $"p-{n}")]));
+    }
+
+    [Test]
+    public void An_event_stored_before_substitutions_reads_with_no_replacement()
+    {
+        var json = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(_goal, DomainJson.Options))!.AsObject();
+        json.Remove("replacementPlayerId");
+
+        var back = JsonSerializer.Deserialize<MatchEvent>(json.ToJsonString(), DomainJson.Options)!;
+
+        back.ReplacementPlayerId.Should().BeNull();
+        back.Should().BeEquivalentTo(_goal);
+    }
+
     // Added in the richer-events slice (ADR-019)
 
     [Test]

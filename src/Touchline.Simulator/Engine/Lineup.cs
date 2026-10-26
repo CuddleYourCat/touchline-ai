@@ -5,9 +5,9 @@ using Touchline.Domain.Teams.Builder;
 namespace Touchline.Simulator.Engine;
 
 /// <summary>
-/// The eleven players a team starts with, and who is still on the pitch. Plays the team sheet
-/// when one is given (ADR-050); otherwise picks the starting eleven in squad order: one
-/// goalkeeper, four defenders, three midfielders, three forwards.
+/// The eleven players a team starts with, its bench, and who is still on the pitch. Plays the
+/// team sheet when one is given (ADR-050); otherwise picks the starting eleven in squad order:
+/// one goalkeeper, four defenders, three midfielders, three forwards, with the rest on the bench.
 /// </summary>
 internal sealed class Lineup
 {
@@ -21,12 +21,63 @@ internal sealed class Lineup
     };
 
     private readonly List<Player> _onPitch;
+    private readonly List<Player> _bench;
     private readonly HashSet<string> _booked = [];
+    private readonly HashSet<string> _cameOn = [];
 
     public Lineup(TeamProfile team, MatchdaySheet? sheet = null)
     {
         Team = team;
         _onPitch = [.. StartingEleven(team, sheet)];
+        _bench = [.. Bench(team, sheet)];
+    }
+
+    /// <summary>
+    /// The substitutes (ADR-064): a sheet's bench, or without one the squad players not in the
+    /// eleven. Like <see cref="StartingEleven"/>, the one definition for play and the metadata.
+    /// </summary>
+    /// <exception cref="ArgumentException">The sheet names a player who isn't in the squad.</exception>
+    public static IReadOnlyList<Player> Bench(TeamProfile team, MatchdaySheet? sheet = null) =>
+        StartingElevens.Bench(team, sheet);
+
+    /// <summary>The substitutes still on the bench, in sheet order.</summary>
+    public IReadOnlyList<Player> OnBench => _bench;
+
+    /// <summary>How many substitutes this team has brought on.</summary>
+    public int SubstitutesUsed => _cameOn.Count;
+
+    /// <summary>Whether a player came on from the bench in this match.</summary>
+    public bool CameOn(Player player) => _cameOn.Contains(player.Id);
+
+    /// <summary>
+    /// Takes a player off and brings a substitute on in his place (ADR-064). The substitute takes
+    /// the same place in the line-up, so he inherits the departing player's turn as set-piece or
+    /// penalty taker when his position allows, and plays with his own traits. The player taken
+    /// off can't come back: he leaves the pitch, and the bench only ever loses players.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The player going off isn't on the pitch or is the goalkeeper, or the one coming on isn't on the bench.
+    /// </exception>
+    public void Substitute(Player off, Player on)
+    {
+        var index = _onPitch.IndexOf(off);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"{off.Name} can't be substituted: he isn't on the pitch.");
+        }
+
+        if (off.Position == PlayerPosition.Goalkeeper)
+        {
+            throw new InvalidOperationException($"{off.Name} is the goalkeeper, and the goalkeeper is never substituted.");
+        }
+
+        if (!_bench.Remove(on))
+        {
+            throw new InvalidOperationException($"{on.Name} can't come on: he isn't on the bench.");
+        }
+
+        _onPitch[index] = on;
+        _cameOn.Add(on.Id);
     }
 
     /// <summary>
@@ -86,7 +137,7 @@ internal sealed class Lineup
     /// <summary>The goalkeeper on the pitch, or null if none is left.</summary>
     public Player? Goalkeeper => _onPitch.FirstOrDefault(p => p.Position == PlayerPosition.Goalkeeper);
 
-    /// <summary>Whether a player is still on the pitch (not sent off).</summary>
+    /// <summary>Whether a player is still on the pitch (not sent off or substituted).</summary>
     public bool IsOnPitch(Player player) => _onPitch.Contains(player);
 
     /// <summary>How many of this team's players have been sent off.</summary>

@@ -27,7 +27,8 @@ public class NotableLinesTests
             PlayerId = playerId,
             Start = new PitchPosition(50, 34)
         };
-        return new NotableMoment(kind, trigger, "reason", TeamSide.Home, "Reggie Ashworth", "NBK");
+        return new NotableMoment(kind, trigger, "reason", TeamSide.Home, "Reggie Ashworth", "NBK",
+            kind == NotableMomentKind.Substitution ? "Dario Pellwood" : null);
     }
 
     [TestCase(NotableMomentKind.YellowCard, "en", "Reggie Ashworth (NBK) goes into the book.")]
@@ -37,6 +38,9 @@ public class NotableLinesTests
     [TestCase(NotableMomentKind.Corner, "es", "Saque de esquina. El último en tocarlo fue Reggie Ashworth (NBK).")]
     [TestCase(NotableMomentKind.Corner, "fr", "Corner. Dernier contact de Reggie Ashworth (NBK).")]
     [TestCase(NotableMomentKind.Woodwork, "fr", "Sur le poteau ! Reggie Ashworth (NBK) est repoussé par le cadre.")]
+    [TestCase(NotableMomentKind.Substitution, "en", "Substitution: Dario Pellwood comes on for Reggie Ashworth (NBK).")]
+    [TestCase(NotableMomentKind.Substitution, "es", "Cambio: entra Dario Pellwood por Reggie Ashworth (NBK).")]
+    [TestCase(NotableMomentKind.Substitution, "fr", "Remplacement : Dario Pellwood entre à la place de Reggie Ashworth (NBK).")]
     public void A_line_names_the_player_and_club_in_the_language(NotableMomentKind kind, string language, string expected)
     {
         NotableLines.Text(Moment(kind), language).Should().Be(expected);
@@ -120,8 +124,12 @@ public class NotableLinesTests
             {
                 foreach (var line in NotableLines.For(moment, moment.Trigger.MatchId))
                 {
-                    line.Text.Should().Contain(roster[matchEvent.PlayerId!]);
-                    roster.Values.Where(name => line.Text.Contains(name, StringComparison.Ordinal)).Should().ContainSingle();
+                    // A substitution names the player coming on too (ADR-064), and nobody else.
+                    string[] named = matchEvent.ReplacementPlayerId is { } on
+                        ? [roster[matchEvent.PlayerId!], roster[on]]
+                        : [roster[matchEvent.PlayerId!]];
+                    line.Text.Should().ContainAll(named);
+                    roster.Values.Where(name => line.Text.Contains(name, StringComparison.Ordinal)).Should().BeEquivalentTo(named);
                     checkedLines++;
                 }
             }
@@ -129,7 +137,7 @@ public class NotableLinesTests
             state = state.Apply(matchEvent);
         }
 
-        checkedLines.Should().Be(71 * 6, "every notable moment, minor ones included, has a line in each language and mode");
+        checkedLines.Should().Be(74 * 6, "every notable moment, minor ones included, has a line in each language and mode");
     }
 
     [Test]

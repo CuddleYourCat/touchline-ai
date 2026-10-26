@@ -111,12 +111,13 @@ public sealed class StoredMatchFacts : IMatchFacts
         return [.. moments.TakeLast(MatchFactLimits.MaxMoments)];
     }
 
-    // Goals and cards first, then the other shots, capped, back in match order.
+    // Goals and cards first, then the other shots, then substitutions (ADR-064) in any slots left,
+    // capped, back in match order.
     private static List<(int Minute, EventFact Fact)> Notable(string matchId, IReadOnlyList<MatchEvent> events, IReadOnlyDictionary<string, string> names) =>
     [
         .. events
-            .Where(e => e.Type is MatchEventType.Shot or MatchEventType.Card)
-            .OrderBy(e => e.Shot?.Outcome == ShotOutcome.Goal || e.Card is not null ? 0 : 1)
+            .Where(e => e.Type is MatchEventType.Shot or MatchEventType.Card or MatchEventType.Substitution)
+            .OrderBy(e => e.Shot?.Outcome == ShotOutcome.Goal || e.Card is not null ? 0 : e.Type == MatchEventType.Shot ? 1 : 2)
             .ThenBy(e => e.Sequence)
             .Take(MatchFactLimits.MaxEvents)
             .OrderBy(e => e.Sequence)
@@ -126,7 +127,12 @@ public sealed class StoredMatchFacts : IMatchFacts
                 e.Type,
                 e.Team,
                 e.PlayerId is { } id ? names.GetValueOrDefault(id) : null,
-                e.Shot is { } shot ? shot.Outcome.ToString() : e.Card?.ToString())))
+                e switch
+                {
+                    { Shot: { } shot } => shot.Outcome.ToString(),
+                    { Type: MatchEventType.Substitution } => SubstitutionFacts.Outcome(e, names),
+                    _ => e.Card?.ToString()
+                })))
     ];
 
 }

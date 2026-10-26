@@ -81,7 +81,14 @@ const MomentItem = memo(function MomentItem({ moment, line, analysis, viewerMode
       <span className="moment-clock data">{moment.clock.display}</span>
       <div className="moment-body">
         <div className="moment-tags">
-          <span className={moment.tier === 'Key' ? 'pill pill-key' : 'pill'}>{kindLabel(moment.kind)}</span>
+          <span className={moment.tier === 'Key' ? 'pill pill-key' : 'pill'}>
+            {moment.kind === 'Substitution' && (
+              <span className="moment-icon" aria-hidden="true">
+                ⇄{' '}
+              </span>
+            )}
+            {kindLabel(moment.kind)}
+          </span>
           {line?.source === 'Template' && <span className="tag">Template</span>}
           {otherMode && <span className="tag">{line.mode === 'Analyst' ? 'Analyst view' : 'Casual view'}</span>}
         </div>
@@ -194,6 +201,8 @@ export function MatchPage() {
               events={state.match.events}
               homeLineup={state.match.detail.homeLineup}
               awayLineup={state.match.detail.awayLineup}
+              homeBench={state.match.detail.homeSubstitutes}
+              awayBench={state.match.detail.awaySubstitutes}
               overlays={state.match.overlays}
               homeName={state.match.detail.summary.home.name}
               awayName={state.match.detail.summary.away.name}

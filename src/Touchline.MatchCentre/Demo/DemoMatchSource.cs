@@ -51,6 +51,8 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
     private readonly MatchMetadata _metadata;
     private readonly IReadOnlyList<PlayerSummary> _homeLineup;
     private readonly IReadOnlyList<PlayerSummary> _awayLineup;
+    private readonly IReadOnlyList<PlayerSummary> _homeBench;
+    private readonly IReadOnlyList<PlayerSummary> _awayBench;
     private readonly KeyMomentDetector _detector;
     private readonly IReadOnlyDictionary<string, TeamProfile> _teams;
     private readonly TimeProvider _time;
@@ -110,8 +112,10 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
             _states[i] = state;
         }
 
-        _homeLineup = Lineup(metadata.Home, teams);
-        _awayLineup = Lineup(metadata.Away, teams);
+        _homeLineup = Players(metadata.Home.Id, metadata.Home.StartingEleven, teams);
+        _awayLineup = Players(metadata.Away.Id, metadata.Away.StartingEleven, teams);
+        _homeBench = Players(metadata.Home.Id, metadata.Home.Substitutes, teams);
+        _awayBench = Players(metadata.Away.Id, metadata.Away.Substitutes, teams);
     }
 
     /// <summary>The match ID of a lap.</summary>
@@ -140,7 +144,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
     /// <inheritdoc />
     public Task<MatchDetail?> GetMatchAsync(string matchId, CancellationToken cancellationToken) =>
         Task.FromResult(Find(matchId, _time.GetUtcNow()) is { } lap
-            ? new MatchDetail(Summary(lap), _metadata.Venue, _metadata.Referee.Name, _homeLineup, _awayLineup, LiveState.From(StateOf(lap)))
+            ? new MatchDetail(Summary(lap), _metadata.Venue, _metadata.Referee.Name, _homeLineup, _awayLineup, LiveState.From(StateOf(lap)), _homeBench, _awayBench)
             : null);
 
     /// <inheritdoc />
@@ -303,11 +307,11 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
         }
     }
 
-    private static IReadOnlyList<PlayerSummary> Lineup(TeamSheet sheet, IReadOnlyDictionary<string, TeamProfile> teams) =>
+    private static IReadOnlyList<PlayerSummary> Players(string teamId, IEnumerable<string> ids, IReadOnlyDictionary<string, TeamProfile> teams) =>
         [
-            .. sheet.StartingEleven.Select(id =>
-                PlayerSummary.From(teams[sheet.Id].FindPlayer(id)
-                    ?? throw new InvalidOperationException($"Player '{id}' isn't in {sheet.Id}'s squad."), sheet.Id))
+            .. ids.Select(id =>
+                PlayerSummary.From(teams[teamId].FindPlayer(id)
+                    ?? throw new InvalidOperationException($"Player '{id}' isn't in {teamId}'s squad."), teamId))
         ];
 
     private static MatchEvent Relabel(MatchEvent matchEvent, string matchId) =>

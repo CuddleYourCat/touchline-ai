@@ -21,8 +21,8 @@ public static class LeagueRules
 /// <param name="Season">The season, and the partition key.</param>
 /// <param name="PlayerId">The player.</param>
 /// <param name="TeamId">The player's team, as of their latest fixture.</param>
-/// <param name="Appearances">Fixtures started.</param>
-/// <param name="Rounds">The rounds the player started, in order. The simulator reads these to know which rounds are done.</param>
+/// <param name="Appearances">Fixtures played, starting or coming on from the bench (ADR-064).</param>
+/// <param name="Rounds">The rounds the player played in, in order. The simulator reads these to know which rounds are done.</param>
 /// <param name="Goals">Goals scored.</param>
 /// <param name="Assists">Goals set up.</param>
 /// <param name="Shots">Shots taken.</param>
@@ -36,6 +36,7 @@ public static class LeagueRules
 /// <param name="BannedRounds">The rounds the player is suspended for, in order.</param>
 /// <param name="RecentPenaltiesTaken">The player's last five penalties, newest first.</param>
 /// <param name="RecentPenaltiesFaced">The last five penalties the player faced in goal, newest first.</param>
+/// <param name="SubstituteAppearances">How many of the appearances were from the bench. A document stored before substitutions reads as 0.</param>
 public sealed record PlayerSeason(
     string Id,
     string Season,
@@ -55,7 +56,8 @@ public sealed record PlayerSeason(
     int RedCards,
     IReadOnlyList<int> BannedRounds,
     IReadOnlyList<PenaltyRecord> RecentPenaltiesTaken,
-    IReadOnlyList<PenaltyRecord> RecentPenaltiesFaced)
+    IReadOnlyList<PenaltyRecord> RecentPenaltiesFaced,
+    int SubstituteAppearances = 0)
 {
     /// <summary>The document ID for a player's season.</summary>
     /// <param name="season">The season.</param>
@@ -138,7 +140,8 @@ public sealed record PlayerSeason(
             played.Sum(m => m.RedCards),
             [.. banned],
             Newest(played.SelectMany(m => m.PenaltiesTaken)),
-            Newest(played.SelectMany(m => m.PenaltiesFaced)));
+            Newest(played.SelectMany(m => m.PenaltiesFaced)),
+            played.Count(m => m.Substitute));
     }
 
     private static List<PenaltyRecord> Newest(IEnumerable<PenaltyRecord> penalties) =>

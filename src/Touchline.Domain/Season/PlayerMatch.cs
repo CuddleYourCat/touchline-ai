@@ -49,6 +49,10 @@ public sealed record PenaltyRecord(
 /// <param name="RedCards">Red cards shown.</param>
 /// <param name="PenaltiesTaken">Penalties the player took, in order.</param>
 /// <param name="PenaltiesFaced">Penalties the player faced in goal, in order.</param>
+/// <param name="Substitute">
+/// True when the player came on from the bench rather than starting (ADR-064). A document stored
+/// before substitutions has no such field and reads as a start.
+/// </param>
 public sealed record PlayerMatch(
     string Id,
     string PlayerId,
@@ -67,7 +71,8 @@ public sealed record PlayerMatch(
     int YellowCards,
     int RedCards,
     IReadOnlyList<PenaltyRecord> PenaltiesTaken,
-    IReadOnlyList<PenaltyRecord> PenaltiesFaced)
+    IReadOnlyList<PenaltyRecord> PenaltiesFaced,
+    bool Substitute = false)
 {
     /// <summary>The document ID for a player's part in a match.</summary>
     /// <param name="matchId">The fixture.</param>
@@ -77,12 +82,14 @@ public sealed record PlayerMatch(
         string.Create(CultureInfo.InvariantCulture, $"{matchId}:{playerId}");
 
     /// <summary>
-    /// Builds every starter's part in a finished fixture from its events. Each starter gets a
-    /// document, even one who never touched the ball: it's still an appearance.
+    /// Builds the part of every player who appeared in a finished fixture from its events. Each
+    /// starter gets a document, even one who never touched the ball: it's still an appearance.
+    /// So does each substitute who came on (ADR-064), marked as a substitute; one left on the
+    /// bench gets none.
     /// </summary>
     /// <param name="metadata">The fixture's metadata, with its team sheets, season and round.</param>
     /// <param name="events">The fixture's events, in any order.</param>
-    /// <returns>One document per starter, home side first.</returns>
+    /// <returns>One document per starter, home side first, then one per substitute in the order they came on.</returns>
     /// <exception cref="ArgumentException">The match isn't a fixture, so it doesn't count towards a season (ADR-020).</exception>
     public static IReadOnlyList<PlayerMatch> FromFixture(MatchMetadata metadata, IEnumerable<MatchEvent> events)
     {
@@ -111,6 +118,14 @@ public sealed record PlayerMatch(
             if (matchEvent is { Type: MatchEventType.Card, Card: CardColour.Red, PlayerId: { } dismissed })
             {
                 sentOff.Add(dismissed);
+            }
+
+            // A substitute's appearance starts when he comes on. The goalkeeper is never
+            // substituted (ADR-064), so the first-named starter stays the keeper all match.
+            if (matchEvent is { Type: MatchEventType.Substitution, ReplacementPlayerId: { } on } && !tallies.ContainsKey(on))
+            {
+                tallies[on] = new Tally(on, matchEvent.Team == TeamSide.Home ? metadata.Home.Id : metadata.Away.Id, substitute: true);
+                continue;
             }
 
             if (matchEvent.PlayerId is not { } playerId || !tallies.TryGetValue(playerId, out var player))
@@ -171,7 +186,7 @@ public sealed record PlayerMatch(
     }
 
     // A mutable running total for one player while the events are read.
-    private sealed class Tally(string playerId, string teamId)
+    private sealed class Tally(string playerId, string teamId, bool substitute = false)
     {
         public string PlayerId { get; } = playerId;
 
@@ -202,6 +217,6 @@ public sealed record PlayerMatch(
         public PlayerMatch ToDocument(string matchId, string season, int round) => new(
             IdFor(matchId, PlayerId), PlayerId, matchId, teamId, season, round,
             Goals, Assists, Shots, ShotsOnTarget, ExpectedGoals, Passes, PassesCompleted, Fouls, YellowCards, RedCards,
-            PenaltiesTaken, PenaltiesFaced);
+            PenaltiesTaken, PenaltiesFaced, substitute);
     }
 }

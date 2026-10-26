@@ -286,6 +286,56 @@ public class MatchStateTests
     }
 
     [Test]
+    public void A_substitution_names_two_different_players_and_only_a_substitution_names_a_replacement()
+    {
+        var substitution = Event(5, MatchEventType.Substitution) with { Start = new PitchPosition(52.5, 0) };
+
+        substitution.Invoking(e => e.EnsureValid()).Should().NotThrow();
+        (substitution with { ReplacementPlayerId = null }).Invoking(e => e.EnsureValid())
+            .Should().Throw<ArgumentException>().WithMessage("*no player going on*");
+        (substitution with { PlayerId = null }).Invoking(e => e.EnsureValid())
+            .Should().Throw<ArgumentException>().WithMessage("*no player coming off*");
+        (substitution with { ReplacementPlayerId = substitution.PlayerId }).Invoking(e => e.EnsureValid())
+            .Should().Throw<ArgumentException>().WithMessage("*brings on the player it takes off*");
+        (Event(5, MatchEventType.Pass) with { ReplacementPlayerId = "nbfc-14" }).Invoking(e => e.EnsureValid())
+            .Should().Throw<ArgumentException>().WithMessage("*a Pass event names a replacement player*");
+    }
+
+    [Test]
+    public void A_substitution_changes_no_totals_but_moves_the_sequence_on()
+    {
+        var state = MatchState.KickOff(_matchId).Apply(Event(1, MatchEventType.Substitution) with { Start = new PitchPosition(52.5, 0) });
+
+        state.LastSequence.Should().Be(1);
+        state.Home.Should().Be(TeamStats.Empty);
+        state.Away.Should().Be(TeamStats.Empty);
+    }
+
+    [Test]
+    public void A_bench_must_be_different_players_none_of_them_starting()
+    {
+        new Action(() => _ = new TeamSheet("x", "X", "XXX", _elevenPlayers, ["p-12", "p-12"])).Should().Throw<ArgumentException>().WithMessage("*substitutes*");
+        new Action(() => _ = new TeamSheet("x", "X", "XXX", _elevenPlayers, ["p-1"])).Should().Throw<ArgumentException>().WithMessage("*substitutes*");
+        new Action(() => _ = new TeamSheet("x", "X", "XXX", _elevenPlayers, [" "])).Should().Throw<ArgumentException>().WithMessage("*substitutes*");
+        new TeamSheet("x", "X", "XXX", _elevenPlayers).Substitutes.Should().BeEmpty("a sheet without a bench has none");
+        new TeamSheet("x", "X", "XXX", _elevenPlayers, null).Substitutes.Should().BeEmpty();
+    }
+
+    [Test]
+    public void Team_sheets_compare_their_benches_by_value_too()
+    {
+        var first = new TeamSheet("north-bank-fc", "North Bank FC", "NBK", _elevenPlayers, ["p-12", "p-13"]);
+        var same = new TeamSheet("north-bank-fc", "North Bank FC", "NBK", [.. _elevenPlayers], new List<string> { "p-12", "p-13" });
+        var other = new TeamSheet("north-bank-fc", "North Bank FC", "NBK", _elevenPlayers, ["p-13", "p-12"]);
+        var none = new TeamSheet("north-bank-fc", "North Bank FC", "NBK", _elevenPlayers);
+
+        same.Should().Be(first);
+        same.GetHashCode().Should().Be(first.GetHashCode());
+        other.Should().NotBe(first);
+        none.Should().NotBe(first);
+    }
+
+    [Test]
     public void Team_sheets_with_the_same_players_are_equal_even_as_different_lists()
     {
         var first = new TeamSheet("north-bank-fc", "North Bank FC", "NBK", _elevenPlayers.ToList());

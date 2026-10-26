@@ -31,7 +31,7 @@ public class LinesAndMomentsTests
     private IEnumerable<(List<MatchEvent> Match, MatchEvent Out, MatchEvent Restart)> Restarts() =>
         _season.SelectMany(m => m.Select((e, i) => (Match: m, Event: e, Index: i))
             .Where(x => x.Event.Type == MatchEventType.BallOutOfPlay)
-            .Select(x => (x.Match, x.Event, x.Match.Skip(x.Index + 1).First(e => e.Type != MatchEventType.Card))));
+            .Select(x => (x.Match, x.Event, x.Match.Skip(x.Index + 1).First(e => e.Type is not (MatchEventType.Card or MatchEventType.Substitution)))));
 
     [Test]
     public void A_throw_in_goes_to_the_other_team_from_the_touchline_where_the_ball_went_out()

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Touchline.Domain.Analytics;
 using Touchline.Domain.Matches;
+using Touchline.Domain.Matches.Shape;
 using Touchline.Domain.Moments;
 using Touchline.Domain.Squad;
 using Touchline.Domain.Teams;
@@ -41,8 +42,8 @@ public class MatchStreamProjectorTests
     {
         var moments = ProjectWholeMatch().Where(m => m.Event == StreamEvents.Moment).Select(m => (MomentView)m.Data).ToList();
 
-        moments.Count(m => m.Tier == MomentTier.Key).Should().Be(9);
-        moments.Count(m => m.Tier == MomentTier.Notable).Should().Be(16);
+        moments.Count(m => m.Tier == MomentTier.Key).Should().Be(10);
+        moments.Count(m => m.Tier == MomentTier.Notable).Should().Be(24);
         moments.Count(m => m.Kind == nameof(KeyMomentKind.Goal)).Should().Be(6);
         moments.Should().OnlyContain(m => m.Id == $"{DemoRecording.Events[0].MatchId}:{m.Sequence}");
     }
@@ -153,6 +154,106 @@ public class MatchStreamProjectorTests
         var later = shapes.Where(s => s.Sequence >= red.Sequence).ToList();
         later.Should().NotBeEmpty().And.OnlyContain(s => s.Positions.Count == 21 && s.Positions.All(p => p.PlayerId != sentOff));
         shapes.Where(s => s.Sequence < red.Sequence).Should().OnlyContain(s => s.Positions.Count == 22);
+    }
+
+    [Test]
+    public void A_substitute_takes_the_departing_player_s_place_in_the_shape_from_his_substitution_on()
+    {
+        var events = DemoRecording.Events;
+        var substitution = events.First(e => e.Type == MatchEventType.Substitution);
+        var projector = new MatchStreamProjector(events[0].MatchId, _detector, TeamProfileCatalog.LoadEmbedded());
+
+        var shapes = events.SelectMany(e => projector.Apply(e).Messages)
+            .Where(m => m.Event == StreamEvents.Shape)
+            .Select(m => (ShapeView)m.Data)
+            .ToList();
+
+        var atSubstitution = shapes.Single(s => s.Sequence == substitution.Sequence);
+        var before = shapes.Last(s => s.Sequence < substitution.Sequence);
+        atSubstitution.Positions.Should().HaveCount(22, "a substitution has a shape of its own, so the pitch shows the new player at once");
+        atSubstitution.Positions.Should().Contain(p => p.PlayerId == substitution.ReplacementPlayerId)
+            .And.NotContain(p => p.PlayerId == substitution.PlayerId);
+        var slot = before.Positions.ToList().FindIndex(p => p.PlayerId == substitution.PlayerId);
+        atSubstitution.Positions[slot].PlayerId.Should().Be(substitution.ReplacementPlayerId, "he plays in the departing player's slot");
+        shapes.Where(s => s.Sequence > substitution.Sequence).Should().OnlyContain(s => s.Positions.All(p => p.PlayerId != substitution.PlayerId));
+    }
+
+    // The demo up to its first substitution, which is replaced by the one given.
+    private static List<MatchEvent> UpToFirstSubstitution(Func<MatchEvent, MatchEvent> replace)
+    {
+        var events = DemoRecording.Events;
+        var first = events.First(e => e.Type == MatchEventType.Substitution);
+        return [.. events.TakeWhile(e => e.Sequence < first.Sequence), replace(first)];
+    }
+
+    [Test]
+    public void A_forward_who_replaces_a_defender_plays_up_front_and_the_defence_has_one_fewer()
+    {
+        var teams = TeamProfileCatalog.LoadEmbedded();
+        var defender = Metadata.Home.StartingEleven[1];
+        var events = UpToFirstSubstitution(s => s with { Team = TeamSide.Home, PlayerId = defender, ReplacementPlayerId = "nbfc-14" });
+        var projector = new MatchStreamProjector(events[0].MatchId, _detector, teams);
+
+        var shape = (ShapeView)events.Select(projector.Apply).ToList()[^1].Messages.Single(m => m.Event == StreamEvents.Shape).Data;
+
+        teams["north-bank-fc"].FindPlayer(defender)!.Position.Should().Be(PlayerPosition.Defender);
+        var eleven = Metadata.Home.StartingEleven.Select(id => id == defender ? "nbfc-14" : id).ToList();
+        var expected = ShapeModel.Place(
+            new ShapeTeam(new TeamSheet(Metadata.Home.Id, Metadata.Home.Name, Metadata.Home.ShortName, eleven), teams["north-bank-fc"]),
+            new ShapeTeam(Metadata.Away, teams["thames-valley-united"]),
+            ShapeModel.BallAfter(events[^2])!.Value,
+            null);
+        shape.Positions.Should().Equal(ShapeView.From(shape.Sequence, expected).Positions);
+        var home = new ShapeTeam(new TeamSheet(Metadata.Home.Id, Metadata.Home.Name, Metadata.Home.ShortName, eleven), teams["north-bank-fc"]);
+        home.Slots.Single(s => s.PlayerId == "nbfc-14").Line.Should().Be(PlayerPosition.Forward, "he plays in his own line, not the defender's");
+        home.Slots.Count(s => s.Line == PlayerPosition.Defender).Should().Be(
+            new ShapeTeam(Metadata.Home, teams["north-bank-fc"]).Slots.Count(s => s.Line == PlayerPosition.Defender) - 1);
+    }
+
+    [Test]
+    public void A_half_time_substitution_is_drawn_with_the_ball_on_the_centre_spot()
+    {
+        var teams = TeamProfileCatalog.LoadEmbedded();
+        var all = DemoRecording.Events;
+        var halfTime = all.First(e => e is { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.FirstHalf });
+        var off = Metadata.Home.StartingEleven[6];
+        var substitution = halfTime with
+        {
+            Sequence = halfTime.Sequence + 1,
+            Type = MatchEventType.Substitution,
+            Time = MatchTime.At(MatchPeriod.SecondHalf, 45),
+            PlayerId = off,
+            ReplacementPlayerId = "nbfc-16",
+            Start = new Touchline.Domain.Pitch.PitchPosition(52.5, 0)
+        };
+        var projector = new MatchStreamProjector(all[0].MatchId, _detector, teams);
+
+        var shape = (ShapeView)all.TakeWhile(e => e.Sequence <= halfTime.Sequence).Append(substitution).Select(projector.Apply).ToList()[^1]
+            .Messages.Single(m => m.Event == StreamEvents.Shape).Data;
+
+        var eleven = Metadata.Home.StartingEleven.Select(id => id == off ? "nbfc-16" : id).ToList();
+        var expected = ShapeModel.Place(
+            new ShapeTeam(new TeamSheet(Metadata.Home.Id, Metadata.Home.Name, Metadata.Home.ShortName, eleven), teams["north-bank-fc"]),
+            new ShapeTeam(Metadata.Away, teams["thames-valley-united"]),
+            new Touchline.Domain.Pitch.PitchPosition(52.5, 34),
+            null,
+            all.Where(e => e.Sequence < halfTime.Sequence && e.Card == CardColour.Red).Select(e => e.PlayerId!).ToList());
+        shape.Positions.Should().Equal(ShapeView.From(shape.Sequence, expected).Positions);
+    }
+
+    [Test]
+    public void A_substitution_is_a_notable_moment_with_a_card_of_its_own()
+    {
+        var events = DemoRecording.Events;
+        var projector = new MatchStreamProjector(events[0].MatchId, _detector, TeamProfileCatalog.LoadEmbedded());
+
+        var projections = events.Select(projector.Apply).Where(p => p.Notable is { Kind: NotableMomentKind.Substitution }).ToList();
+
+        projections.Should().HaveCount(events.Count(e => e.Type == MatchEventType.Substitution));
+        projections.Should().OnlyContain(p => p.Messages.Any(m => m.Event == StreamEvents.Moment) && p.Minor == null);
+        var card = projections.SelectMany(p => p.Messages).Where(m => m.Event == StreamEvents.Overlay).Select(m => (OverlayCard)m.Data).First();
+        card.Type.Should().Be("substitution");
+        card.Payload.Title.Should().Be("SUBSTITUTION");
     }
 
     [Test]

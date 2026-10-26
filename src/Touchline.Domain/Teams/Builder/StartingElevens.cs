@@ -48,4 +48,29 @@ public static class StartingElevens
 
         return eleven;
     }
+
+    /// <summary>
+    /// The bench (ADR-064): a sheet's substitutes in sheet order; without a sheet, the squad
+    /// players not in the default eleven, in squad order, up to
+    /// <see cref="MatchdaySheetRules.MaxSubstitutes"/>. A 16-player squad has a bench of five.
+    /// </summary>
+    /// <param name="team">The team, already without its unavailable players.</param>
+    /// <param name="sheet">The chosen sheet, already checked against <see cref="MatchdaySheetRules"/>, or null.</param>
+    /// <returns>The substitutes. Empty when the sheet names none.</returns>
+    /// <exception cref="ArgumentException">The sheet names a player who isn't in the squad.</exception>
+    public static IReadOnlyList<Player> Bench(TeamProfile team, MatchdaySheet? sheet = null)
+    {
+        ArgumentNullException.ThrowIfNull(team);
+        if (sheet is not null)
+        {
+            return
+            [
+                .. (sheet.Substitutes ?? [])
+                    .Select(id => team.FindPlayer(id) ?? throw new ArgumentException($"Player '{id}' isn't in {team.Name}'s squad.", nameof(sheet)))
+            ];
+        }
+
+        var eleven = For(team);
+        return [.. team.Squad.Except(eleven).Take(MatchdaySheetRules.MaxSubstitutes)];
+    }
 }

@@ -47,7 +47,7 @@ public class EventEnvelopeTests
     [Test]
     public void An_unknown_event_type_is_skipped_but_still_placed_in_its_match()
     {
-        var check = EventEnvelope.Check(EnvelopeWith(EventEnvelope.TypeProperty, "Substitution"));
+        var check = EventEnvelope.Check(EnvelopeWith(EventEnvelope.TypeProperty, "Injury"));
 
         check.Skipped.Should().Be(SkipReason.UnknownType, "a tolerant reader skips what it doesn't know rather than failing");
         check.MatchId.Should().Be("nbk-tvu-42", "so the match's sequence can still move past it");

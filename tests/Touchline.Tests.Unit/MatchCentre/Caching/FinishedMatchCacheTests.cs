@@ -272,7 +272,7 @@ public class FinishedMatchCacheTests
 
     private static MatchDetail Detail(string id, bool fullTime) => new(
         Summary(id, fullTime ? MatchStatus.FullTime : MatchStatus.Live), "Elm Park", "A. Referee", [], [],
-        new LiveState(id, 10, _clock, new Score(1, 0), TeamStats.Empty, TeamStats.Empty, fullTime));
+        new LiveState(id, 10, _clock, new Score(1, 0), TeamStats.Empty, TeamStats.Empty, fullTime), [], []);
 
     private static MomentView Moment(MomentTier tier, CommentaryLine? line) =>
         new($"{_id}:1", tier, "Goal", 1, _clock, TeamSide.Home, null, "xG 0.41 from 11 m", line);

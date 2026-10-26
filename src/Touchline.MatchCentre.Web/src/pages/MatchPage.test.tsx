@@ -51,6 +51,8 @@ function detail(state: LiveState = liveState()): MatchDetail {
     venue: 'Quayside Park',
     referee: 'Sam Ellery',
     homeLineup: [],
+    homeSubstitutes: [],
+    awaySubstitutes: [],
     awayLineup: [],
     state,
   } as MatchDetail;
@@ -151,6 +153,51 @@ describe('MatchPage', () => {
     expect(items[0]).toHaveTextContent('Goal');
     expect(items[0]).toHaveTextContent('Reason 45');
     expect(items[1]).toHaveTextContent('Reason 30');
+  });
+
+  it('shows a substitution in the timeline and draws the substitute on the pitch by his bench name', async () => {
+    const bench = [
+      { id: 'h12', name: 'Tavi Rookwell', shirtNumber: 12, position: 'Forward', teamId: 'h', archetype: null, preferredFoot: 'Right' },
+    ] as MatchDetail['homeSubstitutes'];
+    stubApi(found({ ...detail(), homeSubstitutes: bench, awaySubstitutes: [] }));
+
+    renderPage();
+    await screen.findByRole('region', { name: /^Live, 12:05/ });
+    const source = FakeEventSource.latest();
+    act(() => {
+      source.emit('event', {
+        sequence: 70,
+        matchId: 'm1',
+        possessionId: 9,
+        time: { period: 'SecondHalf', clock: '68:10' },
+        type: 'Substitution',
+        team: 'Home',
+        playerId: 'h7',
+        replacementPlayerId: 'h12',
+        start: { x: 52.5, y: 0 },
+        end: null,
+      });
+      source.emit('shape', { sequence: 70, positions: [{ playerId: 'h12', team: 'Home', x: 50, y: 34 }] });
+      source.emit(
+        'moment',
+        moment(70, {
+          tier: 'Notable',
+          kind: 'Substitution',
+          playerId: 'h12',
+          clock: { period: 'SecondHalf', minute: 68, second: 10, display: '68:10' },
+          commentary: { ...line(70, 'Template', 'Substitution: Tavi Rookwell comes on for Ollie Brennick (HBR).'), tier: 'Notable' },
+        }),
+      );
+    });
+
+    const item = within(screen.getByRole('region', { name: 'Moments' })).getAllByRole('listitem')[0]!;
+    expect(item).toHaveTextContent('68:10');
+    expect(item).toHaveTextContent('⇄ Substitution');
+    expect(within(item).getByText('⇄', { exact: false })).toHaveAttribute('aria-hidden', 'true');
+    expect(item).toHaveTextContent('Substitution: Tavi Rookwell comes on for Ollie Brennick (HBR).');
+    const dot = screen.getAllByTestId('player-dot').find((d) => d.getAttribute('data-player') === 'h12')!;
+    expect(dot.querySelector('title')).toHaveTextContent('12 Tavi Rookwell');
+    expect(screen.queryByTestId('ball')).not.toBeInTheDocument();
   });
 
   it('replaces a template line with the model line, keeps the line mode and shows analysis', async () => {

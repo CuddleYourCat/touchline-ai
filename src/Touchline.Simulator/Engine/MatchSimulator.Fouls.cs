@@ -78,13 +78,18 @@ public sealed partial class MatchSimulator
                 _pendingCards.Add(new PendingCard(defending, offender, isRed, foul.Sequence));
             }
 
-            foreach (var e in ShowPendingCards())
+            // Then any substitutions due (ADR-064). One can take the fouled player off, and his
+            // replacement takes the free kick in his place. Not before a penalty, though: changes
+            // wait for the penalty's own outcome, so a fresh substitute never takes a kick that was
+            // given before he came on.
+            foreach (var e in penalty ? ShowPendingCards() : Stoppage())
             {
                 yield return e;
             }
 
-            // The attacking team keeps the ball: a free kick, or a penalty.
-            _carrier = fouled;
+            // The attacking team keeps the ball: a free kick, or a penalty. Stoppage has already
+            // swapped the carrier if the fouled player was substituted.
+            _carrier = Attackers.IsOnPitch(fouled) ? fouled : _carrier;
             if (penalty)
             {
                 _carrier = Attackers.PenaltyTaker();

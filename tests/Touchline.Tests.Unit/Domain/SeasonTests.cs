@@ -37,15 +37,19 @@ public class SeasonTests
     // A player's fixture
 
     [Test]
-    public void Every_starter_gets_a_document_and_together_they_add_up_to_the_match()
+    public void Every_player_who_appeared_gets_a_document_and_together_they_add_up_to_the_match()
     {
         var events = Fixture(42);
         var metadata = events[0].Metadata!;
         var final = events.Aggregate(MatchState.KickOff(events[0].MatchId), (state, e) => state.Apply(e));
+        var cameOn = events.Where(e => e.Type == MatchEventType.Substitution).Select(e => e.ReplacementPlayerId!).ToList();
 
         var players = PlayerMatch.FromFixture(metadata, events);
 
-        players.Should().HaveCount(22, "a player who never touches the ball still made an appearance");
+        cameOn.Should().NotBeEmpty("this seed has substitutions");
+        players.Should().HaveCount(22 + cameOn.Count, "a player who never touches the ball still made an appearance");
+        players.Where(p => !p.Substitute).Should().HaveCount(22);
+        players.Where(p => p.Substitute).Select(p => p.PlayerId).Should().Equal(cameOn, "substitutes follow the starters, in the order they came on");
         players.Select(p => p.Id).Should().OnlyHaveUniqueItems().And.OnlyContain(id => id.StartsWith(events[0].MatchId + ":", StringComparison.Ordinal));
         players.Should().OnlyContain(p => p.Season == _season && p.Round == 1);
 
@@ -58,6 +62,62 @@ public class SeasonTests
         home.Sum(p => p.YellowCards).Should().Be(final.Home.YellowCards);
         home.Sum(p => p.ExpectedGoals).Should().BeApproximately(final.Home.ExpectedGoals, 1e-9);
         players.Sum(p => p.Assists).Should().BeLessThanOrEqualTo(final.Home.Goals + final.Away.Goals);
+    }
+
+    [Test]
+    public void A_substitute_who_came_on_gets_a_substitute_appearance_and_one_left_on_the_bench_gets_none()
+    {
+        var events = Fixture(42);
+        var metadata = events[0].Metadata!;
+        var substitution = events.First(e => e.Type == MatchEventType.Substitution);
+        var unused = metadata.Home.Substitutes.Concat(metadata.Away.Substitutes)
+            .Except(events.Select(e => e.ReplacementPlayerId).OfType<string>());
+
+        var players = PlayerMatch.FromFixture(metadata, events);
+
+        var sub = players.Single(p => p.PlayerId == substitution.ReplacementPlayerId);
+        sub.Substitute.Should().BeTrue();
+        sub.TeamId.Should().Be(substitution.Team == TeamSide.Home ? metadata.Home.Id : metadata.Away.Id);
+        players.Single(p => p.PlayerId == substitution.PlayerId).Substitute.Should().BeFalse("the player who went off started");
+        players.Select(p => p.PlayerId).Should().NotIntersectWith(unused);
+    }
+
+    [Test]
+    public void A_substitute_s_touches_count_for_him()
+    {
+        var events = Fixture(42);
+        var on = events.First(e => e.Type == MatchEventType.Substitution).ReplacementPlayerId!;
+
+        var players = PlayerMatch.FromFixture(events[0].Metadata!, events);
+
+        players.Single(p => p.PlayerId == on).Passes.Should().Be(events.Count(e => e.Type == MatchEventType.Pass && e.PlayerId == on));
+    }
+
+    [Test]
+    public void A_season_counts_substitute_appearances_among_its_appearances()
+    {
+        var events = Fixture(42);
+        var on = events.First(e => e.Type == MatchEventType.Substitution).ReplacementPlayerId!;
+        var match = PlayerMatch.FromFixture(events[0].Metadata!, events).Single(p => p.PlayerId == on);
+
+        var season = PlayerSeason.Rebuild([match]);
+
+        season.Appearances.Should().Be(1);
+        season.SubstituteAppearances.Should().Be(1);
+    }
+
+    [Test]
+    public void A_player_match_stored_before_substitutions_reads_as_a_start()
+    {
+        var events = Fixture(42);
+        var stored = PlayerMatch.FromFixture(events[0].Metadata!, events)[0];
+        var json = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(stored, Touchline.Domain.DomainJson.Options))!.AsObject();
+        json.Remove("substitute");
+
+        var read = System.Text.Json.JsonSerializer.Deserialize<PlayerMatch>(json.ToJsonString(), Touchline.Domain.DomainJson.Options)!;
+
+        read.Substitute.Should().BeFalse();
+        read.PlayerId.Should().Be(stored.PlayerId);
     }
 
     [Test]

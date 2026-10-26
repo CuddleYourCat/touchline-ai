@@ -62,8 +62,10 @@ public class FanMatchRequestPlayTests
         metadata.Home.Id.Should().Be(_fan.Id);
         metadata.Home.StartingEleven.Should().BeEquivalentTo(_sheet.StartingEleven);
         metadata.Home.StartingEleven[0].Should().Be(_fan.Players[11].Id, "the sheet's keeper starts");
+        metadata.Home.Substitutes.Should().Equal(_sheet.Substitutes, "the sheet's bench is the one the engine plays (ADR-064)");
+        var cameOn = sender.Events.Where(e => e is { Type: MatchEventType.Substitution, Team: TeamSide.Home }).Select(e => e.ReplacementPlayerId!).ToList();
         sender.Events.Where(e => e.Team == TeamSide.Home && e.PlayerId is not null)
-            .Select(e => e.PlayerId!).Should().NotContain(_sheet.Substitutes, "the bench is stored, not played");
+            .Select(e => e.PlayerId!).Should().BeSubsetOf(_sheet.StartingEleven.Concat(cameOn), "only the eleven and the substitutes who came on play");
         _statuses.Should().Equal(FanMatchStatus.Running, FanMatchStatus.Finished);
         _store.Verify(s => s.SetStatusAsync(_requestId, FanMatchStatus.Running, null,
             It.Is<IReadOnlyCollection<FanMatchStatus>>(from => from.SequenceEqual(new[] { FanMatchStatus.Scheduled })), It.IsAny<CancellationToken>()));

@@ -13,7 +13,8 @@ public static class NotableLines
 {
     private const string _fallback = "en";
 
-    // {0} is the player, {1} their club's short name. The English row is the fallback.
+    // {0} is the player, {1} their club's short name, and for a substitution {2} the player
+    // coming on (ADR-064). The English row is the fallback.
     private static readonly Dictionary<string, Dictionary<NotableMomentKind, string>> _templates = new(StringComparer.OrdinalIgnoreCase)
     {
         ["en"] = new()
@@ -22,7 +23,8 @@ public static class NotableLines
             [NotableMomentKind.Corner] = "Corner. It came off {0} ({1}).",
             [NotableMomentKind.Woodwork] = "Off the woodwork! {0} ({1}) is denied by the frame of the goal.",
             [NotableMomentKind.ThrowIn] = "Throw-in. {0} ({1}) was the last to touch it.",
-            [NotableMomentKind.GoalKick] = "Goal kick. {0} ({1}) put it out."
+            [NotableMomentKind.GoalKick] = "Goal kick. {0} ({1}) put it out.",
+            [NotableMomentKind.Substitution] = "Substitution: {2} comes on for {0} ({1})."
         },
         ["es"] = new()
         {
@@ -30,7 +32,8 @@ public static class NotableLines
             [NotableMomentKind.Corner] = "Saque de esquina. El último en tocarlo fue {0} ({1}).",
             [NotableMomentKind.Woodwork] = "¡Al palo! {0} ({1}) se queda sin gol por el marco.",
             [NotableMomentKind.ThrowIn] = "Saque de banda. El último en tocarlo fue {0} ({1}).",
-            [NotableMomentKind.GoalKick] = "Saque de puerta. {0} ({1}) la mandó fuera."
+            [NotableMomentKind.GoalKick] = "Saque de puerta. {0} ({1}) la mandó fuera.",
+            [NotableMomentKind.Substitution] = "Cambio: entra {2} por {0} ({1})."
         },
         ["fr"] = new()
         {
@@ -38,7 +41,8 @@ public static class NotableLines
             [NotableMomentKind.Corner] = "Corner. Dernier contact de {0} ({1}).",
             [NotableMomentKind.Woodwork] = "Sur le poteau ! {0} ({1}) est repoussé par le cadre.",
             [NotableMomentKind.ThrowIn] = "Touche. Dernier contact de {0} ({1}).",
-            [NotableMomentKind.GoalKick] = "Six mètres. {0} ({1}) l'a envoyé dehors."
+            [NotableMomentKind.GoalKick] = "Six mètres. {0} ({1}) l'a envoyé dehors.",
+            [NotableMomentKind.Substitution] = "Remplacement : {2} entre à la place de {0} ({1})."
         }
     };
 
@@ -51,7 +55,8 @@ public static class NotableLines
             [NotableMomentKind.Corner] = "Corner. It came off a player.",
             [NotableMomentKind.Woodwork] = "Off the woodwork! A player is denied by the frame of the goal.",
             [NotableMomentKind.ThrowIn] = "Throw-in. A player was the last to touch it.",
-            [NotableMomentKind.GoalKick] = "Goal kick. A player put it out."
+            [NotableMomentKind.GoalKick] = "Goal kick. A player put it out.",
+            [NotableMomentKind.Substitution] = "Substitution. A player comes on."
         },
         ["es"] = new()
         {
@@ -59,7 +64,8 @@ public static class NotableLines
             [NotableMomentKind.Corner] = "Saque de esquina. El último en tocarlo fue un jugador.",
             [NotableMomentKind.Woodwork] = "¡Al palo! Un jugador se queda sin gol por el marco.",
             [NotableMomentKind.ThrowIn] = "Saque de banda. El último en tocarlo fue un jugador.",
-            [NotableMomentKind.GoalKick] = "Saque de puerta. Un jugador la mandó fuera."
+            [NotableMomentKind.GoalKick] = "Saque de puerta. Un jugador la mandó fuera.",
+            [NotableMomentKind.Substitution] = "Cambio. Entra un jugador."
         },
         ["fr"] = new()
         {
@@ -67,7 +73,8 @@ public static class NotableLines
             [NotableMomentKind.Corner] = "Corner. Dernier contact d'un joueur.",
             [NotableMomentKind.Woodwork] = "Sur le poteau ! Un joueur est repoussé par le cadre.",
             [NotableMomentKind.ThrowIn] = "Touche. Dernier contact d'un joueur.",
-            [NotableMomentKind.GoalKick] = "Six mètres. Un joueur l'a envoyé dehors."
+            [NotableMomentKind.GoalKick] = "Six mètres. Un joueur l'a envoyé dehors.",
+            [NotableMomentKind.Substitution] = "Remplacement. Un joueur entre en jeu."
         }
     };
 
@@ -89,9 +96,12 @@ public static class NotableLines
         var key = _templates.ContainsKey(BaseLanguage(language)) ? BaseLanguage(language) : _fallback;
 
         // A roster name with no club can't happen (both come from the squads), but if it did the
-        // line would say "a player" rather than print a half-filled bracket.
-        return moment is { PlayerName: { } name, PlayerTeam: { } club }
-            ? string.Format(CultureInfo.InvariantCulture, _templates[key][moment.Kind], name, club)
+        // line would say "a player" rather than print a half-filled bracket. A substitution needs
+        // both names, so it never prints one name and a gap.
+        var named = moment is { PlayerName: not null, PlayerTeam: not null }
+            && (moment.Kind != NotableMomentKind.Substitution || moment.ReplacementName is not null);
+        return named
+            ? string.Format(CultureInfo.InvariantCulture, _templates[key][moment.Kind], moment.PlayerName, moment.PlayerTeam, moment.ReplacementName)
             : _anonymous[key][moment.Kind];
     }
 

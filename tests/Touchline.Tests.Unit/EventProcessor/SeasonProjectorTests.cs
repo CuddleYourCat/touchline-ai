@@ -40,12 +40,13 @@ public class SeasonProjectorTests
     [Test]
     public async Task A_finished_fixture_becomes_one_document_per_starter_and_their_seasons()
     {
-        var record = Stored(Match(MatchKind.Fixture, seed: 42, round: 1));
+        var events = Match(MatchKind.Fixture, seed: 42, round: 1);
+        var record = Stored(events);
 
         await _projector.ProjectAsync([record], CancellationToken.None);
 
-        _season.PlayerMatches.Should().HaveCount(22);
-        _season.PlayerSeasons.Should().HaveCount(22).And.OnlyContain(s => s.Value.Appearances == 1 && s.Value.Season == "2026-27");
+        _season.PlayerMatches.Should().HaveCount(Appearances(events));
+        _season.PlayerSeasons.Should().HaveCount(Appearances(events)).And.OnlyContain(s => s.Value.Appearances == 1 && s.Value.Season == "2026-27");
     }
 
     [Test]
@@ -63,24 +64,27 @@ public class SeasonProjectorTests
     [Test]
     public async Task Projecting_the_same_fixture_again_changes_nothing()
     {
-        var record = Stored(Match(MatchKind.Fixture, seed: 42, round: 1));
+        var events = Match(MatchKind.Fixture, seed: 42, round: 1);
+        var record = Stored(events);
         await _projector.ProjectAsync([record], CancellationToken.None);
         var first = _season.PlayerSeasons.Values.ToList();
 
         await _projector.ProjectAsync([record], CancellationToken.None);
 
-        _season.PlayerMatches.Should().HaveCount(22);
+        _season.PlayerMatches.Should().HaveCount(Appearances(events));
         _season.PlayerSeasons.Values.Should().BeEquivalentTo(first, "a season is rebuilt, never incremented, so redelivery can't double-count");
     }
 
     [Test]
     public async Task Each_round_rebuilds_the_season_from_every_fixture_so_far()
     {
-        await _projector.ProjectAsync([Stored(Match(MatchKind.Fixture, seed: 42, round: 1))], CancellationToken.None);
-        await _projector.ProjectAsync([Stored(Match(MatchKind.Fixture, seed: 43, round: 2))], CancellationToken.None);
+        var first = Match(MatchKind.Fixture, seed: 42, round: 1);
+        var second = Match(MatchKind.Fixture, seed: 43, round: 2);
+        await _projector.ProjectAsync([Stored(first)], CancellationToken.None);
+        await _projector.ProjectAsync([Stored(second)], CancellationToken.None);
 
         var goals = _season.PlayerMatches.Values.Sum(m => m.Goals);
-        _season.PlayerMatches.Should().HaveCount(44);
+        _season.PlayerMatches.Should().HaveCount(Appearances(first) + Appearances(second));
         _season.PlayerSeasons.Values.Sum(s => s.Goals).Should().Be(goals);
         _season.PlayerSeasons.Values.Should().Contain(s => s.Appearances == 2);
     }
@@ -88,13 +92,17 @@ public class SeasonProjectorTests
     [Test]
     public async Task The_change_feed_adapter_reads_the_documents_as_stored()
     {
-        var record = Stored(Match(MatchKind.Fixture, seed: 42, round: 1));
+        var events = Match(MatchKind.Fixture, seed: 42, round: 1);
+        var record = Stored(events);
         var documents = JsonSerializer.Serialize(new[] { record }, DomainJson.Options);
 
         await new ProjectSeason(_projector).RunAsync(documents, CancellationToken.None);
 
-        _season.PlayerMatches.Should().HaveCount(22, "the trigger's JSON is read with DomainJson, like every stored document");
+        _season.PlayerMatches.Should().HaveCount(Appearances(events), "the trigger's JSON is read with DomainJson, like every stored document");
     }
+
+    // Every starter, and every substitute who came on (ADR-064).
+    private static int Appearances(List<MatchEvent> events) => 22 + events.Count(e => e.Type == MatchEventType.Substitution);
 
     private static List<MatchEvent> Match(MatchKind kind, int seed, int? round = null) =>
         [.. new MatchSimulator(_teams["north-bank-fc"], _teams["thames-valley-united"], seed,

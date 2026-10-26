@@ -60,7 +60,8 @@ public static class PossessionSummarizer
         ArgumentNullException.ThrowIfNull(detector);
         ArgumentNullException.ThrowIfNull(roster);
 
-        var ordered = events.Where(e => e.Type != MatchEventType.MatchMetadata).OrderBy(e => e.Sequence).ToList();
+        // A substitution (ADR-064) happens at a stoppage, not in a move, so it never ends or joins one.
+        var ordered = events.Where(e => e.Type is not (MatchEventType.MatchMetadata or MatchEventType.Substitution)).OrderBy(e => e.Sequence).ToList();
         var moments = FindMoments(matchId, events.OrderBy(e => e.Sequence), detector);
 
         var result = new List<SummarizedPossession>();

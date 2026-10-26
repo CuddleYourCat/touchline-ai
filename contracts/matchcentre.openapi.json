@@ -1942,7 +1942,9 @@
           "referee",
           "homeLineup",
           "awayLineup",
-          "state"
+          "state",
+          "homeSubstitutes",
+          "awaySubstitutes"
         ],
         "type": "object",
         "properties": {
@@ -1975,6 +1977,20 @@
           "state": {
             "description": "The score, clock and totals now.",
             "$ref": "#/components/schemas/LiveState"
+          },
+          "homeSubstitutes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlayerSummary"
+            },
+            "description": "The home bench (ADR-064), so a substitute who comes on can be named on the pitch. Empty for a\nmatch stored before substitutions."
+          },
+          "awaySubstitutes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlayerSummary"
+            },
+            "description": "The away bench."
           }
         },
         "description": "A match in full: who, where, and the state now."
@@ -2152,6 +2168,13 @@
                 "$ref": "#/components/schemas/RestartKind"
               }
             ]
+          },
+          "replacementPlayerId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "For a substitution: the player who goes on in place of string? MatchEvent.PlayerId (ADR-064).\nRequired on substitutions, and only valid there."
           }
         },
         "description": "One thing that happened in a match: the unit the simulator produces, Event Hubs\ncarries and the agents reason over (ADR-014). Events are immutable."
@@ -2169,7 +2192,8 @@
           "Foul",
           "Card",
           "PeriodEnd",
-          "BallOutOfPlay"
+          "BallOutOfPlay",
+          "Substitution"
         ],
         "description": "What happened in a match event."
       },
@@ -3145,7 +3169,7 @@
           },
           "appearances": {
             "type": "integer",
-            "description": "Fixtures started.",
+            "description": "Fixtures played, starting or coming on from the bench (ADR-064).",
             "format": "int32"
           },
           "rounds": {
@@ -3154,7 +3178,7 @@
               "type": "integer",
               "format": "int32"
             },
-            "description": "The rounds the player started, in order. The simulator reads these to know which rounds are done."
+            "description": "The rounds the player played in, in order. The simulator reads these to know which rounds are done."
           },
           "goals": {
             "type": "integer",
@@ -3227,6 +3251,12 @@
               "$ref": "#/components/schemas/PenaltyRecord"
             },
             "description": "The last five penalties the player faced in goal, newest first."
+          },
+          "substituteAppearances": {
+            "type": "integer",
+            "description": "How many of the appearances were from the bench. A document stored before substitutions reads as 0.",
+            "format": "int32",
+            "default": 0
           }
         },
         "description": "One player's season: the `player-seasons` document (ADR-025). It's rebuilt from all of\nthe player's PlayerMatch documents for the season, never incremented, so a\nredelivered fixture can't count twice."
@@ -3791,6 +3821,16 @@
               "type": "string"
             },
             "description": "The IDs of the players who start, goalkeeper first."
+          },
+          "substitutes": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The IDs of the substitutes on the bench (ADR-064), in sheet order. Empty for a sheet with\nno bench, and for a document stored before substitutions."
           }
         },
         "description": "One team's entry in the match metadata."

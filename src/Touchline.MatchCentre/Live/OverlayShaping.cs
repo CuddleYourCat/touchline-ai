@@ -45,7 +45,8 @@ internal static class OverlayShaping
         ["clearedoffline"] = "Cleared off the line",
         ["yellowcard"] = "Yellow card",
         ["corner"] = "Corner",
-        ["woodwork"] = "Off the woodwork"
+        ["woodwork"] = "Off the woodwork",
+        ["substitution"] = "Substitution"
     };
 
     /// <summary>

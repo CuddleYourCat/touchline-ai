@@ -55,13 +55,13 @@ public class NotableMomentStreamTests
 
         var cards = Cards(projections.SelectMany(p => p.Messages)).ToList();
 
-        cards.Should().HaveCount(23, "25 moments, less two notable cards held back by a key card just before");
-        cards.Count(c => c.DurationMs == OverlayCardBuilder.KeyDurationMs).Should().Be(9);
-        cards.Count(c => c.DurationMs == OverlayCardBuilder.NotableDurationMs).Should().Be(14);
+        cards.Should().HaveCount(30, "34 moments, less four notable cards held back by a key card just before");
+        cards.Count(c => c.DurationMs == OverlayCardBuilder.KeyDurationMs).Should().Be(10);
+        cards.Count(c => c.DurationMs == OverlayCardBuilder.NotableDurationMs).Should().Be(20);
         cards.Select(c => c.Id).Should().OnlyHaveUniqueItems();
-        cards.GroupBy(c => c.Type).ToDictionary(g => g.Key, g => g.Count()).Should().Contain("yellowcard", 4).And.Contain("corner", 9).And.Contain("woodwork", 1);
-        projections.Count(p => p.Notable is { IsMinor: true }).Should().Be(55, "36 throw-ins and 19 goal kicks are carried but give no card");
-        projections.SelectMany(p => p.Messages).Count(m => m.Event == StreamEvents.Moment).Should().Be(25, "a skipped card does not skip the moment");
+        cards.GroupBy(c => c.Type).ToDictionary(g => g.Key, g => g.Count()).Should().Contain("yellowcard", 6).And.Contain("corner", 10).And.Contain("substitution", 4);
+        projections.Count(p => p.Notable is { IsMinor: true }).Should().Be(50, "42 throw-ins and 8 goal kicks are carried but give no card");
+        projections.SelectMany(p => p.Messages).Count(m => m.Event == StreamEvents.Moment).Should().Be(34, "a skipped card does not skip the moment");
     }
 
     [Test]
@@ -74,7 +74,7 @@ public class NotableMomentStreamTests
             .Where(p => p.Notable is { IsMinor: false } && !p.Messages.Any(m => m.Event == StreamEvents.Overlay))
             .ToList();
 
-        held.Should().HaveCount(2);
+        held.Should().HaveCount(4);
         foreach (var projection in held)
         {
             var sequence = projection.Notable!.Trigger.Sequence;
@@ -84,19 +84,19 @@ public class NotableMomentStreamTests
         }
 
         // Every other notable moment, including those 4 or more events after a key moment, kept its card.
-        projections.Count(p => p.Notable is { IsMinor: false } && p.Messages.Any(m => m.Event == StreamEvents.Overlay)).Should().Be(14);
+        projections.Count(p => p.Notable is { IsMinor: false } && p.Messages.Any(m => m.Event == StreamEvents.Overlay)).Should().Be(20);
     }
 
     [Test]
-    public void A_big_chance_followed_by_a_corner_shows_one_card_the_key_one()
+    public void A_goal_followed_by_a_substitution_shows_one_card_the_key_one()
     {
         var projector = new MatchStreamProjector(_matchId, _detector);
         var projections = _events.Select(projector.Apply).ToList();
 
         var pair = projections.Zip(projections.Skip(1))
-            .First(p => p.First.Moment is { Kind: KeyMomentKind.BigChance } && p.Second.Notable is { Kind: NotableMomentKind.Corner });
+            .First(p => p.First.Moment is { Kind: KeyMomentKind.Goal } && p.Second.Notable is { Kind: NotableMomentKind.Substitution });
 
-        Cards(pair.First.Messages).Should().ContainSingle().Which.Type.Should().Be("bigchance");
+        Cards(pair.First.Messages).Should().ContainSingle().Which.Type.Should().Be("goal");
         Cards(pair.Second.Messages).Should().BeEmpty();
         pair.Second.Messages.Should().Contain(m => m.Event == StreamEvents.Moment);
     }

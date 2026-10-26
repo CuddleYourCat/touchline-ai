@@ -20,7 +20,10 @@ public enum NotableMomentKind
     ThrowIn,
 
     /// <summary>Minor: the ball went over the goal line off an attacker.</summary>
-    GoalKick
+    GoalKick,
+
+    /// <summary>A player taken off and a substitute brought on (ADR-064).</summary>
+    Substitution
 }
 
 /// <summary>
@@ -39,13 +42,18 @@ public enum NotableMomentKind
 /// no squad has them; the template lines then say "a player" and never print a raw ID.
 /// </param>
 /// <param name="PlayerTeam">The short name of that player's club, or null when they aren't in a squad.</param>
+/// <param name="ReplacementName">
+/// For a substitution, the player coming on, as the roster spells the name; null otherwise, or
+/// when no squad has him.
+/// </param>
 public sealed record NotableMoment(
     NotableMomentKind Kind,
     MatchEvent Trigger,
     string Reason,
     TeamSide Team,
     string? PlayerName,
-    string? PlayerTeam)
+    string? PlayerTeam,
+    string? ReplacementName = null)
 {
     /// <summary>
     /// True for a throw-in or a goal kick: it produces a moment, a low-priority card and a template
@@ -56,9 +64,13 @@ public sealed record NotableMoment(
 
     /// <summary>
     /// The player the moment features, or null when it's about a restart, where the trigger's
-    /// player is only the last to touch the ball and belongs to the other side.
+    /// player is only the last to touch the ball and belongs to the other side. A substitution
+    /// features the player coming on.
     /// </summary>
-    public string? FeaturedPlayerId => Kind is NotableMomentKind.YellowCard or NotableMomentKind.Woodwork
-        ? Trigger.PlayerId
-        : null;
+    public string? FeaturedPlayerId => Kind switch
+    {
+        NotableMomentKind.YellowCard or NotableMomentKind.Woodwork => Trigger.PlayerId,
+        NotableMomentKind.Substitution => Trigger.ReplacementPlayerId,
+        _ => null
+    };
 }

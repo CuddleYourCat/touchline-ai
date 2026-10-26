@@ -25,6 +25,8 @@ function detail(): MatchDetail {
     venue: 'Quayside Park',
     referee: 'Sam Ellery',
     homeLineup: [],
+    homeSubstitutes: [],
+    awaySubstitutes: [],
     awayLineup: [],
     state: { fullTime: true },
   } as unknown as MatchDetail;

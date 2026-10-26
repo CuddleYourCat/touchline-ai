@@ -65,6 +65,24 @@ public sealed class MatchFactsAdapterTests
     }
 
     [Test]
+    public async Task Substitutions_fill_only_the_slots_the_play_leaves()
+    {
+        var all = await _facts.GetEventsAsync("demo-1", 0, 120, CancellationToken.None);
+        var first = DemoRecording.Events.First(e => e.Type == MatchEventType.Substitution);
+        var minute = (int)first.Time.Clock.TotalMinutes;
+        var changes = await _facts.GetEventsAsync("demo-1", minute, minute, CancellationToken.None);
+        var names = _teams.Values.SelectMany(t => t.Squad).ToDictionary(p => p.Id, p => p.Name);
+
+        all.Should().HaveCount(MatchFactLimits.MaxEvents).And.NotContain(e => e.Type == MatchEventType.Substitution,
+            "a whole match has more than enough shots, fouls, cards and corners to fill the cap");
+        changes.Where(e => e.Type == MatchEventType.Substitution).Should().HaveCount(
+            DemoRecording.Events.Count(e => e.Type == MatchEventType.Substitution && (int)e.Time.Clock.TotalMinutes == minute));
+        var fact = changes.Single(e => e.Id == MatchFactIds.Event("demo-1", first.Sequence));
+        fact.Player.Should().Be(names[first.PlayerId!]);
+        fact.Outcome.Should().Be($"replaced by {names[first.ReplacementPlayerId!]}");
+    }
+
+    [Test]
     public async Task Events_are_capped_notable_and_inside_the_minute_range()
     {
         var all = await _facts.GetEventsAsync("demo-1", 0, 120, CancellationToken.None);
@@ -89,7 +107,7 @@ public sealed class MatchFactsAdapterTests
         var expected = DemoRecording.Events
             .TakeWhile(e => (int)e.Time.Clock.TotalMinutes <= 85)
             .Where(e => (int)e.Time.Clock.TotalMinutes >= 80
-                && (e.Type is MatchEventType.Shot or MatchEventType.Foul or MatchEventType.Card || e.Restart == RestartKind.Corner))
+                && (e.Type is MatchEventType.Shot or MatchEventType.Foul or MatchEventType.Card or MatchEventType.Substitution || e.Restart == RestartKind.Corner))
             .Take(MatchFactLimits.MaxEvents)
             .Select(e => MatchFactIds.Event("demo-1", e.Sequence));
 
@@ -134,14 +152,17 @@ public sealed class MatchFactsAdapterTests
     }
 
     [Test]
-    public async Task Without_a_profile_the_line_ups_are_the_roster()
+    public async Task Without_a_profile_the_line_ups_and_benches_are_the_roster()
     {
         var store = new Mock<ITeamStore>();
         store.Setup(s => s.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ThrowsAsync(new TimeoutException("The team store is down."));
         var facts = new MatchFactsAdapter(_source, store.Object);
+        var detail = (await _source.GetMatchAsync("demo-1", CancellationToken.None))!;
 
         var sheet = await facts.GetSummaryAsync("demo-1", CancellationToken.None);
 
-        sheet!.SquadNames.Should().BeEquivalentTo(sheet.HomePlayers.Concat(sheet.AwayPlayers).Distinct());
+        sheet!.SquadNames.Should().BeEquivalentTo(
+            sheet.HomePlayers.Concat(sheet.AwayPlayers).Concat(detail.HomeSubstitutes.Concat(detail.AwaySubstitutes).Select(p => p.Name)).Distinct(),
+            "a substitute who comes on (ADR-064) is a name the guardrail allows");
     }
 }

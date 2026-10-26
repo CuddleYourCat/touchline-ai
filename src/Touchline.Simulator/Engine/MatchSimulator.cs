@@ -116,7 +116,7 @@ public sealed partial class MatchSimulator
     }
 
     private static TeamSheet Sheet(TeamProfile team, MatchdaySheet? sheet) =>
-        new(team.Id, team.Name, team.ShortName, Lineup.StartingEleven(team, sheet).Select(p => p.Id).ToList());
+        new(team.Id, team.Name, team.ShortName, Lineup.StartingEleven(team, sheet).Select(p => p.Id).ToList(), Lineup.Bench(team, sheet).Select(p => p.Id).ToList());
 
     // A replay must never share its fixture's ID, or its stored documents would overwrite the
     // fixture's (ADR-021). By default it's named after the fixture and its own seed.
@@ -173,6 +173,8 @@ public sealed partial class MatchSimulator
             _referee = referee;
             _metadata = metadata;
             _lineups = new() { [TeamSide.Home] = new Lineup(home, homeSheet), [TeamSide.Away] = new Lineup(away, awaySheet) };
+            _substitutionRandom = new SeededRandom(seed ^ _substitutionStream);
+            _plans = new() { [TeamSide.Home] = PlanFor(_lineups[TeamSide.Home]), [TeamSide.Away] = PlanFor(_lineups[TeamSide.Away]) };
         }
 
         public IEnumerable<MatchEvent> Events()
@@ -192,6 +194,15 @@ public sealed partial class MatchSimulator
                 _period = period;
                 _clock = start;
                 var end = start + TimeSpan.FromMinutes(45 + _random.Next(added.Min, added.Max + 1));
+
+                // Half time is a stoppage, and a change made there doesn't use a window (ADR-064).
+                if (period == MatchPeriod.SecondHalf)
+                {
+                    foreach (var e in HalfTimeSubstitutions())
+                    {
+                        yield return e;
+                    }
+                }
 
                 foreach (var e in KickOff(kickingOff))
                 {
@@ -396,8 +407,9 @@ public sealed partial class MatchSimulator
             return new PitchPosition(Math.Clamp(near.X, 1, PitchDimensions.Length - 1), y);
         }
 
-        // The ball goes out (ADR-022): the event where it crossed, the stoppage, and any cards
-        // the referee owes, because a dead ball is a stoppage. The restart is the caller's.
+        // The ball goes out (ADR-022): the event where it crossed, the stoppage, any cards the
+        // referee owes and any substitutions due, because a dead ball is a stoppage. The restart
+        // is the caller's.
         private IEnumerable<MatchEvent> BallOut(TeamSide lastTouch, Player lastPlayer, PitchPosition crossed, RestartKind restart)
         {
             yield return Emit(MatchEventType.BallOutOfPlay, lastTouch, lastPlayer.Id, crossed) with { Restart = restart };
@@ -408,7 +420,7 @@ public sealed partial class MatchSimulator
                 _ => (CornerStoppageSeconds, CornerStoppageSeconds)
             });
 
-            foreach (var e in ShowPendingCards())
+            foreach (var e in Stoppage())
             {
                 yield return e;
             }

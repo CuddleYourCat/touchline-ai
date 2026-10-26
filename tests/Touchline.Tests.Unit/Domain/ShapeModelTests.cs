@@ -293,6 +293,54 @@ public class ShapeModelTests
     }
 
     [Test]
+    public void An_eleven_with_a_forward_in_a_defender_s_place_lines_up_with_one_defender_fewer()
+    {
+        var home = Team(_homeProfile);
+        var defender = home.Sheet.StartingEleven[1];
+        var eleven = home.Sheet.StartingEleven.ToList();
+        eleven[1] = "nbfc-14"; // a forward off the bench (ADR-064)
+        var substituted = home with { Sheet = new TeamSheet(home.Sheet.Id, home.Sheet.Name, home.Sheet.ShortName, eleven) };
+
+        int Count(ShapeTeam team, PlayerPosition line) => team.Slots.Count(s => s.Line == line);
+
+        Count(substituted, PlayerPosition.Defender).Should().Be(Count(home, PlayerPosition.Defender) - 1);
+        Count(substituted, PlayerPosition.Forward).Should().Be(Count(home, PlayerPosition.Forward) + 1);
+        substituted.Slots.Single(s => s.PlayerId == "nbfc-14").Line.Should().Be(PlayerPosition.Forward);
+        var placed = Place(substituted, Team(_awayProfile), _centreSpot, null);
+        placed.Should().HaveCount(22).And.Contain(p => p.PlayerId == "nbfc-14").And.NotContain(p => p.PlayerId == defender);
+
+        // The jitter (ADR-065) is hashed from the player's own ID, so another forward in the same
+        // slot stands somewhere else: the substitute brings his own personal offset.
+        eleven[1] = "nbfc-19";
+        var other = home with { Sheet = new TeamSheet(home.Sheet.Id, home.Sheet.Name, home.Sheet.ShortName, eleven) };
+        var otherPlaced = Place(other, Team(_awayProfile), _centreSpot, null);
+        otherPlaced[1].PlayerId.Should().Be("nbfc-19");
+        placed[1].PlayerId.Should().Be("nbfc-14");
+        otherPlaced[1].Position.Should().NotBe(placed[1].Position);
+        otherPlaced.Where(p => p.PlayerId != "nbfc-19").Should().Equal(placed.Where(p => p.PlayerId != "nbfc-14"), "nobody else moves");
+    }
+
+    [Test]
+    public void A_substitution_has_no_ball_in_it()
+    {
+        var substitution = new MatchEvent
+        {
+            Sequence = 9,
+            MatchId = "m",
+            PossessionId = 1,
+            Time = MatchTime.At(MatchPeriod.SecondHalf, 63),
+            Type = MatchEventType.Substitution,
+            Team = TeamSide.Home,
+            PlayerId = "nbfc-05",
+            ReplacementPlayerId = "nbfc-16",
+            Start = new PitchPosition(52.5, 0)
+        };
+
+        ShapeModel.BallAfter(substitution).Should().BeNull();
+        ShapeModel.PossessionAfter(substitution).Should().BeNull();
+    }
+
+    [Test]
     public void Players_move_towards_the_side_the_ball_is_on()
     {
         var home = Team(_homeProfile);

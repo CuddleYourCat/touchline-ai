@@ -19,14 +19,20 @@ namespace Touchline.Tests.Unit.Simulator;
 /// <c>Math.Exp</c> or similar can differ in the last bit across platforms. If one is missing,
 /// that's the bug; don't just recompute the hashes on Linux.
 /// </summary>
+/// <remarks>
+/// Recomputed on purpose for substitutions (ADR-064): every event now carries a
+/// <c>replacementPlayerId</c> field, the metadata names each bench, and once they come on the
+/// substitutes play with their own traits, so every stream moves. Substitution decisions draw
+/// from their own seeded stream, so play is unchanged, apart from those fields, until the first substitution.
+/// </remarks>
 [TestFixture]
 public class DefaultLineupGoldenTests
 {
     private static readonly IReadOnlyDictionary<string, TeamProfile> _teams = TeamProfileCatalog.LoadEmbedded();
 
-    [TestCase("north-bank-fc", "thames-valley-united", 42, "D17A4320488BC1E69D4F40F5C978AC58ADEB2787889BDDA084FC62D9BA9A8D7F")]
-    [TestCase("north-bank-fc", "thames-valley-united", 1000, "A97CB27E5F8F21E03C3409FA7A595E12ADC61C967911D0625C1F6AD4C4DB9C1E")]
-    [TestCase("thames-valley-united", "north-bank-fc", 7, "D71B6DB230E144544389D5F13F09DA4952A36A03C99E2614E674F8016A42D266")]
+    [TestCase("north-bank-fc", "thames-valley-united", 42, "42AECC0D838C0AAFDAD29F40562A05AB3EF7434C8BF8100DD10AF67033613A6C")]
+    [TestCase("north-bank-fc", "thames-valley-united", 1000, "6A7B523D7D4B44ACFCAC7CAA3EED1A3497D154241F1997D8F08F6B067CD962A4")]
+    [TestCase("thames-valley-united", "north-bank-fc", 7, "C56F756D36B23506A3EC0571A8583AB373EDAF9475AD6F090E266C445F680932")]
     public void A_match_with_no_team_sheet_plays_exactly_as_before(string home, string away, int seed, string expectedHash)
     {
         var events = new MatchSimulator(_teams[home], _teams[away], seed).Play();

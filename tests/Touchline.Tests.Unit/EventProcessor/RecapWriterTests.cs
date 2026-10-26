@@ -207,6 +207,44 @@ public class RecapWriterTests
         events.Should().HaveCountLessThanOrEqualTo(MatchFactLimits.MaxEvents);
     }
 
+    [Test]
+    public async Task Substitutions_only_fill_the_fact_slots_the_shots_leave_and_name_both_players()
+    {
+        // Eight substitutions, then fifteen missed shots, against a cap of twenty facts.
+        const string matchId = "subs-and-shots";
+        var metadata = new MatchMetadata(
+            new TeamSheet("north-bank-fc", "North Bank FC", "NBK", ["nbfc-01", "nbfc-02", "nbfc-03", "nbfc-04", "nbfc-05", "nbfc-06", "nbfc-07", "nbfc-08", "nbfc-09", "nbfc-10", "nbfc-11"]),
+            TestEvents.Metadata.Away, "Northgate Stadium", DateTimeOffset.UnixEpoch, 1, TestEvents.Referee, MatchKind.Exhibition);
+        MatchEvent At(long sequence, MatchEventType type, int minute) => new()
+        {
+            Sequence = sequence,
+            MatchId = matchId,
+            PossessionId = (int)sequence,
+            Time = MatchTime.At(MatchPeriod.SecondHalf, minute),
+            Type = type,
+            Team = TeamSide.Home,
+            PlayerId = type == MatchEventType.MatchMetadata ? null : "nbfc-09",
+            Start = new Touchline.Domain.Pitch.PitchPosition(type == MatchEventType.Substitution ? 52.5 : 90, type == MatchEventType.Substitution ? 0 : 34)
+        };
+        List<MatchEvent> events =
+        [
+            At(1, MatchEventType.MatchMetadata, 45) with { Metadata = metadata },
+            .. Enumerable.Range(0, 8).Select(i => At(2 + i, MatchEventType.Substitution, 60) with { PlayerId = $"nbfc-0{2 + i}", ReplacementPlayerId = i == 0 ? "nbfc-14" : $"x-{i}" }),
+            .. Enumerable.Range(0, 15).Select(i => At(10 + i, MatchEventType.Shot, 70) with { Shot = TestEvents.Shot(0.1, ShotOutcome.OffTarget), Successful = false })
+        ];
+        var state = events.Aggregate(MatchState.KickOff(matchId), (s, e) => s.Apply(e));
+        var facts = StoredMatchFacts.From(new MatchRecord(matchId, matchId, metadata, state), events, new KeyMomentDetector());
+
+        var found = await facts.GetEventsAsync(matchId, 0, ProducerRecap.LastMinute, CancellationToken.None);
+
+        found.Should().HaveCount(MatchFactLimits.MaxEvents);
+        found.Count(f => f.Type == MatchEventType.Shot).Should().Be(15, "every shot outranks a substitution");
+        found.Count(f => f.Type == MatchEventType.Substitution).Should().Be(5, "substitutions only fill the slots left");
+        var first = found.First(f => f.Type == MatchEventType.Substitution);
+        first.Player.Should().Be(_teams["north-bank-fc"].FindPlayer("nbfc-02")!.Name);
+        first.Outcome.Should().Be($"replaced by {_teams["north-bank-fc"].FindPlayer("nbfc-14")!.Name}");
+    }
+
     private RecapWriter Writer() => new(
         _matches,
         _recaps,

@@ -91,7 +91,7 @@ public class CosmosLiveFeedTests
         sent.Where(m => m.Event is not (StreamEvents.Commentary or StreamEvents.Overlay)).Should().Equal(expected.Where(m => m.Event != StreamEvents.Overlay));
         sent.Where(m => m.Event == StreamEvents.Overlay).Select(m => ((OverlayCard)m.Data).Id)
             .Should().Equal(expected.Where(m => m.Event == StreamEvents.Overlay).Select(m => ((OverlayCard)m.Data).Id));
-        sent.Count(m => m.Event == StreamEvents.Commentary).Should().Be(16, "one template line per notable moment, the best for the viewer");
+        sent.Count(m => m.Event == StreamEvents.Commentary).Should().Be(24, "one template line per notable moment, the best for the viewer");
         sent[^1].Event.Should().Be(StreamEvents.FullTime);
     }
 

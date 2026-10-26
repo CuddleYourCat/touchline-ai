@@ -75,8 +75,8 @@ public sealed record PlacedPlayer(string PlayerId, TeamSide Team, PitchPosition 
 /// shape. Each outfield player is nudged a little off his slot (ADR-065) so the lines aren't a grid:
 /// a fixed personal offset hashed from his ID alone (so it is the same in every match, not just all through one), plus a smaller wobble hashed from his ID and the ball's
 /// position, which changes as the ball moves. Both come from a hash written here, never from the
-/// engine's random. Substitutions aren't modelled, because the engine has none yet: the starting
-/// eleven play the whole match, less anyone sent off. Each team works in its own frame (its goal line at 0, attacking towards
+/// engine's random. It places the eleven on the sheet it's given, less anyone sent off: after a substitution
+/// (ADR-064) the sheet has the substitute in the eleven. Each team works in its own frame (its goal line at 0, attacking towards
 /// <see cref="PitchDimensions.Length"/>), and the away team is rotated half a turn onto the
 /// pitch. The home team attacks left to right in both halves (see <see cref="PitchDimensions"/>),
 /// so nothing swaps at half time.
@@ -156,11 +156,11 @@ public static class ShapeModel
     /// Where the ball is once an event is over, for the shape after it.
     /// </summary>
     /// <param name="matchEvent">The event.</param>
-    /// <returns>Its end, or its start, or null for an event with no ball in it (the metadata and a period's end).</returns>
+    /// <returns>Its end, or its start, or null for an event with no ball in it (the metadata, a period's end and a substitution).</returns>
     public static PitchPosition? BallAfter(MatchEvent matchEvent)
     {
         ArgumentNullException.ThrowIfNull(matchEvent);
-        return matchEvent.Type is MatchEventType.MatchMetadata or MatchEventType.PeriodEnd
+        return matchEvent.Type is MatchEventType.MatchMetadata or MatchEventType.PeriodEnd or MatchEventType.Substitution
             ? null
             : matchEvent.End ?? matchEvent.Start;
     }

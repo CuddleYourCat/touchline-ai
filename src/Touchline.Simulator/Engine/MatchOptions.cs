@@ -42,7 +42,7 @@ public sealed record MatchOptions
 
     /// <summary>
     /// The home team's chosen eleven and bench (ADR-032, ADR-050), or null for the engine's
-    /// default 1-4-3-3 pick. The engine plays the eleven; the bench is stored but not yet played.
+    /// default 1-4-3-3 pick. The engine plays the eleven and brings substitutes on from the bench (ADR-064).
     /// The sheet must pass <see cref="MatchdaySheetRules"/> against the home squad and
     /// <see cref="Unavailable"/>.
     /// </summary>

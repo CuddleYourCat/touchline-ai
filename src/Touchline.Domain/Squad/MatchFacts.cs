@@ -121,3 +121,23 @@ public sealed record MomentFact(string Id, string Clock, string Kind, TeamSide T
 /// <param name="Player">The player's name, if they're in a line-up.</param>
 /// <param name="Outcome">A short outcome, such as a shot's result or a card's colour.</param>
 public sealed record EventFact(string Id, string Clock, MatchEventType Type, TeamSide Team, string? Player, string? Outcome);
+
+/// <summary>
+/// How a substitution reads as a fact (ADR-064): the player who went off is the event's player,
+/// and the outcome names the one who came on.
+/// </summary>
+public static class SubstitutionFacts
+{
+    /// <summary>The outcome of a substitution, for an <see cref="EventFact"/>.</summary>
+    /// <param name="substitution">The substitution event.</param>
+    /// <param name="names">Player names by ID, as the roster spells them.</param>
+    /// <returns><c>replaced by {name}</c>, or <c>substituted</c> when the player coming on has no roster name.</returns>
+    public static string Outcome(MatchEvent substitution, IReadOnlyDictionary<string, string> names)
+    {
+        ArgumentNullException.ThrowIfNull(substitution);
+        ArgumentNullException.ThrowIfNull(names);
+        return substitution.ReplacementPlayerId is { } on && names.TryGetValue(on, out var name)
+            ? $"replaced by {name}"
+            : "substituted";
+    }
+}

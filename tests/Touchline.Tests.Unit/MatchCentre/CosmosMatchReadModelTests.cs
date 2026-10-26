@@ -82,7 +82,7 @@ public class CosmosMatchReadModelTests
         moments.Should().NotBeNullOrEmpty();
         moments!.Where(m => m.Tier == MomentTier.Key).Should().OnlyContain(m => m.Commentary == null);
         var notable = moments!.Where(m => m.Tier == MomentTier.Notable).ToList();
-        notable.Should().HaveCount(19, "template lines are worked out from the events, so the store being down doesn't touch them");
+        notable.Should().HaveCount(27, "template lines are worked out from the events, so the store being down doesn't touch them");
         notable.Should().OnlyContain(m => m.Commentary!.Source == CommentarySource.Template && m.Commentary.Language == "en");
     }
 

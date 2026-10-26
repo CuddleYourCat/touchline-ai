@@ -67,7 +67,7 @@ public class ViewerShapedStreamTests
 
         projections.SelectMany(p => p.Messages).Where(m => m.Event == StreamEvents.Moment).Select(m => (MomentView)m.Data)
             .Should().NotContain(m => IsMinor(m));
-        projections.Where(p => p.Notable is { IsMinor: true }).Should().HaveCount(55).And.OnlyContain(p => p.Minor != null);
+        projections.Where(p => p.Notable is { IsMinor: true }).Should().HaveCount(50).And.OnlyContain(p => p.Minor != null);
         projections.Where(p => p.Notable is not { IsMinor: true }).Should().OnlyContain(p => p.Minor == null);
 
         var lastKey = long.MinValue / 2;
@@ -92,7 +92,7 @@ public class ViewerShapedStreamTests
         var withMinors = new MatchStreamProjector(_matchId, _detector);
         var cards = _events.Select(withMinors.Apply).SelectMany(p => p.Messages).Count(m => m.Event == StreamEvents.Overlay);
 
-        cards.Should().Be(23, "the shared card count is unchanged by minor moments");
+        cards.Should().Be(30, "the shared card count is unchanged by minor moments");
     }
 
     [Test]
@@ -194,9 +194,9 @@ public class ViewerShapedStreamTests
         Cards(analyst).Where(c => c.Priority != "low").Select(c => (c.Id, c.At, c.DurationMs))
             .Should().Equal(Cards(casual).Select(c => (c.Id, c.At, c.DurationMs)), "ID, time and duration are kept");
         Moments(casual).Should().NotContain(m => IsMinor(m));
-        Moments(analyst).Count(IsMinor).Should().Be(55);
-        casualMoments.Should().HaveCount(25).And.NotContain(m => IsMinor(m));
-        analystMoments.Should().HaveCount(80);
+        Moments(analyst).Count(IsMinor).Should().Be(50);
+        casualMoments.Should().HaveCount(34).And.NotContain(m => IsMinor(m));
+        analystMoments.Should().HaveCount(84);
         analystMoments.Where(IsMinor).Should().OnlyContain(m => m.Commentary != null && m.Commentary.Mode == ViewingMode.Analyst);
         Lines(casual).Select(l => l.MomentId).Should().NotContain(analystMoments.Where(IsMinor).Select(m => m.Id));
     }

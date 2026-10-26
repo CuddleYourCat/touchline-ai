@@ -7,7 +7,7 @@ namespace Touchline.Simulator.Publishing;
 
 /// <summary>One player's line in the season, as the simulator needs it before a fixture.</summary>
 /// <param name="PlayerId">The player.</param>
-/// <param name="Rounds">The rounds they started.</param>
+/// <param name="Rounds">The rounds they played in, starting or from the bench (ADR-064).</param>
 /// <param name="BannedRounds">The rounds they're suspended for.</param>
 public sealed record SeasonStanding(string PlayerId, IReadOnlyList<int> Rounds, IReadOnlyList<int> BannedRounds);
 
@@ -21,12 +21,12 @@ public sealed class SeasonStatus(IReadOnlyList<SeasonStanding> players)
     /// <summary>A season nothing has been projected into yet.</summary>
     public static SeasonStatus Empty { get; } = new([]);
 
-    /// <summary>The latest round any player has started, or 0 before the first.</summary>
+    /// <summary>The latest round any player has played in, or 0 before the first.</summary>
     public int LatestRound => players.SelectMany(p => p.Rounds).DefaultIfEmpty(0).Max();
 
     /// <summary>Whether a round has already been played and projected.</summary>
     /// <param name="round">The round.</param>
-    /// <returns>True when any player started it.</returns>
+    /// <returns>True when any player played in it. Every fixture has starters, so a substitute never changes the answer.</returns>
     public bool HasPlayed(int round) => players.Any(p => p.Rounds.Contains(round));
 
     /// <summary>The players suspended for a round.</summary>
