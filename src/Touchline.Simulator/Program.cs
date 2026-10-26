@@ -1,5 +1,14 @@
 using Microsoft.Extensions.Options;
+using Touchline.Simulator.Export;
 using Touchline.Simulator.Publishing;
+
+// The synthetic dataset export (ADR-063) plays the season offline, so it runs before the host is
+// built and needs no Azure: dotnet run --project src/Touchline.Simulator -- export --out dataset
+if (args is ["export", ..])
+{
+    await DatasetWriter.RunAsync(args[1..], Console.Out, CancellationToken.None);
+    return;
+}
 
 var builder = Host.CreateApplicationBuilder(args);
 

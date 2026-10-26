@@ -23,6 +23,9 @@ Dockerfile  text eol=lf
 *.cmd       text eol=crlf
 *.bat       text eol=crlf
 
+# The committed dataset is generated; it is compared byte for byte, so git must not touch it
+dataset/**  -text
+
 # Binaries — no line ending conversion
 *.png       binary
 *.jpg       binary
