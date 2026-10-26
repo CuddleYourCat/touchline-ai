@@ -44,7 +44,7 @@ public static class DatasetSchema
     "teamSheet": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "shortName", "startingEleven"],
+      "required": ["id", "name", "shortName", "startingEleven", "substitutes"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
@@ -53,6 +53,11 @@ public static class DatasetSchema
           "type": "array",
           "minItems": 11,
           "maxItems": 11,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "substitutes": {
+          "type": "array",
+          "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 }
         }
       }
@@ -123,13 +128,13 @@ public static class DatasetSchema
     "event": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sequence", "matchId", "possessionId", "time", "type", "team", "playerId", "start", "end", "successful", "underPressure", "shot", "pass", "carry", "metadata", "card", "recipientPlayerId", "assistPlayerId", "fouledPlayerId", "advantagePlayed", "foulSequence", "blockedByPlayerId", "restart"],
+      "required": ["sequence", "matchId", "possessionId", "time", "type", "team", "playerId", "start", "end", "successful", "underPressure", "shot", "pass", "carry", "metadata", "card", "recipientPlayerId", "assistPlayerId", "fouledPlayerId", "advantagePlayed", "foulSequence", "blockedByPlayerId", "restart", "replacementPlayerId"],
       "properties": {
         "sequence": { "type": "integer", "minimum": 1 },
         "matchId": { "type": "string", "minLength": 1 },
         "possessionId": { "type": "integer", "minimum": 0 },
         "time": { "$ref": "#/$defs/matchTime" },
-        "type": { "enum": ["MatchMetadata", "KickOff", "Pass", "Carry", "Pressure", "Tackle", "Interception", "Shot", "Foul", "Card", "PeriodEnd", "BallOutOfPlay"] },
+        "type": { "enum": ["MatchMetadata", "KickOff", "Pass", "Carry", "Pressure", "Tackle", "Interception", "Shot", "Foul", "Card", "PeriodEnd", "BallOutOfPlay", "Substitution"] },
         "team": { "enum": ["Home", "Away"] },
         "playerId": { "type": ["string", "null"] },
         "start": { "$ref": "#/$defs/position" },
@@ -147,7 +152,8 @@ public static class DatasetSchema
         "advantagePlayed": { "type": "boolean" },
         "foulSequence": { "type": ["integer", "null"], "minimum": 1 },
         "blockedByPlayerId": { "type": ["string", "null"] },
-        "restart": { "enum": ["ThrowIn", "GoalKick", "Corner", null] }
+        "restart": { "enum": ["ThrowIn", "GoalKick", "Corner", null] },
+        "replacementPlayerId": { "type": ["string", "null"] }
       }
     },
     "teamTotals": {

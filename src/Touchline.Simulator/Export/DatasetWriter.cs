@@ -248,7 +248,7 @@ public static class DatasetWriter
         ## Known limits
 
         - The export has no season store, so no player is suspended from one match to the next. Every match starts with its full squads.
-        - The line-ups are the starting elevens the engine picks by default. No bench or substitutions are recorded.
+        - The line-ups are the starting elevens and benches the engine picks by default. A `Substitution` event names the player going off (`playerId`) and the one coming on (`replacementPlayerId`), as ADR-064 describes. The team totals don't count substitutions.
         - The schema check in the tests is a small subset of JSON Schema (types, required properties, enums, `$ref`, `items` and `additionalProperties`), not a full validator.
 
         """;

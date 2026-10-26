@@ -114,6 +114,30 @@ public class DatasetExportTests
     }
 
     [Test]
+    public void The_schema_requires_the_substitution_fields()
+    {
+        var root = _schema.GetProperty("$defs");
+        var substitution = _season[0].Events.First(e => e.Type == MatchEventType.Substitution);
+        var eventNode = JsonNode.Parse(JsonSerializer.SerializeToUtf8Bytes(substitution, DomainJson.Options))!.AsObject();
+        eventNode.Remove("replacementPlayerId");
+
+        var matchLine = Encoding.UTF8.GetString(DatasetWriter.MatchesJsonl(_season.Take(1).ToList())).Split('\n')[0];
+        var matchNode = JsonNode.Parse(matchLine)!.AsObject();
+        matchNode["home"]!.AsObject().Remove("substitutes");
+
+        using var eventDocument = JsonDocument.Parse(eventNode.ToJsonString());
+        using var matchDocument = JsonDocument.Parse(matchNode.ToJsonString());
+
+        using (new AssertionScope())
+        {
+            SchemaSubset.Problems(eventDocument.RootElement, root.GetProperty("event"), _schema)
+                .Should().Contain(p => p.Contains("missing required 'replacementPlayerId'", StringComparison.Ordinal));
+            SchemaSubset.Problems(matchDocument.RootElement, root.GetProperty("match"), _schema)
+                .Should().Contain(p => p.Contains("$.home: missing required 'substitutes'", StringComparison.Ordinal));
+        }
+    }
+
+    [Test]
     public void The_season_is_38_head_to_head_matches_with_home_and_away_alternating()
     {
         using (new AssertionScope())
