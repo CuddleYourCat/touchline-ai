@@ -818,6 +818,19 @@ describe('MatchPage panels, replay and overlays', () => {
     expect(flyout).toHaveTextContent('Harbourside Rovers');
   });
 
+  it('still renders, line-ups and flyout included, when the server sends no benches (a pre-substitutions server)', async () => {
+    const noBenches: Partial<MatchDetail> = { ...withPlayers() };
+    delete noBenches.homeSubstitutes;
+    delete noBenches.awaySubstitutes;
+    stubApi(found(noBenches as MatchDetail));
+    renderPage();
+    const lineups = await screen.findByRole('region', { name: 'Line-ups' });
+
+    await userEvent.setup().click(within(lineups).getByRole('button', { name: 'Kofi Marlow' }));
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Kofi Marlow');
+  });
+
   it('keeps every moment on the timeline during a replay, including those after its start point', async () => {
     stubApi(found(detail()), [moment(30, { kind: 'Goal' }), moment(40, { kind: 'Goal' })]);
     renderPage();

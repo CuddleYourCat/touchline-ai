@@ -151,9 +151,19 @@ export interface LiveMatch {
 }
 
 /** The starting point once the detail and the moments so far have loaded. */
+/**
+ * The detail with both benches present. A server from before substitutions (ADR-064), such as an older deployment or a
+ * cached response, leaves them out, and every panel that lists players expects an array.
+ */
+export function withBenches(detail: MatchDetail): MatchDetail {
+  return detail.homeSubstitutes && detail.awaySubstitutes
+    ? detail
+    : { ...detail, homeSubstitutes: detail.homeSubstitutes ?? [], awaySubstitutes: detail.awaySubstitutes ?? [] };
+}
+
 export function initialLiveMatch(detail: MatchDetail, moments: MomentView[], language = 'en'): LiveMatch {
   const live: LiveMatch = {
-    detail,
+    detail: withBenches(detail),
     state: detail.state,
     events: [],
     moments: {},
