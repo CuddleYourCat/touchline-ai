@@ -1969,3 +1969,62 @@ A, published as 1 if the gzipped season is under about 20 MB, otherwise 2, with 
 - **A head-to-head season has no league table,** but it is the honest size for two clubs, and the calibration numbers are the same.
 - **Determinism is the selling point:** a test exports two matches twice and compares the bytes, so the published files can be checked against the code.
 - **The schema can drift from the events** unless a test validates every exported line against `schema.json`.
+
+---
+
+## ADR-064 — Substitutions
+
+**Status:** Accepted · 26 Oct, Tracey's call: the recommendation
+
+**Question**
+The bench is chosen and stored but never played (ADR-032, ADR-050). How does the engine make substitutions, and how far through the system does a substitution reach before submission?
+
+**Options: how many, and when**
+- **A. The modern rule:** up to 5 substitutes in up to 3 stoppages, plus half time. Most come between 55 and 85 minutes. Each team decides independently, at a stoppage (a foul, the ball going out, a goal, half time).
+- **B. Three substitutes, one at a time,** at stoppages between 60 and 85 minutes. Simpler, and it reads like older football.
+
+**Options: who comes off**
+- **1. Like for like:** a defender for a defender, and so on, picked at random among the outfield starters still on.
+- **2. Like for like, with a reason:** a booked player is more likely to come off (so he can't pick up a second yellow), and a team that's behind after 70 minutes swaps a defender or midfielder for a forward. A team that's ahead swaps a forward for a defender or midfielder.
+- In every option **the goalkeeper is never substituted.** With no injuries there's no reason to, and the season projection's "the keeper is the first-named starter" stays true (ADR-025).
+
+**Options: how far it reaches** (it's the last day of extra time)
+- **X. End to end:** a `Substitution` event (`PlayerId` comes off, a new `ReplacementPlayerId` goes on), the bench in the metadata's `TeamSheet`, the shape model swapping the slot, the pitch and timeline drawing it, the moment detector reporting it as notable, the guardrail and commentary naming the new player, and the player documents giving substitutes an appearance.
+- **Y. Engine, shape and UI only:** the event, the metadata bench, the shape swap and the timeline. The moments, agents and season projection see an event type they skip.
+
+**Recommendation**
+A with 2, reaching X but cutting anything that slips to the backlog, in that order: the season projection's substitute appearances first, then the notable moment.
+
+**Trade-offs**
+- **It changes every match's event stream.** Substitution draws use the seeded random, so the golden hashes, the calibration run and #66's committed dataset all regenerate. The calibration ranges should still hold, because a substitute plays with his own traits but the same tendencies.
+- **A new enum member breaks exhaustive clients** (already in the backlog for the README): the OpenAPI enum and the TypeScript schema gain `Substitution`.
+- **A fan team's bench of 0 means no substitutions,** and a default pick (no sheet) uses the five squad players not in the eleven.
+
+---
+
+## ADR-065 — A little life in the players' positions
+
+**Status:** Accepted · 26 Oct, Tracey's call: the recommendation
+
+**Question**
+The shape model places every line evenly spaced and perfectly straight (ADR-035), so on screen the players stand in a grid. How do we roughen it a little, without making it look random?
+
+**Options**
+- **A. A personal offset:** each player gets a fixed nudge for the whole match, up to about 2 m deep and 2 m across, so lines are never quite straight and gaps never quite equal. It stays still between events.
+- **B. A wobble per event:** a small nudge, up to about 1 m, that changes with every event, so the dots drift slightly even when the ball barely moves.
+- **C. Both:** A's personal offset plus B's wobble at half the size.
+
+**How it stays deterministic (all options)**
+The nudge comes from a hash, not from the engine's seeded random: the personal offset from the player ID alone (so a player's spot is his, match to match), and the wobble from the player ID and the ball's position rounded to 0.1 m. So the shape model stays a pure function, the event stream doesn't change, and nothing in #66's dataset moves. The nudge is applied before the edge clamp, so a player never leaves the pitch, and never to the goalkeeper's depth (he still stands on his line).
+
+**Recommendation**
+C, with the sizes as tuning constants beside the others in `ShapeModel`, so they're easy to turn down after a look on screen.
+
+**Trade-offs**
+- **The shape test pins exact positions** in places. Those tests switch to "within the nudge of the formation", and one test pins the hash so the nudge can't change silently.
+- **Modelled, not tracked, still applies:** the nudge makes the picture livelier, not more true.
+
+**Settled during the build**
+- The personal offset hashes the player ID alone (`ShapeModel.Place` has no match ID), so a player stands in the same spot in every match. The wobble hashes the player ID with the ball's position (in the team's own frame) rounded to 0.1 m, so `Place`'s signature is unchanged.
+- The nudge is applied to the slot before the minimum-depth floor and the ball pull, so a defender never ends up behind his keeper and a player beside the ball is drawn towards it, not past it.
+- The sideways nudge is capped at 35% of the gap between neighbours in a line, so a crowded line can't overlap or swap.

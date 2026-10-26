@@ -72,7 +72,10 @@ public sealed record PlacedPlayer(string PlayerId, TeamSide Team, PitchPosition 
 /// </summary>
 /// <remarks>
 /// It's a pure function with no randomness, so the same input always gives exactly the same
-/// shape. Substitutions aren't modelled, because the engine has none yet: the starting
+/// shape. Each outfield player is nudged a little off his slot (ADR-065) so the lines aren't a grid:
+/// a fixed personal offset hashed from his ID alone (so it is the same in every match, not just all through one), plus a smaller wobble hashed from his ID and the ball's
+/// position, which changes as the ball moves. Both come from a hash written here, never from the
+/// engine's random. Substitutions aren't modelled, because the engine has none yet: the starting
 /// eleven play the whole match, less anyone sent off. Each team works in its own frame (its goal line at 0, attacking towards
 /// <see cref="PitchDimensions.Length"/>), and the away team is rotated half a turn onto the
 /// pitch. The home team attacks left to right in both halves (see <see cref="PitchDimensions"/>),
@@ -108,6 +111,19 @@ public static class ShapeModel
     // Players near the ball are drawn to it, fading with distance.
     private const double _ballPull = 0.3;
     private const double _ballPullRange = 15;
+
+    // A little life (ADR-065): a personal nudge from his player ID alone, so the same in every match, up
+    // to this many metres each way, and a smaller wobble that changes with the ball. Turn them down here
+    // if it looks too loose.
+    private const double _personalOffsetDepth = 2;
+    private const double _personalOffsetAcross = 2;
+    private const double _wobble = 0.5;
+
+    // The ball is rounded to this many metres when hashing the wobble.
+    private const double _wobbleBallStep = 0.1;
+
+    // The sideways nudge never exceeds this share of the gap between neighbours in a line.
+    private const double _maxAcrossNudgeOfSpacing = 0.35;
 
     /// <summary>
     /// Places all the players still on the pitch.
@@ -229,16 +245,86 @@ public static class ShapeModel
             PlayerPosition.Forward => _attackDepth,
             _ => _midfieldDepth
         };
-        // Outfield players never retreat into their own goal.
-        var x = Math.Max(_outfieldMinDepth, _defenceDepth + ((depth - _defenceDepth) * depthScale) + blockShift);
+        var x = _defenceDepth + ((depth - _defenceDepth) * depthScale) + blockShift;
 
         var across = slot.Count == 1 ? 0 : ((double)slot.Index / (slot.Count - 1)) - 0.5;
         var y = _centreY + (across * _lineSpan * widthScale) + slide;
+
+        // A little life (ADR-065): nudge the slot first, so everything after works from where he stands.
+        var idHash = Hash(slot.PlayerId);
+        var (offsetDepth, offsetAcross) = PersonalOffset(idHash);
+        var (wobbleDepth, wobbleAcross) = Wobble(idHash, ball);
+        var nudgeAcross = offsetAcross + wobbleAcross;
+        if (slot.Count > 1)
+        {
+            // Neighbours can never meet: the sideways nudge is a fraction of the gap to the next player.
+            var cap = _maxAcrossNudgeOfSpacing * _lineSpan * widthScale / (slot.Count - 1);
+            nudgeAcross = Math.Clamp(nudgeAcross, -cap, cap);
+        }
+
+        // Outfield players never retreat into their own goal, nudge or no nudge.
+        x = Math.Max(_outfieldMinDepth, x + offsetDepth + wobbleDepth);
+        y += nudgeAcross;
 
         // The nearer the ball, the more a player is drawn towards it.
         var distance = Math.Sqrt(((ball.X - x) * (ball.X - x)) + ((ball.Y - y) * (ball.Y - y)));
         var pull = _ballPull * Math.Exp(-distance / _ballPullRange);
         return (x + ((ball.X - x) * pull), y + ((ball.Y - y) * pull));
+    }
+
+    /// <summary>A player's fixed nudge, the same in every match, in his team's frame: (depth, across).</summary>
+    /// <param name="idHash">The hash of his player ID.</param>
+    internal static (double Depth, double Across) PersonalOffset(ulong idHash) =>
+        (Unit(idHash, 1) * _personalOffsetDepth, Unit(idHash, 2) * _personalOffsetAcross);
+
+    /// <summary>A player's small nudge for the ball where it is, in his team's frame: (depth, across).</summary>
+    /// <param name="idHash">The hash of his player ID.</param>
+    /// <param name="ball">The ball, in his team's frame.</param>
+    internal static (double Depth, double Across) Wobble(ulong idHash, PitchPosition ball)
+    {
+        var hash = Mix(idHash, (long)Math.Round(ball.X / _wobbleBallStep));
+        hash = Mix(hash, (long)Math.Round(ball.Y / _wobbleBallStep));
+        return (Unit(hash, 3) * _wobble, Unit(hash, 4) * _wobble);
+    }
+
+    /// <summary>FNV-1a (64-bit) over the UTF-8 bytes of the text. Stable across runs, unlike <c>string.GetHashCode</c>.</summary>
+    internal static ulong Hash(string text)
+    {
+        var encoding = System.Text.Encoding.UTF8;
+        var length = encoding.GetMaxByteCount(text.Length);
+        Span<byte> bytes = length <= 512 ? stackalloc byte[512] : new byte[length];
+        var written = encoding.GetBytes(text, bytes);
+        var hash = 14695981039346656037UL;
+        foreach (var b in bytes[..written])
+        {
+            hash = unchecked((hash ^ b) * 1099511628211UL);
+        }
+
+        return hash;
+    }
+
+    // Folds a number into a hash, FNV-1a style, a byte at a time.
+    private static ulong Mix(ulong hash, long value)
+    {
+        for (var i = 0; i < 8; i++)
+        {
+            hash = unchecked((hash ^ (byte)(value >> (8 * i))) * 1099511628211UL);
+        }
+
+        return hash;
+    }
+
+    // A number in [-1, 1] from a hash and a salt, after a finalising mix so the bits are well spread.
+    private static double Unit(ulong hash, int salt)
+    {
+        unchecked
+        {
+            var z = hash + ((ulong)salt * 0x9E3779B97F4A7C15UL);
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+            z ^= z >> 31;
+            return (((z >> 11) / (double)(1UL << 53)) * 2) - 1;
+        }
     }
 
     private static PitchPosition ToOwnFrame(PitchPosition at, TeamSide side) =>

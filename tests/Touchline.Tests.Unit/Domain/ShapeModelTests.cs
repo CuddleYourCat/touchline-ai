@@ -133,6 +133,155 @@ public class ShapeModelTests
     }
 
     [Test]
+    public void The_hash_is_the_same_FNV_1a_on_every_run()
+    {
+        ShapeModel.Hash("a").Should().Be(0xAF63DC4C8601EC8CUL);
+        ShapeModel.Hash("foobar").Should().Be(0x85944171F73967E8UL);
+    }
+
+    [Test]
+    public void Every_nudge_stays_within_its_bound()
+    {
+        var ids = _homeProfile.Squad.Concat(_awayProfile.Squad).Select(p => p.Id).ToList();
+        foreach (var id in ids)
+        {
+            var (depth, across) = ShapeModel.PersonalOffset(ShapeModel.Hash(id));
+            Math.Abs(depth).Should().BeLessThanOrEqualTo(2);
+            Math.Abs(across).Should().BeLessThanOrEqualTo(2);
+            for (var x = 0; x <= 105; x += 15)
+            {
+                var (wobbleDepth, wobbleAcross) = ShapeModel.Wobble(ShapeModel.Hash(id), new PitchPosition(x, x / 2.0));
+                Math.Abs(wobbleDepth).Should().BeLessThanOrEqualTo(0.5);
+                Math.Abs(wobbleAcross).Should().BeLessThanOrEqualTo(0.5);
+            }
+        }
+
+        ids.Select(id => ShapeModel.PersonalOffset(ShapeModel.Hash(id))).Distinct().Should().HaveCountGreaterThan(ids.Count / 2);
+    }
+
+    [Test]
+    public void Players_in_the_same_line_no_longer_share_an_exact_depth()
+    {
+        var home = Team(_homeProfile);
+
+        var placed = Place(home, Team(_awayProfile), _centreSpot, inPossession: null)
+            .Where(p => p.Team == TeamSide.Home).ToList();
+
+        var defenders = home.Slots.Where(s => s.Line == PlayerPosition.Defender)
+            .Select(s => placed.Single(p => p.PlayerId == s.PlayerId).Position.X).ToList();
+        defenders.Should().HaveCount(4);
+        defenders.Distinct().Should().HaveCount(4);
+    }
+
+    [Test]
+    public void The_wobble_changes_with_the_ball_but_only_by_the_wobble_bound()
+    {
+        var hash = ShapeModel.Hash("a-player");
+        var first = ShapeModel.Wobble(hash, new PitchPosition(10, 10));
+        var second = ShapeModel.Wobble(hash, new PitchPosition(11, 10));
+
+        second.Should().NotBe(first);
+        Math.Abs(second.Depth - first.Depth).Should().BeLessThanOrEqualTo(1.0);
+        Math.Abs(second.Across - first.Across).Should().BeLessThanOrEqualTo(1.0);
+        ShapeModel.Wobble(hash, new PitchPosition(10, 10)).Should().Be(first);
+    }
+
+    [Test]
+    public void The_goalkeeper_has_no_depth_nudge()
+    {
+        var home = Team(_homeProfile);
+        var keeper = home.Sheet.StartingEleven[0];
+
+        var ball = Place(home, Team(_awayProfile), _centreSpot, TeamSide.Home).Single(p => p.PlayerId == keeper).Position;
+        var nearby = Place(home, Team(_awayProfile), new PitchPosition(52.5, 34.3), TeamSide.Home).Single(p => p.PlayerId == keeper).Position;
+
+        // His line is 5 m out, a tenth of the ball's depth from the centre (which is zero here).
+        ball.X.Should().BeApproximately(5, 1e-9);
+        nearby.X.Should().Be(ball.X);
+    }
+
+    [TestCase(0.0, 0.0)]
+    [TestCase(105.0, 68.0)]
+    [TestCase(0.0, 68.0)]
+    [TestCase(105.0, 0.0)]
+    public void No_one_leaves_the_pitch_with_the_ball_in_a_corner(double x, double y)
+    {
+        foreach (var possession in new TeamSide?[] { TeamSide.Home, TeamSide.Away, null })
+        {
+            var placed = Place(Team(_homeProfile), Team(_awayProfile), new PitchPosition(x, y), possession);
+
+            placed.Should().OnlyContain(p => p.Position.X >= 0 && p.Position.X <= PitchDimensions.Length
+                && p.Position.Y >= 0 && p.Position.Y <= PitchDimensions.Width);
+        }
+    }
+
+    [TestCase(0.0, 0.0)]
+    [TestCase(0.0, 68.0)]
+    public void With_the_ball_in_their_own_corner_no_outfield_player_is_behind_his_keeper(double x, double y)
+    {
+        var home = Team(_homeProfile);
+        var away = Team(_awayProfile);
+
+        // The home team's own corner, then the away team's (the same corner turned half way round), the other team in possession.
+        var homePlaced = Place(home, away, new PitchPosition(x, y), TeamSide.Away);
+        var awayPlaced = Place(home, away, new PitchPosition(PitchDimensions.Length - x, PitchDimensions.Width - y), TeamSide.Home);
+
+        foreach (var (placed, team, side) in new[] { (homePlaced, home, TeamSide.Home), (awayPlaced, away, TeamSide.Away) })
+        {
+            double Depth(PlacedPlayer p) => side == TeamSide.Home ? p.Position.X : PitchDimensions.Length - p.Position.X;
+            var keeper = Depth(placed.Single(p => p.Team == side && p.PlayerId == team.Sheet.StartingEleven[0]));
+            var depths = Outfield(placed, team, side).Select(Depth).ToList();
+
+            // The ball pull can draw a player up to 30% back towards a ball on the goal line, after the floor.
+            depths.Should().OnlyContain(d => d >= (4 * 0.7) - 1e-9);
+            depths.Should().OnlyContain(d => d > keeper);
+        }
+    }
+
+    [Test]
+    public void Neighbours_in_a_crowded_line_never_meet_or_swap_whatever_the_ball_does()
+    {
+        var home = Team(_homeProfile);
+        var eleven = home.Sheet.StartingEleven;
+        var positions = eleven.Select((id, i) => (id, line: i == 0 ? PlayerPosition.Goalkeeper : i <= 7 ? PlayerPosition.Defender : PlayerPosition.Midfielder))
+            .ToDictionary(p => p.id, p => p.line, StringComparer.Ordinal);
+        var team = WithTendencies(new ShapeTeam(home.Sheet, home.Tendencies, positions), t => t with { Width = 0 });
+        var defenders = team.Slots.Where(s => s.Line == PlayerPosition.Defender).OrderBy(s => s.Index).Select(s => s.PlayerId).ToList();
+        defenders.Should().HaveCount(7);
+        var away = Team(_awayProfile);
+
+        // The narrowest the line gets is defending, with width 0: 48 * 0.6 / 6 = 4.8 m between neighbours.
+        const double spacing = 4.8;
+        for (var bx = 0; bx <= 105; bx += 7)
+        {
+            for (var by = 0; by <= 68; by += 4)
+            {
+                var placed = Place(team, away, new PitchPosition(bx, by), TeamSide.Away);
+                var ys = defenders.Select(id => placed.Single(p => p.PlayerId == id).Position.Y).ToList();
+                for (var i = 1; i < ys.Count; i++)
+                {
+                    // The nudge leaves at least 30% of the spacing; the ball pull can squeeze the line a little more.
+                    (ys[i] - ys[i - 1]).Should().BeGreaterThan(0.2 * spacing, $"ball at ({bx}, {by}), pair {i}");
+                }
+            }
+        }
+    }
+
+    [Test]
+    public void The_nudge_for_a_known_player_and_ball_is_pinned()
+    {
+        var hash = ShapeModel.Hash("player-7");
+
+        var offset = ShapeModel.PersonalOffset(hash);
+        var wobble = ShapeModel.Wobble(hash, new PitchPosition(52.5, 34));
+
+        offset.Depth.Should().BeApproximately(-1.3587190589293052, 1e-12);
+        offset.Across.Should().BeApproximately(0.6293026971316547, 1e-12);
+        wobble.Depth.Should().BeApproximately(0.39678679919535886, 1e-12);
+        wobble.Across.Should().BeApproximately(-0.13799472576432026, 1e-12);
+    }
+
+    [Test]
     public void A_player_sent_off_is_left_off_the_pitch()
     {
         var home = Team(_homeProfile);
