@@ -20,14 +20,31 @@ public class DemoMatchSourceTests
     private FakeTimeProvider _time = null!;
     private DemoMatchSource _source = null!;
 
-    // At speed 1, a lap lasts the match's own length: about 95 minutes, with no half-time break.
+    // At speed 1, a lap lasts the match's own length: about 95 minutes plus the 15-minute half-time break (ADR-066).
     private static TimeSpan MatchLength
     {
         get
         {
             var firstHalf = DemoRecording.Events.Where(e => e.Time.Period == MatchPeriod.FirstHalf).Max(e => e.Time.Clock);
-            return firstHalf + (DemoRecording.Events[^1].Time.Clock - TimeSpan.FromMinutes(45));
+            return firstHalf + (DemoRecording.Events[^1].Time.Clock - TimeSpan.FromMinutes(45)) + HalfTimeBreak.For(1);
         }
+    }
+
+    [Test]
+    public void The_event_after_the_first_half_ends_waits_the_half_time_break()
+    {
+        var events = DemoRecording.Events;
+        var halfTime = events.ToList().FindIndex(e => e is { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.FirstHalf });
+        var firstHalfLength = events.Where(e => e.Time.Period == MatchPeriod.FirstHalf).Max(e => e.Time.Clock);
+
+        _time.Advance(firstHalfLength);
+        _source.Snapshot("demo-1")!.Value.State.LastSequence.Should().Be(events[halfTime].Sequence);
+
+        _time.Advance(HalfTimeBreak.For(1) - TimeSpan.FromSeconds(1));
+        _source.Snapshot("demo-1")!.Value.State.LastSequence.Should().Be(events[halfTime].Sequence, "play has not restarted yet");
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        _source.Snapshot("demo-1")!.Value.State.LastSequence.Should().BeGreaterThan(events[halfTime].Sequence);
     }
 
     [SetUp]

@@ -86,7 +86,9 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
         _time = time;
 
         var speed = options.Value.Speed;
-        _offsets = [.. Elapsed(events).Select(elapsed => elapsed / speed)];
+        var halfTimeBreak = options.Value.HalfTimeBreak ?? HalfTimeBreak.For(speed);
+        var firstHalfEnd = events.ToList().FindIndex(e => e is { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.FirstHalf });
+        _offsets = [.. Elapsed(events).Select((elapsed, i) => (elapsed / speed) + (firstHalfEnd >= 0 && i > firstHalfEnd ? halfTimeBreak : TimeSpan.Zero))];
         _lapLength = _offsets[^1] + options.Value.LapGap;
         _start = time.GetUtcNow();
 
@@ -293,8 +295,8 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
     /// <summary>The home and away team names, for the stand-in squad.</summary>
     internal (string Home, string Away) TeamNames => (_metadata.Home.Name, _metadata.Away.Name);
 
-    // How far into the match each event happens, with the second half following straight on
-    // from the end of the first: the demo skips the half-time break.
+    // How far into the match clock each event happens, with the second half following straight on
+    // from the end of the first. The half-time break (ADR-066) is added to the offsets in the constructor.
     private static IEnumerable<TimeSpan> Elapsed(IReadOnlyList<MatchEvent> events)
     {
         var firstHalfLength = events.Where(e => e.Time.Period == MatchPeriod.FirstHalf).Max(e => e.Time.Clock);

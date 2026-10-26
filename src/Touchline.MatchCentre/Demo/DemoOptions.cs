@@ -17,6 +17,13 @@ public sealed class DemoOptions
     [Range(0.1, 100_000)]
     public double Speed { get; set; } = 10;
 
+    /// <summary>
+    /// The half-time pause, replacing the one worked out from <see cref="Speed"/> (ADR-066). Null
+    /// by default. Tests set it so a fast match still finishes at once.
+    /// </summary>
+    [Range(typeof(TimeSpan), "00:00:00", "01:00:00")]
+    public TimeSpan? HalfTimeBreak { get; set; }
+
     /// <summary>The pause after full time before the next lap kicks off.</summary>
     [Range(typeof(TimeSpan), "00:00:00", "01:00:00")]
     public TimeSpan LapGap { get; set; } = TimeSpan.FromMinutes(1);

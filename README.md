@@ -73,7 +73,7 @@ The simulator runs as a manually started job. Each execution plays one match, th
 pwsh ./infra/start-match.ps1 -Seed 101 -Speed 60
 ```
 
-At 60× a match takes about a minute and a half; the default 10× takes about 9 minutes. Then check it in **Application Insights → Logs** (counters are exported through OpenTelemetry's Azure Monitor exporter):
+At 60× a match takes under two minutes; the default 10× takes about 11 minutes. Both include the half-time pause (15 seconds at 60×, 90 seconds at 10×). Then check it in **Application Insights → Logs** (counters are exported through OpenTelemetry's Azure Monitor exporter):
 
 ```kql
 // The pipeline's counters: processed, skipped (by reason), duplicates, lost, key moments published.
@@ -148,7 +148,7 @@ Play the rounds in order, with a new seed each time. A fixture's match ID includ
 
 Before a fixture, the simulator checks the season:
 - **A round that's already been played is refused.** To run one again, play it as a replay (`Kind: Replay`), which never counts.
-- **Round R waits for round R−1 to be projected.** It polls for up to 12 minutes (a whole match at the default 10×, plus its processing), then fails with a clear message rather than kicking off without the bans. So rounds can be started back to back: each waits its turn.
+- **Round R waits for round R−1 to be projected.** It polls for up to 14 minutes (a whole match at the default 10× including the half-time pause, plus its processing), then fails with a clear message rather than kicking off without the bans. So rounds can be started back to back: each waits its turn.
 
 **Checking it**, in the Cosmos DB account's **Data Explorer**, on the `player-seasons` container:
 

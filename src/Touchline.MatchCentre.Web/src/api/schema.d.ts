@@ -469,6 +469,11 @@ export interface components {
             away: components["schemas"]["TeamStats"];
             /** @description Whether the final whistle has gone. */
             fullTime: boolean;
+            /**
+             * @description True from the first half's PeriodEnd until the second half's first event (ADR-066).
+             * @default false
+             */
+            halfTime: boolean;
         };
         /** @description A manager. */
         ManagerSpec: {

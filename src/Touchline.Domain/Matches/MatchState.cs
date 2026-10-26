@@ -55,6 +55,11 @@ public sealed record MatchState(string MatchId, MatchTime Time, TeamStats Home, 
     /// </summary>
     public bool FullTime { get; init; }
 
+    /// <summary>
+    /// True from the first half's <c>PeriodEnd</c> until the next event in the second half (ADR-066).
+    /// </summary>
+    public bool HalfTime { get; init; }
+
     /// <summary>The score as shown on screen, for example <c>1–0</c>.</summary>
     public string Score => $"{Home.Goals}–{Away.Goals}";
 
@@ -83,10 +88,16 @@ public sealed record MatchState(string MatchId, MatchTime Time, TeamStats Home, 
         var team = matchEvent.Team == TeamSide.Home ? Home : Away;
         var updated = Tally(team, matchEvent);
         var fullTime = FullTime || matchEvent is { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.SecondHalf };
+        var halfTime = matchEvent switch
+        {
+            { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.FirstHalf } => true,
+            { Time.Period: MatchPeriod.SecondHalf } => false,
+            _ => HalfTime
+        };
 
         return matchEvent.Team == TeamSide.Home
-            ? this with { Home = updated, Time = matchEvent.Time, LastSequence = matchEvent.Sequence, FullTime = fullTime }
-            : this with { Away = updated, Time = matchEvent.Time, LastSequence = matchEvent.Sequence, FullTime = fullTime };
+            ? this with { Home = updated, Time = matchEvent.Time, LastSequence = matchEvent.Sequence, FullTime = fullTime, HalfTime = halfTime }
+            : this with { Away = updated, Time = matchEvent.Time, LastSequence = matchEvent.Sequence, FullTime = fullTime, HalfTime = halfTime };
     }
 
     /// <summary>

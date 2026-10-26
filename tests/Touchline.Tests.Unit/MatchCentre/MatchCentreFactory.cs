@@ -22,6 +22,7 @@ internal static class MatchCentreFactory
             .UseEnvironment("Production")
             .UseSetting("MatchCentre:Demo:Speed", speed)
             .UseSetting("MatchCentre:Demo:LapGap", lapGap)
+            .UseSetting("MatchCentre:Demo:HalfTimeBreak", "00:00:00")
             .UseSetting("MatchCentre:Stream:HeartbeatInterval", heartbeat)
             .UseSetting("MatchCentre:RateLimits:TeamsPerHour", teamsPerHour)
             .UseSetting("MatchCentre:RateLimits:PaidCallsPerMinute", paidCallsPerMinute));

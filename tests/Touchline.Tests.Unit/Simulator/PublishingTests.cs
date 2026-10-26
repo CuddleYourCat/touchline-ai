@@ -84,7 +84,7 @@ public class PublishingTests
     }
 
     [Test]
-    public void Pacing_waits_the_match_clock_divided_by_the_speed_and_skips_half_time()
+    public void Pacing_waits_the_match_clock_divided_by_the_speed_plus_the_half_time_pause()
     {
         var match = Match();
         var firstHalfEnd = match.Last(e => e.Time.Period == MatchPeriod.FirstHalf).Time.Clock;
@@ -93,8 +93,73 @@ public class PublishingTests
 
         var total = MatchPacer.Pace(match, speed: 10).Aggregate(TimeSpan.Zero, (sum, b) => sum + b.DelayBefore);
 
-        total.TotalSeconds.Should().BeApproximately(played.TotalSeconds / 10, 0.001, "a match at 10x takes a tenth of its playing time, with no half-time wait");
+        total.TotalSeconds.Should().BeApproximately((played.TotalSeconds / 10) + 90, 0.001, "a match at 10x takes a tenth of its playing time, plus the 90 s half-time pause");
     }
+
+    [TestCase(10, 90)]
+    [TestCase(60, 15)]
+    [TestCase(100, 15)]
+    public void The_batch_after_the_first_half_ends_waits_the_half_time_pause(double speed, double seconds)
+    {
+        var batches = MatchPacer.Pace(Match(), speed).ToList();
+
+        var afterHalfTime = batches[batches.FindIndex(b => b.Events.Any(IsFirstHalfEnd)) + 1];
+
+        afterHalfTime.Events[0].Time.Period.Should().Be(MatchPeriod.SecondHalf);
+        afterHalfTime.DelayBefore.TotalSeconds.Should().BeApproximately(seconds, 0.001);
+    }
+
+    [Test]
+    public void The_pause_applies_when_the_first_half_ends_at_the_same_clock_reading_the_second_half_starts()
+    {
+        var template = Match().First(e => e.Time.Period == MatchPeriod.SecondHalf);
+        var end = template with { Type = MatchEventType.PeriodEnd, Time = MatchTime.At(MatchPeriod.FirstHalf, 45) };
+        var restart = template with { Time = MatchTime.At(MatchPeriod.SecondHalf, 45) };
+
+        var batches = MatchPacer.Pace([end, restart], speed: 10).ToList();
+
+        batches.Should().HaveCount(2);
+        batches[1].DelayBefore.Should().Be(TimeSpan.FromSeconds(90));
+    }
+
+    [Test]
+    public void Every_other_gap_is_unchanged_by_the_half_time_pause()
+    {
+        var match = Match();
+        var expected = new List<TimeSpan>();
+        for (var i = 0; i < match.Count;)
+        {
+            var clock = match[i].Time.Clock;
+            var end = i;
+            while (end < match.Count && match[end].Time.Clock == clock)
+            {
+                end++;
+            }
+
+            expected.Add(expected.Count == 0 || match[i - 1].Time.Clock > clock ? TimeSpan.Zero : (clock - match[i - 1].Time.Clock) / 10);
+            i = end;
+        }
+
+        var delays = MatchPacer.Pace(match, speed: 10).Select(b => b.DelayBefore).ToList();
+        var halfTime = MatchPacer.Pace(match, speed: 10).ToList().FindIndex(b => b.Events.Any(IsFirstHalfEnd)) + 1;
+
+        delays.Count.Should().Be(expected.Count);
+        delays.Where((_, i) => i != halfTime).Should().Equal(expected.Where((_, i) => i != halfTime));
+    }
+
+    [Test]
+    public void A_match_with_no_first_half_period_end_has_no_half_time_pause()
+    {
+        var match = Match().Where(e => !IsFirstHalfEnd(e)).ToList();
+        var withPause = MatchPacer.Pace(Match(), speed: 10).Aggregate(TimeSpan.Zero, (sum, b) => sum + b.DelayBefore);
+
+        var total = MatchPacer.Pace(match, speed: 10).Aggregate(TimeSpan.Zero, (sum, b) => sum + b.DelayBefore);
+
+        MatchPacer.Pace(match, speed: 10).Max(b => b.DelayBefore).Should().BeLessThan(TimeSpan.FromSeconds(90));
+        total.Should().BeLessThan(withPause);
+    }
+
+    private static bool IsFirstHalfEnd(MatchEvent e) => e is { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.FirstHalf };
 
     [TestCase(0)]
     [TestCase(-1)]

@@ -146,6 +146,7 @@ public sealed record MatchSummary(
 /// <param name="Home">The home side's totals.</param>
 /// <param name="Away">The away side's totals.</param>
 /// <param name="FullTime">Whether the final whistle has gone.</param>
+/// <param name="HalfTime">True from the first half's PeriodEnd until the second half's first event (ADR-066).</param>
 public sealed record LiveState(
     string MatchId,
     long LastSequence,
@@ -153,7 +154,8 @@ public sealed record LiveState(
     Score Score,
     TeamStats Home,
     TeamStats Away,
-    bool FullTime)
+    bool FullTime,
+    bool HalfTime = false)
 {
     /// <summary>Converts a domain match state.</summary>
     /// <param name="state">The state.</param>
@@ -162,7 +164,7 @@ public sealed record LiveState(
     {
         ArgumentNullException.ThrowIfNull(state);
         return new(state.MatchId, state.LastSequence, ClockReading.From(state.Time),
-            new Score(state.Home.Goals, state.Away.Goals), state.Home, state.Away, state.FullTime);
+            new Score(state.Home.Goals, state.Away.Goals), state.Home, state.Away, state.FullTime, state.HalfTime);
     }
 }
 

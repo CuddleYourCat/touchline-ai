@@ -16,7 +16,9 @@ public static class MatchPacer
     /// <summary>
     /// Groups events that happen at the same moment, and waits the gap on the match clock
     /// before each group, divided by the speed. The second half's clock starts at 45:00, which
-    /// is earlier than the end of the first half's added time, so half-time costs no wait.
+    /// is earlier than the end of the first half's added time, so the clock gap at half time is
+    /// zero or negative. The group after the first half's <c>PeriodEnd</c> waits the half-time
+    /// pause instead, from <see cref="HalfTimeBreak.For"/> (ADR-066).
     /// </summary>
     /// <param name="events">One match's events, in sequence order. Read lazily.</param>
     /// <param name="speed">How many times faster than the match clock to publish. Must be positive.</param>
@@ -39,21 +41,30 @@ public static class MatchPacer
     {
         var batch = new List<MatchEvent>();
         var batchClock = TimeSpan.Zero;
+        var batchPeriod = MatchPeriod.FirstHalf;
         var delay = TimeSpan.Zero;
+        var halfTimeNext = false;
 
         foreach (var matchEvent in events)
         {
             var clock = matchEvent.Time.Clock;
-            if (batch.Count > 0 && clock != batchClock)
+            // A new period starts a new batch even at the same clock reading: with no first-half
+            // added time, the first half ends at 45:00 and the second half starts at 45:00.
+            if (batch.Count > 0 && (clock != batchClock || matchEvent.Time.Period != batchPeriod))
             {
                 yield return new PacedBatch(delay, batch);
                 var gap = clock - batchClock;
-                delay = gap > TimeSpan.Zero ? gap / speed : TimeSpan.Zero;
+                delay = halfTimeNext
+                    ? HalfTimeBreak.For(speed)
+                    : gap > TimeSpan.Zero ? gap / speed : TimeSpan.Zero;
+                halfTimeNext = false;
                 batch = [];
             }
 
+            halfTimeNext |= matchEvent is { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.FirstHalf };
             batch.Add(matchEvent);
             batchClock = clock;
+            batchPeriod = matchEvent.Time.Period;
         }
 
         if (batch.Count > 0)

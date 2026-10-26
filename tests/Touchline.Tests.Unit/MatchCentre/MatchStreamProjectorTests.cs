@@ -59,6 +59,44 @@ public class MatchStreamProjectorTests
     }
 
     [Test]
+    public void Half_time_is_true_right_after_the_first_half_ends_and_false_once_the_second_half_starts()
+    {
+        var projector = new MatchStreamProjector(DemoRecording.Events[0].MatchId, _detector);
+        var halfTimeIndex = DemoRecording.Events.ToList().FindIndex(e => e is { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.FirstHalf });
+
+        var states = DemoRecording.Events
+            .Select(e => (LiveState)projector.Apply(e).Messages.Single(m => m.Event == StreamEvents.State).Data)
+            .ToList();
+
+        states.Take(halfTimeIndex).Should().OnlyContain(s => !s.HalfTime);
+        states[halfTimeIndex].HalfTime.Should().BeTrue();
+        states[halfTimeIndex + 1].HalfTime.Should().BeFalse("the second half's first event ends the pause");
+        states.Skip(halfTimeIndex + 1).Should().OnlyContain(s => !s.HalfTime);
+    }
+
+    [Test]
+    public void Half_time_is_false_at_full_time()
+    {
+        var messages = ProjectWholeMatch();
+
+        ((LiveState)messages[^1].Data).HalfTime.Should().BeFalse();
+    }
+
+    [Test]
+    public void A_state_opened_during_the_pause_says_half_time()
+    {
+        var projector = new MatchStreamProjector(DemoRecording.Events[0].MatchId, _detector);
+        foreach (var e in DemoRecording.Events.TakeWhile(e => e is not { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.FirstHalf }))
+        {
+            projector.Apply(e);
+        }
+
+        projector.Apply(DemoRecording.Events.First(e => e is { Type: MatchEventType.PeriodEnd, Time.Period: MatchPeriod.FirstHalf }));
+
+        LiveState.From(projector.State).HalfTime.Should().BeTrue();
+    }
+
+    [Test]
     public void A_match_with_lost_events_projects_with_the_gaps_skipped()
     {
         var projector = new MatchStreamProjector(DemoRecording.Events[0].MatchId, _detector);

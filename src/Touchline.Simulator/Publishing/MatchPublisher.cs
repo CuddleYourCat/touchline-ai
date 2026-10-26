@@ -181,10 +181,10 @@ public sealed partial class MatchPublisher(
 
     /// <summary>
     /// How long a fixture waits for the previous round's projection before giving up. Long enough
-    /// for a whole match at the default 10x (about 9 minutes) plus its processing, so rounds can be
+    /// for a whole match at the default 10x (about 9 minutes, plus the 90-second half-time pause, ADR-066) plus its processing, so rounds can be
     /// started back to back, and well inside the job's 30-minute replica timeout.
     /// </summary>
-    public static TimeSpan ProjectionWait { get; } = TimeSpan.FromMinutes(12);
+    public static TimeSpan ProjectionWait { get; } = TimeSpan.FromMinutes(14);
 
     private static readonly TimeSpan _projectionPoll = TimeSpan.FromSeconds(5);
 
