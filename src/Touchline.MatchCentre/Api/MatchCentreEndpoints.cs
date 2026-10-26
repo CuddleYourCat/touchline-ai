@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.FeatureManagement;
 using Touchline.Configuration;
 using Touchline.Domain.Analytics;
+using Touchline.Domain.Matches;
 using Touchline.Domain.Season;
 using Touchline.Domain.Squad;
 using Touchline.MatchCentre.Caching;
@@ -28,6 +29,12 @@ internal static partial class MatchCentreEndpoints
     /// <summary>The most events one page returns.</summary>
     public const int MaxEventLimit = 1000;
 
+    /// <summary>The latest first-half minute a replay can start from, added time included.</summary>
+    public const int MaxFirstHalfMinute = 59;
+
+    /// <summary>The latest second-half minute a replay can start from, added time included.</summary>
+    public const int MaxSecondHalfMinute = 120;
+
     private const string _listDescription =
         "The demo matches and the stored ones, live first. If Cosmos DB can't be read, the list still answers 200 "
         + "with the demo matches alone, and sets the Touchline-Degraded response header to \"cosmos\". "
@@ -45,7 +52,10 @@ internal static partial class MatchCentreEndpoints
         "data schemas: state = LiveState, event = MatchEvent, moment = MomentView, commentary = CommentaryLine, " +
         "analysis = MomentAnalysis, milestone = MilestoneView, momentum = MomentumReading, overlay = OverlayCard, " +
         "shape = ShapeView (modelled player positions after an event, not tracking data), fulltime = LiveState (sent once), heartbeat = Heartbeat (no id). Without after or Last-Event-ID the " +
-        "stream starts from now, with a state snapshot. The stream ends after fulltime.";
+        "stream starts from now, with a state snapshot. With after (or Last-Event-ID) it replays every message after " +
+        "that event, with only the latest shape; replay=true keeps every shape, for a paced replay (ADR-067). " +
+        "fromPeriod (FirstHalf or SecondHalf) and fromMinute, given together and without after, start the replay " +
+        "two events before the first event at or after that match time. The stream ends after fulltime.";
 
     /// <summary>Maps every API endpoint under <c>/api</c>.</summary>
     /// <param name="app">The app.</param>
@@ -175,6 +185,9 @@ internal static partial class MatchCentreEndpoints
         string matchId,
         [FromQuery] long? after,
         [FromHeader(Name = "Last-Event-ID")] string? lastEventId,
+        [FromQuery] bool? replay,
+        [FromQuery] string? fromPeriod,
+        [FromQuery] int? fromMinute,
         [AsParameters] ViewerQuery query,
         ITeamStore teams,
         IMatchReadModel matches,
@@ -201,6 +214,12 @@ internal static partial class MatchCentreEndpoints
             return Invalid("after", "after is an event sequence, from 0.");
         }
 
+        var (startAt, replayProblem) = ParseReplayFrom(fromPeriod, fromMinute);
+        if (replayProblem is not null)
+        {
+            return replayProblem;
+        }
+
         var (viewer, problems) = await query.ResolveAsync(teams, cancellationToken);
         if (viewer is null)
         {
@@ -212,10 +231,14 @@ internal static partial class MatchCentreEndpoints
             return NoMatch(matchId);
         }
 
+        // A sequence (after, or a reconnect's Last-Event-ID) wins over a match time.
+        startAt = from is null ? startAt : null;
+        var replayOptions = replay is true || startAt is not null ? new StreamReplay(replay is true, startAt) : null;
+
         // Before the response starts: a source that's down becomes a 503, not a stream that hangs.
         await feed.PrepareAsync(matchId, cancellationToken);
         var messages = HeartbeatStream.WithHeartbeats(
-            feed.FollowAsync(matchId, from, viewer, cancellationToken),
+            feed.FollowAsync(matchId, from, viewer, replayOptions, cancellationToken),
             options.Value.HeartbeatInterval,
             time,
             cancellationToken);
@@ -336,6 +359,31 @@ internal static partial class MatchCentreEndpoints
 
     internal static ValidationProblem Invalid(string field, string message) =>
         TypedResults.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] });
+
+    // A replay's match time (ADR-067): both parts or neither, and a clock the half can show.
+    private static (MatchTime? Time, ValidationProblem? Problem) ParseReplayFrom(string? fromPeriod, int? fromMinute)
+    {
+        if (fromPeriod is null && fromMinute is null)
+        {
+            return (null, null);
+        }
+
+        if (fromPeriod is null || fromMinute is null)
+        {
+            return (null, Invalid(fromPeriod is null ? "fromPeriod" : "fromMinute", "fromPeriod and fromMinute go together."));
+        }
+
+        if (!Enum.GetNames<MatchPeriod>().Contains(fromPeriod, StringComparer.Ordinal))
+        {
+            return (null, Invalid("fromPeriod", "fromPeriod is FirstHalf or SecondHalf."));
+        }
+
+        var period = Enum.Parse<MatchPeriod>(fromPeriod);
+        var (first, last) = period == MatchPeriod.FirstHalf ? (0, MaxFirstHalfMinute) : (45, MaxSecondHalfMinute);
+        return fromMinute < first || fromMinute > last
+            ? (null, Invalid("fromMinute", $"In the {period}, fromMinute is from {first} to {last}."))
+            : (MatchTime.At(period, fromMinute.Value), null);
+    }
 
     [LoggerMessage(Level = LogLevel.Error, Message = "The squad failed a {Request} for match {MatchId}")]
     private static partial void LogSquadFailed(ILogger logger, Exception exception, string request, string matchId);

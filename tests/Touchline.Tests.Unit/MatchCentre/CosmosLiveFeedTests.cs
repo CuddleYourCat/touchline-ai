@@ -82,7 +82,7 @@ public class CosmosLiveFeedTests
         var expected = _events.SelectMany(e => projector.Apply(e).Messages).ToList();
 
         var sent = new List<LiveMessage>();
-        await foreach (var message in new CosmosLiveFeed(Hubs()).FollowAsync(_matchId, 0, Viewer.Default, CancellationToken.None))
+        await foreach (var message in new CosmosLiveFeed(Hubs()).FollowAsync(_matchId, 0, Viewer.Default, null, CancellationToken.None))
         {
             sent.Add(message);
         }
@@ -322,8 +322,8 @@ public class CosmosLiveFeedTests
         var hubs = Hubs();
         var last = _events[^1].Sequence;
 
-        var fromNow = await new CosmosLiveFeed(hubs).FollowAsync(_matchId, null, Viewer.Default, CancellationToken.None).ToListAsync();
-        var caughtUp = await new CosmosLiveFeed(hubs).FollowAsync(_matchId, last, Viewer.Default, CancellationToken.None).ToListAsync();
+        var fromNow = await new CosmosLiveFeed(hubs).FollowAsync(_matchId, null, Viewer.Default, null, CancellationToken.None).ToListAsync();
+        var caughtUp = await new CosmosLiveFeed(hubs).FollowAsync(_matchId, last, Viewer.Default, null, CancellationToken.None).ToListAsync();
 
         fromNow.Select(m => m.Event).Should().Equal(StreamEvents.State, StreamEvents.FullTime);
         caughtUp.Should().ContainSingle().Which.Event.Should().Be(StreamEvents.FullTime);
@@ -496,7 +496,7 @@ public class CosmosLiveFeedTests
     }
 
     private static IAsyncEnumerator<LiveMessage> Follow(LiveMatchHubs hubs, long? after, Viewer viewer) =>
-        new CosmosLiveFeed(hubs).FollowAsync(_matchId, after, viewer, CancellationToken.None).GetAsyncEnumerator();
+        new CosmosLiveFeed(hubs).FollowAsync(_matchId, after, viewer, null, CancellationToken.None).GetAsyncEnumerator();
 
     private static async Task<LiveMessage> Next(IAsyncEnumerator<LiveMessage> stream)
     {

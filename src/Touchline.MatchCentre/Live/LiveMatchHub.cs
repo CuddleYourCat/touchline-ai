@@ -46,7 +46,7 @@ internal sealed partial class LiveMatchHub
     private readonly EventBackfill _backfill;
     private readonly ILogger _logger;
     private readonly Lock _gate = new();
-    private readonly List<(long Sequence, Projected Projected)> _history = [];
+    private readonly List<(long Sequence, MatchTime Time, Projected Projected)> _history = [];
     private readonly Dictionary<string, Arrival> _commentary = [];
     private readonly List<MatchEvent> _pending = [];
     private readonly SortedDictionary<long, MatchEvent> _held = [];
@@ -246,11 +246,16 @@ internal sealed partial class LiveMatchHub
     /// client has seen, and the backlog replays everything after it.
     /// </param>
     /// <param name="viewer">Whose commentary to send.</param>
+    /// <param name="replay">
+    /// A replay's options (ADR-067), or null: with no <paramref name="after"/>, its match time picks
+    /// where the backlog starts, and it can keep every shape.
+    /// </param>
     /// <returns>The subscription, which the caller disposes when the stream ends.</returns>
-    public Subscription Subscribe(long? after, Viewer viewer)
+    public Subscription Subscribe(long? after, Viewer viewer, StreamReplay? replay = null)
     {
         lock (_gate)
         {
+            after ??= replay?.StartAfter(_history.Select(h => (h.Sequence, h.Time)));
             var subscriber = new Subscriber(viewer, after, Channel.CreateBounded<LiveMessage>(new BoundedChannelOptions(_buffer)
             {
                 // A slow stream (a fan on a poor connection) must never hold up the others or the
@@ -271,10 +276,14 @@ internal sealed partial class LiveMatchHub
             {
                 Replay(after.Value, subscriber, backlog);
 
-                // A reconnecting client draws only the latest shape, so the rest are left out.
-                var trimmed = ReplayShapes.LatestOnly(backlog);
-                backlog.Clear();
-                backlog.AddRange(trimmed);
+                // A reconnecting client draws only the latest shape, so the rest are left out; a
+                // replay keeps them all, so the players move as they did.
+                if (replay is not { KeepShapes: true })
+                {
+                    var trimmed = ReplayShapes.LatestOnly(backlog);
+                    backlog.Clear();
+                    backlog.AddRange(trimmed);
+                }
             }
 
             if (state.FullTime)
@@ -344,7 +353,7 @@ internal sealed partial class LiveMatchHub
 
         var due = best.Where(r => r.Arrived > after).OrderBy(r => r.Arrived).ToList();
         var next = 0;
-        foreach (var (sequence, projected) in _history)
+        foreach (var (sequence, _, projected) in _history)
         {
             if (sequence <= after)
             {
@@ -531,7 +540,7 @@ internal sealed partial class LiveMatchHub
             : [];
 
         var projected = new Projected(messages, lines, projection.Overlay, projection.Minor, minorLines);
-        _history.Add((matchEvent.Sequence, projected));
+        _history.Add((matchEvent.Sequence, matchEvent.Time, projected));
         return projected;
     }
 

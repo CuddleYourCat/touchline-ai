@@ -118,7 +118,7 @@ public class DemoMatchSourceTests
     {
         _time.Advance(MatchLength);
 
-        var messages = await _source.FollowAsync("demo-1", null, Viewer.Default, CancellationToken.None).ToListAsync();
+        var messages = await _source.FollowAsync("demo-1", null, Viewer.Default, null, CancellationToken.None).ToListAsync();
 
         messages.Select(m => m.Event).Should().Equal(StreamEvents.State, StreamEvents.FullTime);
         ((LiveState)messages[0].Data).FullTime.Should().BeTrue();
@@ -133,7 +133,7 @@ public class DemoMatchSourceTests
         _time.Advance(MatchLength);
         var last = DemoRecording.Events[^1].Sequence;
 
-        var messages = await _source.FollowAsync("demo-1", after, Viewer.Default, CancellationToken.None).ToListAsync();
+        var messages = await _source.FollowAsync("demo-1", after, Viewer.Default, null, CancellationToken.None).ToListAsync();
 
         var fullTime = messages.Should().ContainSingle(m => m.Event == StreamEvents.FullTime).Subject;
         messages[^1].Should().BeSameAs(fullTime);
@@ -148,7 +148,7 @@ public class DemoMatchSourceTests
     public async Task A_live_follower_hears_the_final_whistle_when_the_lap_ends()
     {
         _time.Advance(MatchLength - TimeSpan.FromMinutes(2));
-        var following = _source.FollowAsync("demo-1", null, Viewer.Default, CancellationToken.None).ToListAsync().AsTask();
+        var following = _source.FollowAsync("demo-1", null, Viewer.Default, null, CancellationToken.None).ToListAsync().AsTask();
         following.IsCompleted.Should().BeFalse("the lap is still being played");
 
         _time.Advance(TimeSpan.FromMinutes(3));
@@ -174,7 +174,7 @@ public class DemoMatchSourceTests
     {
         _time.Advance(MatchLength);
 
-        var messages = await _source.FollowAsync("demo-1", 100, Viewer.Default, CancellationToken.None).ToListAsync();
+        var messages = await _source.FollowAsync("demo-1", 100, Viewer.Default, null, CancellationToken.None).ToListAsync();
 
         messages.Where(m => m.Event == StreamEvents.Event).Select(m => ((MatchEvent)m.Data).Sequence)
             .Should().Equal(Enumerable.Range(101, DemoRecording.Events.Count - 100).Select(i => (long)i));
@@ -189,9 +189,9 @@ public class DemoMatchSourceTests
     {
         _time.Advance(MatchLength);
 
-        var early = await _source.FollowAsync("demo-1", 0, Viewer.Default, CancellationToken.None).ToListAsync();
+        var early = await _source.FollowAsync("demo-1", 0, Viewer.Default, null, CancellationToken.None).ToListAsync();
         var (analyst, _) = Viewer.Create(ViewingMode.Analyst, null, null, null, null, _ => true, _ => true);
-        var late = await _source.FollowAsync("demo-1", 1000, analyst!, CancellationToken.None).ToListAsync();
+        var late = await _source.FollowAsync("demo-1", 1000, analyst!, null, CancellationToken.None).ToListAsync();
 
         // Overlay cards and moments are shaped per viewer too (ADR-055), so only the rest is shared.
         static bool Shared(LiveMessage m) => m.Event is not (StreamEvents.Commentary or StreamEvents.Overlay or StreamEvents.Moment);
@@ -204,7 +204,7 @@ public class DemoMatchSourceTests
     [Test]
     public async Task A_live_follower_receives_each_event_when_its_time_comes()
     {
-        var stream = _source.FollowAsync("demo-1", null, Viewer.Default, CancellationToken.None).GetAsyncEnumerator();
+        var stream = _source.FollowAsync("demo-1", null, Viewer.Default, null, CancellationToken.None).GetAsyncEnumerator();
         await stream.MoveNextAsync();
         var snapshot = (LiveState)stream.Current.Data;
 
@@ -235,7 +235,7 @@ public class DemoMatchSourceTests
     {
         _time.Advance(MatchLength);
 
-        var messages = await _source.FollowAsync("demo-1", 100, Viewer.Default, CancellationToken.None).ToListAsync();
+        var messages = await _source.FollowAsync("demo-1", 100, Viewer.Default, null, CancellationToken.None).ToListAsync();
 
         var shape = messages.Should().ContainSingle(m => m.Event == StreamEvents.Shape).Subject;
         messages.IndexOf(shape).Should().Be(messages.FindLastIndex(m => m.Event == StreamEvents.Event) + 1);

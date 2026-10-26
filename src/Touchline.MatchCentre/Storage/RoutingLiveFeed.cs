@@ -19,10 +19,11 @@ internal sealed partial class RoutingLiveFeed(ILiveFeed demo, ILiveFeed? cosmos,
     /// A Cosmos DB stream that fails after it has started can't become a <c>503</c> any more:
     /// the failure is logged once and the stream ends, so the client reconnects.
     /// </remarks>
-    public IAsyncEnumerable<LiveMessage> FollowAsync(string matchId, long? after, Viewer viewer, CancellationToken cancellationToken) =>
+    public IAsyncEnumerable<LiveMessage> FollowAsync(
+        string matchId, long? after, Viewer viewer, StreamReplay? replay, CancellationToken cancellationToken) =>
         MatchSources.ServesFromCosmos(matchId, cosmos is not null)
-            ? EndOnFailureAsync(cosmos!.FollowAsync(matchId, after, viewer, cancellationToken), matchId, cancellationToken)
-            : demo.FollowAsync(matchId, after, viewer, cancellationToken);
+            ? EndOnFailureAsync(cosmos!.FollowAsync(matchId, after, viewer, replay, cancellationToken), matchId, cancellationToken)
+            : demo.FollowAsync(matchId, after, viewer, replay, cancellationToken);
 
     /// <inheritdoc />
     public Task PrepareAsync(string matchId, CancellationToken cancellationToken)

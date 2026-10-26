@@ -183,8 +183,8 @@ public class ViewerShapedStreamTests
             _events, _teams, _detector, Options.Create(new DemoOptions { Speed = 1, LapGap = TimeSpan.FromMinutes(1) }), time);
         time.Advance(TimeSpan.FromHours(3));
 
-        var casual = await source.FollowAsync("demo-1", 0, Viewer.Default, CancellationToken.None).ToListAsync();
-        var analyst = await source.FollowAsync("demo-1", 0, ViewerOf(ViewingMode.Analyst), CancellationToken.None).ToListAsync();
+        var casual = await source.FollowAsync("demo-1", 0, Viewer.Default, null, CancellationToken.None).ToListAsync();
+        var analyst = await source.FollowAsync("demo-1", 0, ViewerOf(ViewingMode.Analyst), null, CancellationToken.None).ToListAsync();
         var casualMoments = await source.GetMomentsAsync("demo-1", Viewer.Default, CancellationToken.None);
         var analystMoments = await source.GetMomentsAsync("demo-1", ViewerOf(ViewingMode.Analyst), CancellationToken.None);
 

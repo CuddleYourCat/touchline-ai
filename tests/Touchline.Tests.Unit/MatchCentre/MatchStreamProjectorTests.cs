@@ -273,4 +273,51 @@ public class MatchStreamProjectorTests
         ((ShapeView)shape.Data).Sequence.Should().Be(lastBallEvent.Sequence);
         backlog.Count(m => m.Event == StreamEvents.Event).Should().Be(100);
     }
+
+    [Test]
+    public void A_hub_replay_keeps_every_shape_in_place()
+    {
+        var hub = HubOf(200);
+        var projector = new MatchStreamProjector(DemoRecording.Events[0].MatchId, _detector, TeamProfileCatalog.LoadEmbedded());
+        var expected = DemoRecording.Events.Take(200).SelectMany(e => projector.Apply(e).Messages).ToList();
+
+        using var subscription = hub.Subscribe(after: 100, Viewer.Default, new StreamReplay(KeepShapes: true));
+
+        var shapes = subscription.Backlog.Where(m => m.Event == StreamEvents.Shape).Select(m => ((ShapeView)m.Data).Sequence).ToList();
+        shapes.Should().Equal(expected.Where(m => m.Event == StreamEvents.Shape).Select(m => ((ShapeView)m.Data).Sequence).Where(s => s > 100));
+        shapes.Should().HaveCountGreaterThan(1);
+    }
+
+    [Test]
+    public void A_hub_replay_from_a_match_time_starts_two_events_before_the_first_event_at_or_after_it()
+    {
+        var hub = HubOf(DemoRecording.Events.Count);
+        var at = MatchTime.At(MatchPeriod.SecondHalf, 45);
+        var first = DemoRecording.Events.First(e => e.Time.CompareTo(at) >= 0);
+
+        using var subscription = hub.Subscribe(after: null, Viewer.Default, new StreamReplay(KeepShapes: true, at));
+
+        var events = subscription.Backlog.Where(m => m.Event == StreamEvents.Event).Select(m => ((MatchEvent)m.Data).Sequence).ToList();
+        events[0].Should().Be(first.Sequence - 1);
+        subscription.Backlog.Should().NotContain(m => m.Event == StreamEvents.State && ((LiveState)m.Data).LastSequence < first.Sequence - 1);
+    }
+
+    [Test]
+    public void A_hub_replay_from_a_time_not_reached_yet_starts_from_now()
+    {
+        var hub = HubOf(100);
+
+        using var subscription = hub.Subscribe(after: null, Viewer.Default, new StreamReplay(KeepShapes: true, MatchTime.At(MatchPeriod.SecondHalf, 80)));
+
+        subscription.Backlog.Should().ContainSingle().Which.Event.Should().Be(StreamEvents.State);
+    }
+
+    private static LiveMatchHub HubOf(int events)
+    {
+        var hub = new LiveMatchHub(
+            DemoRecording.Events[0].MatchId, _detector, new FakeTimeProvider(), 8,
+            (_, _, _, _) => Task.FromResult<IReadOnlyList<MatchEvent>>([]), NullLogger.Instance, TeamProfileCatalog.LoadEmbedded());
+        hub.Load(DemoRecording.Events.Take(events), []);
+        return hub;
+    }
 }

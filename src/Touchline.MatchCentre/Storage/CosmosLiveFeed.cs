@@ -28,10 +28,11 @@ internal sealed class CosmosLiveFeed(LiveMatchHubs hubs) : ILiveFeed
         string matchId,
         long? after,
         Viewer viewer,
+        StreamReplay? replay,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var hub = await hubs.GetAsync(matchId, cancellationToken);
-        using var subscription = hub.Subscribe(after, viewer);
+        using var subscription = hub.Subscribe(after, viewer, replay);
         foreach (var message in subscription.Backlog)
         {
             yield return message;

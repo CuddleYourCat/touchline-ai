@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using Touchline.Domain.Matches;
 using Touchline.Domain.Squad;
 using Touchline.Domain.Viewing;
 using Touchline.MatchCentre.Api;
@@ -82,6 +83,13 @@ public class MatchCentreApiTests
     [TestCase("/api/matches/demo-1/moments?team=a-real-club")]
     [TestCase("/api/matches/demo-1/moments?lang=english")]
     [TestCase("/api/matches/demo-1/recap?player=a-real-player")]
+    [TestCase("/api/matches/demo-1/stream?fromPeriod=FirstHalf")]
+    [TestCase("/api/matches/demo-1/stream?fromMinute=10")]
+    [TestCase("/api/matches/demo-1/stream?fromPeriod=ExtraTime&fromMinute=10")]
+    [TestCase("/api/matches/demo-1/stream?fromPeriod=firsthalf&fromMinute=10")]
+    [TestCase("/api/matches/demo-1/stream?fromPeriod=FirstHalf&fromMinute=-1")]
+    [TestCase("/api/matches/demo-1/stream?fromPeriod=FirstHalf&fromMinute=60")]
+    [TestCase("/api/matches/demo-1/stream?fromPeriod=SecondHalf&fromMinute=30")]
     public async Task Bad_query_values_are_validation_problems(string url)
     {
         using var response = await _client.GetAsync(Url(url));
@@ -205,6 +213,42 @@ public class MatchCentreApiTests
         messages.Count(m => m.EventType == StreamEvents.Moment).Should().Be(34);
         messages[^1].EventType.Should().Be(StreamEvents.FullTime);
         messages[^1].EventId.Should().Be(DemoRecording.Events.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Test]
+    public async Task A_replay_keeps_every_shape_and_a_reconnect_only_the_latest()
+    {
+        var reconnect = await ReadStream(_client, $"/api/matches/{_match}/stream?after=100");
+        var replay = await ReadStream(_client, $"/api/matches/{_match}/stream?after=100&replay=true");
+
+        reconnect.Count(m => m.EventType == StreamEvents.Shape).Should().Be(1);
+        replay.Count(m => m.EventType == StreamEvents.Shape).Should().BeGreaterThan(100);
+        replay.Where(m => m.EventType != StreamEvents.Shape).Select(m => (m.EventType, m.EventId))
+            .Should().Equal(reconnect.Where(m => m.EventType != StreamEvents.Shape).Select(m => (m.EventType, m.EventId)));
+    }
+
+    [TestCase("FirstHalf", 10)]
+    [TestCase("SecondHalf", 45)]
+    [TestCase("SecondHalf", 70)]
+    public async Task A_replay_from_a_match_time_starts_two_events_before_the_first_event_at_or_after_it(string period, int minute)
+    {
+        var at = MatchTime.At(Enum.Parse<MatchPeriod>(period), minute);
+        var first = DemoRecording.Events.First(e => e.Time.CompareTo(at) >= 0);
+
+        var messages = await ReadStream(_client, $"/api/matches/{_match}/stream?fromPeriod={period}&fromMinute={minute}&replay=true");
+
+        var events = messages.Where(m => m.EventType == StreamEvents.Event).Select(m => long.Parse(m.EventId!, System.Globalization.CultureInfo.InvariantCulture)).ToList();
+        events[0].Should().Be(first.Sequence - 1, "after is two events before, so the one before the chosen event is the first sent");
+        events.Should().Contain(first.Sequence);
+        messages[^1].EventType.Should().Be(StreamEvents.FullTime);
+    }
+
+    [Test]
+    public async Task After_wins_over_a_match_time()
+    {
+        var messages = await ReadStream(_client, $"/api/matches/{_match}/stream?after={DemoRecording.Events.Count - 3}&fromPeriod=FirstHalf&fromMinute=1");
+
+        messages.First(m => m.EventType == StreamEvents.Event).EventId.Should().Be((DemoRecording.Events.Count - 2).ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [Test]

@@ -139,7 +139,7 @@ export interface paths {
         };
         /**
          * The live match, as server-sent events.
-         * @description Server-sent events (text/event-stream). Each message has an event name, an id (the last event sequence the client has fully seen, for Last-Event-ID resume) and one JSON data line. The event names and their data schemas: state = LiveState, event = MatchEvent, moment = MomentView, commentary = CommentaryLine, analysis = MomentAnalysis, milestone = MilestoneView, momentum = MomentumReading, overlay = OverlayCard, shape = ShapeView (modelled player positions after an event, not tracking data), fulltime = LiveState (sent once), heartbeat = Heartbeat (no id). Without after or Last-Event-ID the stream starts from now, with a state snapshot. The stream ends after fulltime.
+         * @description Server-sent events (text/event-stream). Each message has an event name, an id (the last event sequence the client has fully seen, for Last-Event-ID resume) and one JSON data line. The event names and their data schemas: state = LiveState, event = MatchEvent, moment = MomentView, commentary = CommentaryLine, analysis = MomentAnalysis, milestone = MilestoneView, momentum = MomentumReading, overlay = OverlayCard, shape = ShapeView (modelled player positions after an event, not tracking data), fulltime = LiveState (sent once), heartbeat = Heartbeat (no id). Without after or Last-Event-ID the stream starts from now, with a state snapshot. With after (or Last-Event-ID) it replays every message after that event, with only the latest shape; replay=true keeps every shape, for a paced replay (ADR-067). fromPeriod (FirstHalf or SecondHalf) and fromMinute, given together and without after, start the replay two events before the first event at or after that match time. The stream ends after fulltime.
          */
         get: operations["StreamMatch"];
         put?: never;
@@ -1871,6 +1871,9 @@ export interface operations {
         parameters: {
             query?: {
                 after?: number;
+                replay?: boolean;
+                fromPeriod?: string;
+                fromMinute?: number;
                 mode?: string;
                 lang?: string;
                 team?: string;

@@ -240,12 +240,12 @@ public class MatchSourceRoutingTests
     public async Task A_stream_that_loses_cosmos_db_after_it_started_logs_one_warning_and_ends()
     {
         var cosmos = new Mock<ILiveFeed>();
-        cosmos.Setup(f => f.FollowAsync(_storedId, null, Viewer.Default, It.IsAny<CancellationToken>())).Returns(FailingStream());
+        cosmos.Setup(f => f.FollowAsync(_storedId, null, Viewer.Default, null, It.IsAny<CancellationToken>())).Returns(FailingStream());
         var logger = new ListLogger<RoutingLiveFeed>();
         var feed = new RoutingLiveFeed(Mock.Of<ILiveFeed>(), cosmos.Object, logger);
 
         var messages = new List<LiveMessage>();
-        await foreach (var message in feed.FollowAsync(_storedId, null, Viewer.Default, CancellationToken.None))
+        await foreach (var message in feed.FollowAsync(_storedId, null, Viewer.Default, null, CancellationToken.None))
         {
             messages.Add(message);
         }

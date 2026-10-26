@@ -1,4 +1,5 @@
 using Touchline.Domain.Analytics;
+using Touchline.Domain.Matches;
 using Touchline.Domain.Season;
 using Touchline.Domain.Viewing;
 
@@ -69,9 +70,13 @@ public interface ILiveFeed
     /// with a <see cref="StreamEvents.State"/> snapshot, then carries on live.
     /// </param>
     /// <param name="viewer">Whose commentary to send.</param>
+    /// <param name="replay">
+    /// A replay's options (ADR-067), or null for a live stream: whether the backlog keeps every
+    /// shape, and, when <paramref name="after"/> is null, a match time to start from.
+    /// </param>
     /// <param name="cancellationToken">Cancels the stream, when the client disconnects.</param>
     /// <returns>The messages, as they happen.</returns>
-    IAsyncEnumerable<LiveMessage> FollowAsync(string matchId, long? after, Viewer viewer, CancellationToken cancellationToken);
+    IAsyncEnumerable<LiveMessage> FollowAsync(string matchId, long? after, Viewer viewer, StreamReplay? replay, CancellationToken cancellationToken);
 
     /// <summary>
     /// Checks the feed can serve the match, before the stream's response starts, so a source
@@ -82,6 +87,47 @@ public interface ILiveFeed
     /// <param name="cancellationToken">Cancels the check.</param>
     /// <returns>Completes when the feed is ready.</returns>
     Task PrepareAsync(string matchId, CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>
+/// How a stream plays back what has already happened (ADR-067).
+/// </summary>
+/// <param name="KeepShapes">
+/// True to keep every <see cref="StreamEvents.Shape"/> in the backlog, so a replay draws the players
+/// moving; false keeps only the latest, as a reconnect needs.
+/// </param>
+/// <param name="From">
+/// A match time to start from when the client gives no sequence: the stream replays from
+/// <see cref="BuildUp"/> events before the first event at or after it.
+/// </param>
+public sealed record StreamReplay(bool KeepShapes, MatchTime? From = null)
+{
+    /// <summary>How many events before the chosen one a replay starts, so the build-up shows.</summary>
+    public const int BuildUp = 2;
+
+    /// <summary>
+    /// Finds where a replay from <see cref="From"/> starts: <see cref="BuildUp"/> sequences before
+    /// the first event at or after that time, never below 0.
+    /// </summary>
+    /// <param name="played">The events so far, as (sequence, time), in sequence order.</param>
+    /// <returns>The sequence to replay after, or null with no time or no event at or after it yet.</returns>
+    public long? StartAfter(IEnumerable<(long Sequence, MatchTime Time)> played)
+    {
+        if (From is not { } from)
+        {
+            return null;
+        }
+
+        foreach (var (sequence, time) in played)
+        {
+            if (time.CompareTo(from) >= 0)
+            {
+                return Math.Max(0, sequence - BuildUp);
+            }
+        }
+
+        return null;
+    }
 }
 
 /// <summary>

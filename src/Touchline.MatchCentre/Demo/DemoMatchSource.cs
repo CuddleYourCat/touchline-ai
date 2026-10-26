@@ -199,6 +199,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
         string matchId,
         long? after,
         Viewer viewer,
+        StreamReplay? replay,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (Find(matchId, _time.GetUtcNow()) is not { } lap)
@@ -208,6 +209,8 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
 
         // Every follower of a lap shares one projection of it, so a late joiner doesn't replay the match.
         var projected = MessagesFor(matchId);
+        var played = Math.Min(lap.Played, _events.Count);
+        after ??= replay?.StartAfter(_events.Take(played).Select(e => (e.Sequence, e.Time)));
         var from = (int)Math.Clamp(after ?? lap.Played, 0, _events.Count);
         if (after is null)
         {
@@ -215,18 +218,18 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
             yield return new LiveMessage(StreamEvents.State, LiveMessage.IdFor(from), LiveState.From(state));
         }
 
-        // A reconnect replays what has already happened with only the latest shape in it.
-        var played = Math.Min(lap.Played, _events.Count);
+        // A reconnect replays what has already happened with only the latest shape in it; a
+        // replay (ADR-067) keeps every shape, so the players move as they did.
         var fullTimeSent = false;
         if (after is not null && from < played)
         {
-            var replay = new List<LiveMessage>();
+            var backlog = new List<LiveMessage>();
             for (var i = from; i < played; i++)
             {
-                replay.AddRange(MessagesAt(i, projected, matchId, viewer));
+                backlog.AddRange(MessagesAt(i, projected, matchId, viewer));
             }
 
-            foreach (var message in ReplayShapes.LatestOnly(replay))
+            foreach (var message in replay is { KeepShapes: true } ? backlog : ReplayShapes.LatestOnly(backlog))
             {
                 fullTimeSent |= message.Event == StreamEvents.FullTime;
                 yield return message;
