@@ -855,6 +855,11 @@ export interface components {
             /** @description The detector's factual reason, such as `xG 0.41 from 11 m`. */
             reason: string;
             commentary: null | components["schemas"]["CommentaryLine"];
+            /**
+             * @description The other player in the moment, on the same side, if there is one: the player taken off for a
+             *     substitution (whose `PlayerId` is the one coming on), or the assister for a goal (ADR-068). Null for every other kind.
+             */
+            relatedPlayerId?: null | string;
         };
         /** @description Names to check as a fan types them. */
         NameCheckRequest: {

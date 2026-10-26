@@ -155,6 +155,25 @@ public class NotableMomentStreamTests
         MomentViews.From(moment, _matchId, null).Team.Should().Be(TeamSide.Away);
     }
 
+    [Test]
+    public void A_goal_names_its_assister_and_a_substitution_its_replacement()
+    {
+        var shot = _events.First() with { Type = MatchEventType.Shot, Team = TeamSide.Home, PlayerId = "nbfc-09", AssistPlayerId = "nbfc-10" };
+        var substitution = _events.First() with
+        {
+            Type = MatchEventType.Substitution,
+            Team = TeamSide.Away,
+            PlayerId = "tvu-07",
+            ReplacementPlayerId = "tvu-14"
+        };
+
+        MomentViews.From(new KeyMoment(KeyMomentKind.Goal, shot, "GOAL!"), _matchId, null).RelatedPlayerId.Should().Be("nbfc-10");
+        MomentViews.From(new KeyMoment(KeyMomentKind.BigChance, shot, "chance"), _matchId, null).RelatedPlayerId
+            .Should().BeNull("only a goal names its assister (ADR-068)");
+        MomentViews.From(new NotableMoment(NotableMomentKind.Substitution, substitution, "sub", TeamSide.Away, null, null), _matchId, null)
+            .Should().Match<MomentView>(v => v.PlayerId == "tvu-14" && v.RelatedPlayerId == "tvu-07");
+    }
+
     [TestCase(KeyMomentKind.Goal, TeamSide.Away, TeamSide.Away)]
     [TestCase(KeyMomentKind.BigChance, TeamSide.Home, TeamSide.Home)]
     [TestCase(KeyMomentKind.PenaltySaved, TeamSide.Home, TeamSide.Home)]

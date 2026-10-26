@@ -209,6 +209,10 @@ public sealed record EventPage(IReadOnlyList<MatchEvent> Events, long? NextAfter
 /// <param name="PlayerId">The main player on that side, if there is one.</param>
 /// <param name="Reason">The detector's factual reason, such as <c>xG 0.41 from 11 m</c>.</param>
 /// <param name="Commentary">The commentary line for the viewer's mode and language, or null if none is written yet.</param>
+/// <param name="RelatedPlayerId">
+/// The other player in the moment, on the same side, if there is one: the player taken off for a
+/// substitution (whose <c>PlayerId</c> is the one coming on), or the assister for a goal (ADR-068). Null for every other kind.
+/// </param>
 public sealed record MomentView(
     string Id,
     MomentTier Tier,
@@ -218,7 +222,8 @@ public sealed record MomentView(
     TeamSide Team,
     string? PlayerId,
     string Reason,
-    CommentaryLine? Commentary);
+    CommentaryLine? Commentary,
+    string? RelatedPlayerId = null);
 
 /// <summary>
 /// A fan's question about a match.

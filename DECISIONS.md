@@ -2042,3 +2042,83 @@ C, with the sizes as tuning constants beside the others in `ShapeModel`, so they
 - The personal offset hashes the player ID alone (`ShapeModel.Place` has no match ID), so a player stands in the same spot in every match. The wobble hashes the player ID with the ball's position (in the team's own frame) rounded to 0.1 m, so `Place`'s signature is unchanged.
 - The nudge is applied to the slot before the minimum-depth floor and the ball pull, so a defender never ends up behind his keeper and a player beside the ball is drawn towards it, not past it.
 - The sideways nudge is capped at 35% of the gap between neighbours in a line, so a crowded line can't overlap or swap.
+
+---
+
+## ADR-066 — Half time: a pause and a numbers card
+
+**Status:** Accepted · 26 Oct, Tracey's call: the recommendation on both questions
+
+**Question**
+Nothing marks half time. The pacer (ADR-023) starts the second half's clock at 45:00, earlier than the end of the first half's added time, so the second half kicks off the moment the first ends. How long should the pause be, and what does the page show during it?
+
+**Options: the pause**
+- **A. Scaled with a floor:** 15 minutes of match time divided by the speed, never less than 15 seconds. 90 s at 10×, 15 s at 60× and 100×.
+- **B. Fixed:** always 30 seconds.
+- **C. Scaled, no floor:** 9 s at 100×, which is too short to read the card.
+
+**Options: the card**
+- **A. Numbers only:** score, shots, shots on target, xG, pass accuracy, cards and a momentum summary, from data the page already has. No model call and no back-end change.
+- **B. Numbers and a Producer summary:** a "first half so far" mode. Needs a trigger, storage, a contract change and an overlay card, and costs model calls.
+
+**Decision**
+Pause A, card A.
+- **The pause is the simulator's,** in `MatchPacer`: the batch after the first half's `PeriodEnd` waits `max(15 min / speed, 15 s)`, instead of the clock gap. The event stream and the engine don't change, so the dataset (ADR-063) and the golden hashes don't move.
+- **`LiveState` gains `halfTime`:** true from the first half's `PeriodEnd` until the second half's first event. A page opened during the pause gets it in its first `state` snapshot, because it has none of the events. It's additive on the wire.
+- **The page shows half time** while `halfTime` is true: the clock reads "HT", and a half-time card sits over the pitch.
+- **A replay (ADR-067) shows the card** as it reaches half time too, for the same paced time.
+
+**Trade-offs**
+- **A fan who opens the page during the pause** sees the card straight away, because the latest state is the first half's end.
+- **No agent at half time.** The agents still speak at key moments and full time. The Producer's half-time mode stays on the backlog.
+
+---
+
+## ADR-067 — Replay from a point
+
+**Status:** Accepted · 26 Oct, Tracey's call: the recommendation on both questions
+
+**Question**
+Fans want to watch a moment again: click a moment's card, or drag the timeline, and the match plays from just before it. How is it played back, and when is it allowed?
+
+**Options: how**
+- **A. A full, paced replay:** the page reopens the stream from just before the event and plays it back at the match's pace: positions, ball, score, moments and toasts.
+- **B. Events only:** the ball, moments and score replay, but the players stay in their latest positions.
+- **C. A jump:** the pitch and score as they were at that moment, frozen.
+
+**Options: when**
+- **A. At any time,** with a "Back to live" button during a live match.
+- **B. After full time only.**
+
+**Decision**
+How A, when A.
+- **The server already replays.** `GET /api/matches/{matchId}/stream?after=N` sends every message after event N, shaped for the viewer, including a `state` after each event. But it keeps only the latest `shape` (`ReplayShapes.LatestOnly`), because a reconnecting client draws only the latest. A new optional query parameter, `replay=true`, keeps every shape. It's additive, so existing clients don't change.
+- **A replay can start from a match time.** The timeline's slider gives a minute, not an event, and the page keeps only the latest events. So the stream also takes `fromPeriod` and `fromMinute` (both or neither, instead of `after`), and the server starts two events before the first event at or after that time.
+- **The client buffers and paces.** A replay opens a second stream with `after` set to two events before the chosen one (so the build-up shows) and `replay=true`, and plays the buffered messages on a client clock, from the events' match times. The speed matches the live match's speed where it's known, otherwise 10×. Half time pauses as in ADR-066.
+- **The live stream keeps running.** During a replay the live match carries on underneath, and a badge says how far behind live the replay is. "Back to live" closes the replay stream and shows the live state again. A replay that reaches the live edge returns to live on its own.
+- **Toasts and the goal toast play** as the replay passes them, marked as a replay.
+
+**Trade-offs**
+- **Two streams at once** during a live replay, so twice the server's per-viewer work for that fan. A replay of a finished match is one stream that ends at full time.
+- **The replay's commentary** is whatever exists now, which may be better than what was shown live. That's fine for a replay.
+
+---
+
+## ADR-068 — Match page panels: line-ups, timeline, player flyout and a goal toast
+
+**Status:** Accepted · 26 Oct, Tracey's call
+
+**Question**
+The match page needs to look and feel more professional before the demo. Which panels are added, and how are they built so several can be built at once?
+
+**Decision**
+- **A line-ups card:** both starting elevens and benches, by shirt number and position, with goal, yellow card, red card and substitution icons and their minutes. A player's name opens the player flyout.
+- **A timeline:** one bar across the match, with an icon for each goal, card, penalty, big chance and substitution, and a slider to replay from a point (ADR-067). The momentum bars keep their own axis.
+- **A player flyout,** opened from the line-ups card: name, shirt number, position, this match's goals, assists, cards and minutes in or out, and the season's stats from `GET /api/seasons/{season}/players/{playerId}` when the match is a fixture. A fan or exhibition match has no season, so the flyout says so. **The pitch dots stay as they are:** no clickable dots (Tracey).
+- **A goal toast:** a goal shows large in the centre of the pitch, instead of in the toast at the top. Other toasts don't change.
+- **The other player in a moment.** `MomentView` gains `relatedPlayerId`: the player taken off for a substitution (its `playerId` is already the one coming on), or the assister for a goal. The page keeps only the last 200 events, so the moments must carry it. It's additive on the wire.
+- **Built as components first, then the page.** Each panel is a component with its own tests and its own stylesheet, built in parallel. A separate slice puts them on the match page and wires the replay. Shared pieces come first, in their own slice: the per-player facts derived from the moments, and the moment icons.
+
+**Trade-offs**
+- **Per-player facts come from moments, not events,** so they're complete after a reload. A stat that isn't a moment, such as passes, needs the season endpoint.
+- **More on one page.** The page slice has to keep it usable on a phone: panels stack, and the flyout is a sheet from the bottom.

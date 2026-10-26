@@ -324,7 +324,8 @@ internal static class MomentViews
             moment.Side,
             moment.FeaturedPlayerId,
             moment.Reason,
-            commentary);
+            commentary,
+            moment.Kind == KeyMomentKind.Goal ? moment.Trigger.AssistPlayerId : null);
 
     /// <summary>The view of a notable moment.</summary>
     /// <param name="moment">The moment.</param>
@@ -340,7 +341,8 @@ internal static class MomentViews
             moment.Team,
             moment.FeaturedPlayerId,
             moment.Reason,
-            commentary);
+            commentary,
+            moment.Kind == NotableMomentKind.Substitution ? moment.Trigger.PlayerId : null);
 }
 
 /// <summary>

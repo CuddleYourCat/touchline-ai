@@ -2720,6 +2720,13 @@
                 "$ref": "#/components/schemas/CommentaryLine"
               }
             ]
+          },
+          "relatedPlayerId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The other player in the moment, on the same side, if there is one: the player taken off for a\nsubstitution (whose `PlayerId` is the one coming on), or the assister for a goal (ADR-068). Null for every other kind."
           }
         },
         "description": "A key or notable moment, with its commentary for the viewer."
