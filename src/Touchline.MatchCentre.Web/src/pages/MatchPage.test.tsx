@@ -191,7 +191,8 @@ describe('MatchPage', () => {
     });
 
     const item = within(screen.getByRole('region', { name: 'Moments' })).getAllByRole('listitem')[0]!;
-    expect(item).toHaveTextContent('68:10');
+    // Moment cards use the football minute (ADR-068), so 68:10 reads 69'.
+    expect(item).toHaveTextContent("69'");
     expect(item).toHaveTextContent('⇄ Substitution');
     expect(within(item).getByText('⇄', { exact: false })).toHaveAttribute('aria-hidden', 'true');
     expect(item).toHaveTextContent('Substitution: Tavi Rookwell comes on for Ollie Brennick (HBR).');
@@ -442,17 +443,18 @@ describe('MatchPage', () => {
     expect(screen.getByText('Ocasión clarísima')).toBeInTheDocument();
   });
 
-  it('puts the pitch and momentum between the scoreboard and the timeline, and draws streamed shapes, events and momentum', async () => {
+  it('puts the pitch, timeline, moments, line-ups and momentum after the scoreboard in that order, and draws streamed shapes, events and momentum', async () => {
     stubApi(found(detail()));
 
     renderPage();
     const scoreboard = await screen.findByRole('region', { name: /^Live/ });
     const pitch = screen.getByRole('region', { name: 'Pitch' });
     const momentum = screen.getByRole('region', { name: 'Momentum' });
-    const timeline = screen.getByRole('region', { name: 'Moments' });
-    expect(scoreboard.compareDocumentPosition(pitch) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(pitch.compareDocumentPosition(momentum) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(momentum.compareDocumentPosition(timeline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const moments = screen.getByRole('region', { name: 'Moments' });
+    const order = [scoreboard, pitch, screen.getByRole('region', { name: 'Match timeline' }), moments, screen.getByRole('region', { name: 'Line-ups' }), momentum];
+    order.slice(1).forEach((el, i) => {
+      expect(order[i]!.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
     expect(within(pitch).getByText('Modelled positions, not tracking data')).toBeInTheDocument();
     expect(within(pitch).queryAllByTestId('player-dot')).toHaveLength(0);
 
@@ -707,5 +709,138 @@ describe('MatchPage viewer, Q&A and recap', () => {
     await screen.findByText('Reason 30');
 
     expect(screen.getByText('Reason 30').closest('li')).toHaveAttribute('id', momentAnchor('m1:30'));
+  });
+});
+
+describe('MatchPage panels, replay and overlays', () => {
+  const striker = { id: 'h9', name: 'Kofi Marlow', shirtNumber: 9, position: 'Forward', teamId: 'h', archetype: null, preferredFoot: 'Right' };
+  // No season, so the flyout makes no season-stats request.
+  const withPlayers = () => {
+    const base = detail();
+    return { ...base, summary: { ...base.summary, season: null }, homeLineup: [striker], awayLineup: [] } as unknown as MatchDetail;
+  };
+  const stats = { goals: 0, shots: 3, shotsOnTarget: 1, expectedGoals: 0.4, passes: 20, passesCompleted: 15, fouls: 1, yellowCards: 0, redCards: 0, passAccuracy: 0.75 };
+
+  const goalCard = (id: string) => ({
+    id,
+    at: { period: 'FirstHalf', minute: 12, second: 5, display: '12:05' },
+    type: 'goal',
+    durationMs: 4000,
+    payload: { title: 'GOAL', subtitle: null, team: 'Home', playerId: 'h9' },
+  });
+
+  beforeEach(() => {
+    FakeEventSource.install();
+    resetMaintenanceForTests();
+    vi.spyOn(maintenanceDeps, 'fetch').mockResolvedValue(new Response(null, { status: 405 }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('shows a goal card in the goal toast, with the scorer, and not in the top toast', async () => {
+    stubApi(found(withPlayers()));
+    renderPage();
+    await screen.findByText('LIVE');
+
+    act(() => {
+      const source = FakeEventSource.latest();
+      source.emit('state', liveState({ lastSequence: 41, score: { home: 1, away: 0 } }));
+      source.emit('overlay', goalCard('o1'));
+    });
+
+    const toast = await screen.findByTestId('goal-toast');
+    expect(toast).toHaveTextContent('GOAL');
+    expect(toast).toHaveTextContent('Kofi Marlow');
+    expect(toast).toHaveTextContent("13'");
+    expect(screen.queryByTestId('overlay-toast')).not.toBeInTheDocument();
+
+    act(() =>
+      FakeEventSource.latest().emit('overlay', {
+        ...goalCard('o2'),
+        type: 'card',
+        payload: { title: 'Yellow card', subtitle: null, team: 'Home', playerId: null },
+      }),
+    );
+    expect(screen.getByTestId('overlay-toast')).toHaveAttribute('data-type', 'card');
+  });
+
+  it('shows the half-time card and HT while the state says half time', async () => {
+    stubApi(found(detail()));
+    renderPage();
+    await screen.findByText('LIVE');
+    expect(screen.queryByRole('region', { name: 'Half-time stats' })).not.toBeInTheDocument();
+
+    act(() => FakeEventSource.latest().emit('state', liveState({ lastSequence: 41, halfTime: true, home: stats, away: stats } as Partial<LiveState>)));
+
+    expect(screen.getByRole('region', { name: 'Half-time stats' })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: /^Half time/ })).getByText('HT')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^Half time, Harbourside Rovers/ })).toBeInTheDocument();
+  });
+
+  it('replays from a moment card on a second stream, then goes back to live', async () => {
+    stubApi(found(detail()), [moment(30)]);
+    renderPage();
+    await screen.findByText('Reason 30');
+    const live = FakeEventSource.latest();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: /^Replay from 11', Big chance/ }));
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    const replay = FakeEventSource.latest();
+    expect(streamUrl(replay).searchParams.get('after')).toBe('28');
+    expect(streamUrl(replay).searchParams.get('replay')).toBe('true');
+    expect(screen.getByTestId('replay-badge')).toHaveTextContent('Replay');
+    expect(screen.getByRole('status', { name: 'Replay announcements' })).toHaveTextContent('Replay started');
+    expect(live.closed).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Back to live' }));
+
+    expect(replay.closed).toBe(true);
+    expect(screen.queryByTestId('replay-badge')).not.toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Replay announcements' })).toHaveTextContent('Back to live');
+    expect(live.closed).toBe(false);
+  });
+
+  it('opens the player flyout from a line-ups name', async () => {
+    stubApi(found(withPlayers()));
+    renderPage();
+    const lineups = await screen.findByRole('region', { name: 'Line-ups' });
+
+    await userEvent.setup().click(within(lineups).getByRole('button', { name: 'Kofi Marlow' }));
+
+    const flyout = await screen.findByRole('dialog');
+    expect(flyout).toHaveTextContent('Kofi Marlow');
+    expect(flyout).toHaveTextContent('Harbourside Rovers');
+  });
+
+  it('keeps every moment on the timeline during a replay, including those after its start point', async () => {
+    stubApi(found(detail()), [moment(30, { kind: 'Goal' }), moment(40, { kind: 'Goal' })]);
+    renderPage();
+    await screen.findByText('Reason 40');
+
+    // The list is newest first, so the last button is moment 30.
+    await userEvent.setup().click(screen.getAllByRole('button', { name: /^Replay from 11', Goal/ }).at(-1)!);
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    act(() => FakeEventSource.latest().emit('state', liveState({ lastSequence: 29 })));
+
+    // The replay's own view has only the moments before its start point, so the list is empty...
+    await waitFor(() => expect(screen.getByText('No moments yet.')).toBeInTheDocument());
+    // ...but the timeline still has both icons.
+    const timeline = screen.getByRole('region', { name: 'Match timeline' });
+    expect(within(timeline).getAllByTestId('timeline-icon')).toHaveLength(2);
+  });
+
+  it('renders the timeline', async () => {
+    stubApi(found(detail()), [moment(30, { kind: 'Goal' })]);
+    renderPage();
+
+    const timeline = await screen.findByRole('region', { name: 'Match timeline' });
+    expect(within(timeline).getByRole('slider')).toBeInTheDocument();
+    expect(within(timeline).getAllByTestId('timeline-icon')).toHaveLength(1);
   });
 });

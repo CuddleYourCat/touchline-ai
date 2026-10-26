@@ -27,5 +27,7 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     restoreMocks: true,
     unstubGlobals: true,
+    // Slow user-event form tests can pass the 5 s default when the files run in parallel.
+    testTimeout: 15_000,
   },
 });

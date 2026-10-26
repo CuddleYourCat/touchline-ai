@@ -1,0 +1,142 @@
+/*
+ * The match page's layout (ADR-066 to 068). One column on a phone, in reading order: pitch, timeline, moments,
+ * line-ups, momentum, questions. From 960px the pitch and timeline take the left column, the moments sit beside them
+ * in a scrolling column, and the line-ups run full width below.
+ */
+.match-page {
+  min-width: 0;
+}
+
+.match-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.match-layout > * {
+  min-width: 0;
+}
+
+.match-layout .match-section {
+  margin-top: 0;
+}
+
+/* The pitch's positioned wrapper: the goal toast and the half-time card centre over it. */
+.match-stage {
+  position: relative;
+}
+
+/* The pitch panel ends in a caption, so the pitch's centre sits a little above the wrapper's. */
+.match-stage > .goal-toast,
+.match-stage > .half-time-card {
+  top: 45%;
+}
+
+/* The replay badge stays in view while the fan scrolls the timeline or the moments. */
+.replay-bar {
+  position: sticky;
+  top: 8px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--highlight);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px var(--shadow);
+}
+
+.replay-bar-error {
+  border-color: var(--card-red);
+}
+
+.replay-badge {
+  color: var(--highlight);
+  font-weight: 600;
+}
+
+.moment-list {
+  max-height: 30rem;
+  overflow-y: auto;
+}
+
+.match-page .moment {
+  grid-template-columns: 3.5em minmax(0, 1fr);
+}
+
+.moment-replay {
+  grid-column: 2;
+  justify-self: start;
+  padding: 6px 12px;
+  min-height: 32px;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  background: transparent;
+  color: var(--highlight);
+  border: 1px solid var(--highlight);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.moment-replay:hover,
+.moment-replay:focus-visible {
+  background: var(--highlight);
+  color: var(--on-accent);
+}
+
+.match-page .moment-body {
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .match-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+    grid-template-areas:
+      'stage moments'
+      'timeline moments'
+      'lineups lineups'
+      'momentum questions';
+    align-items: start;
+  }
+
+  .match-stage {
+    grid-area: stage;
+  }
+
+  .match-timeline {
+    grid-area: timeline;
+  }
+
+  .match-moments {
+    grid-area: moments;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    /* Ignore its own content when sizing the row, so a long list scrolls instead of stretching the page. */
+    contain: size;
+    min-height: 24rem;
+  }
+
+  .match-moments .moment-list {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .match-lineups {
+    grid-area: lineups;
+  }
+
+  .match-momentum {
+    grid-area: momentum;
+  }
+
+  .match-questions {
+    grid-area: questions;
+  }
+}
