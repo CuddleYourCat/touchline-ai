@@ -30,4 +30,12 @@
     <ProjectReference Include="..\..\src\Touchline.EventProcessor\Touchline.EventProcessor.csproj" Aliases="processor" />
   </ItemGroup>
 
+  <!--
+    Several referenced projects copy their own appsettings.json into this output folder, and the last one
+    copied wins, so no test may rely on it. The processor's settings are copied under their own name.
+  -->
+  <ItemGroup>
+    <None Include="..\..\src\Touchline.EventProcessor\appsettings.json" Link="Settings\processor.appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

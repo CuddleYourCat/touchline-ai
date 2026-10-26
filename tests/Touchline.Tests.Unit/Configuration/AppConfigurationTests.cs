@@ -302,6 +302,8 @@ public sealed class AppConfigurationTests
     {
         var builder = Microsoft.Azure.Functions.Worker.Builder.FunctionsApplication.CreateBuilder([]);
 
+        // The processor's own appsettings, not whichever project's appsettings.json was copied here last.
+        builder.Configuration.AddJsonFile(Path.Combine(AppContext.BaseDirectory, "Settings", "processor.appsettings.json"), optional: false);
         builder.AddProcessorAppConfiguration();
 
         using var provider = builder.Services.BuildServiceProvider();
