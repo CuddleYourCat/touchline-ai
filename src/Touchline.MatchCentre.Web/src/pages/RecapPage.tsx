@@ -1,25 +1,53 @@
 import { Link, useParams } from 'react-router';
-import type { MatchDetail } from '../live/matchStreamReducer';
-import { useRecap } from '../recap/useRecap';
+import { useMemo } from 'react';
+import type { MatchDetail, MomentView } from '../live/matchStreamReducer';
+import { scorerFullText, scorerLabel, scorersBySide, type Scorer } from '../match/playerFacts';
+import { useGoalMoments, useRecap } from '../recap/useRecap';
 import { useViewer } from '../viewer/viewer';
 import { ViewerSettings } from '../viewer/ViewerSettings';
 
-function FinalScore({ detail }: { detail: MatchDetail }) {
-  const { home, away, score } = detail.summary;
+/** A side's scorers under the result: full names, minutes and (pen), grouped per player. */
+function ScorerList({ name, scorers }: { name: string; scorers: Scorer[] }) {
+  if (scorers.length === 0) return <div />;
   return (
-    <div className="recap-score" aria-label={`Full time, ${home.name} ${score.home}, ${away.name} ${score.away}`}>
-      <span className="scoreboard-team">
-        <img src={home.crestUrl} alt="" width={40} height={40} />
-        <span>{home.name}</span>
-      </span>
-      <span className="scoreboard-score data">
-        {score.home} - {score.away}
-      </span>
-      <span className="scoreboard-team">
-        <img src={away.crestUrl} alt="" width={40} height={40} />
-        <span>{away.name}</span>
-      </span>
-    </div>
+    <ul className="recap-scorers-list" aria-label={`${name} scorers`}>
+      {scorers.map((scorer) => (
+        <li key={scorer.key} aria-label={scorerLabel(scorer)}>
+          {scorerFullText(scorer)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function FinalScore({ detail, moments }: { detail: MatchDetail; moments: MomentView[] }) {
+  const { home, away, score } = detail.summary;
+  const scorers = useMemo(() => {
+    const players = [...detail.homeLineup, ...detail.homeSubstitutes, ...detail.awayLineup, ...detail.awaySubstitutes];
+    return scorersBySide(moments, (playerId) => players.find((p) => p.id === playerId)?.name);
+  }, [detail, moments]);
+  return (
+    <>
+      <div className="recap-score" aria-label={`Full time, ${home.name} ${score.home}, ${away.name} ${score.away}`}>
+        <span className="scoreboard-team">
+          <img src={home.crestUrl} alt="" width={40} height={40} />
+          <span>{home.name}</span>
+        </span>
+        <span className="scoreboard-score data">
+          {score.home} - {score.away}
+        </span>
+        <span className="scoreboard-team">
+          <img src={away.crestUrl} alt="" width={40} height={40} />
+          <span>{away.name}</span>
+        </span>
+      </div>
+      {(scorers.home.length > 0 || scorers.away.length > 0) && (
+        <div className="recap-scorers">
+          <ScorerList name={home.name} scorers={scorers.home} />
+          <ScorerList name={away.name} scorers={scorers.away} />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -28,6 +56,7 @@ export function RecapPage() {
   const { id = '' } = useParams();
   const [viewer, setViewer] = useViewer();
   const { state, retry } = useRecap(id, viewer);
+  const moments = useGoalMoments(id);
   const back = (
     <Link to={`/matches/${encodeURIComponent(id)}`} className="back-link">
       Back to the match
@@ -71,7 +100,7 @@ export function RecapPage() {
       return (
         <div className="recap">
           <section className="panel">
-            <FinalScore detail={state.detail} />
+            <FinalScore detail={state.detail} moments={moments} />
           </section>
           <section className="panel" role="alert">
             <p>The recap isn't available right now. The score above is final.</p>
@@ -95,7 +124,7 @@ export function RecapPage() {
               <span className="pill">Full time</span>
               <span className="tag">{recap.source === 'Template' ? 'Quick recap' : `${recap.mode} recap`}</span>
             </div>
-            <FinalScore detail={detail} />
+            <FinalScore detail={detail} moments={moments} />
             <h1 className="recap-headline">{recap.headline}</h1>
             {paragraphs.map((p, i) => (
               <p key={i} className="recap-text">

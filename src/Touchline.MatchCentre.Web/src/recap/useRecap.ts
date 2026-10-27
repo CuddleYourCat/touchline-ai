@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
-import type { MatchDetail } from '../live/matchStreamReducer';
+import type { MatchDetail, MomentView } from '../live/matchStreamReducer';
 import { viewerQuery, type Viewer } from '../viewer/viewer';
 
 /** The Producer's full-time recap. */
@@ -124,4 +124,31 @@ export function useRecap(matchId: string, viewer: Viewer): { state: RecapState; 
     setAttempt((n) => n + 1);
   }, []);
   return { state, retry };
+}
+
+/**
+ * A finished match's moments, for the recap's scorers. The recap doesn't wait for them and doesn't fail without them: a
+ * failed load leaves the list empty, so the page just shows no scorers. Goals don't depend on the viewer.
+ */
+export function useGoalMoments(matchId: string): MomentView[] {
+  const [loaded, setLoaded] = useState<{ matchId: string; moments: MomentView[] } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      let moments: MomentView[] = [];
+      try {
+        const { data } = await api.GET('/api/matches/{matchId}/moments', { params: { path: { matchId } } });
+        if (Array.isArray(data)) moments = data;
+      } catch {
+        // No scorers is better than no recap.
+      }
+      if (!cancelled) setLoaded({ matchId, moments });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [matchId]);
+
+  return loaded?.matchId === matchId ? loaded.moments : [];
 }

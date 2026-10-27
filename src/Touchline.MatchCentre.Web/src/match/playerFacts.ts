@@ -113,6 +113,12 @@ export function scorerText(scorer: Scorer): string {
   return `${surname(scorer.name)} ${minutes}`;
 }
 
+/** `Reggie Ashworth 45+2', 90+3' (pen)`: the full name and each goal's minute, a penalty marked. */
+export function scorerFullText(scorer: Scorer): string {
+  const minutes = scorer.goals.map((g) => (g.penalty ? `${g.minute} (pen)` : g.minute)).join(', ');
+  return `${scorer.name} ${minutes}`;
+}
+
 /** The same with the full name, for a screen reader. */
 export function scorerLabel(scorer: Scorer): string {
   const minutes = scorer.goals.map((g) => (g.penalty ? `${g.minute} penalty` : g.minute)).join(', ');

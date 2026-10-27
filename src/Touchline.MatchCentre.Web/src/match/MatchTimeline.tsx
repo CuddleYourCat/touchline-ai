@@ -46,9 +46,14 @@ function layoutOf(clock: Clock, replayClock: Clock | null | undefined, moments: 
 /** The clock for a whole-minute slider value: values before the half-time divider are first half. */
 function clockAt(value: number, firstHalfEnd: number): { period: Clock['period']; minute: number } {
   return value < firstHalfEnd
-    ? { period: 'FirstHalf', minute: value }
-    : { period: 'SecondHalf', minute: 45 + (value - firstHalfEnd) };
+    ? { period: 'FirstHalf', minute: clamp(value, 0, maxFirstHalfMinute) }
+    : { period: 'SecondHalf', minute: clamp(45 + (value - firstHalfEnd), 45, maxSecondHalfMinute) };
 }
+
+/** The ranges the server accepts for `fromMinute`: first half 0 to 59, second half 45 to 120. */
+const maxFirstHalfMinute = 59;
+const maxSecondHalfMinute = 120;
+const clamp = (n: number, low: number, high: number) => Math.min(Math.max(n, low), high);
 
 /** Puts each icon in the first lane that has room, working along the bar. Lane 0 is nearest the bar. */
 function assignLanes<T extends { percent: number }>(items: T[], minGapPercent: number): Array<T & { lane: number }> {
@@ -122,31 +127,65 @@ export function MatchTimeline({
 
   const maxValue = Math.floor(live);
   const replayValue = replayClock ? Math.min(Math.floor(position(replayClock)), maxValue) : maxValue;
-  const [draft, setDraft] = useState<number | null>(null);
+  const [draft, setDraftState] = useState<number | null>(null);
+  // The draft is also kept in a ref, so a release handler never reads a stale one.
+  const draftRef = useRef<number | null>(null);
+  const setDraft = (next: number | null) => {
+    draftRef.current = next;
+    setDraftState(next);
+  };
+  const sliderRef = useRef<HTMLInputElement>(null);
   const value = Math.min(draft ?? replayValue, maxValue);
   const minuteText = (v: number) => footballMinute({ ...clockAt(v, firstHalfEnd), second: 0, display: '' });
 
+  // One release can raise pointerup, mouseup, touchend and the native change event. The first one seeks; the rest find
+  // nothing armed. A new press, a change or a key arms it again.
+  const armedRef = useRef(false);
   const commit = () => {
-    if (draft !== null) {
-      onSeek(clockAt(Math.min(draft, maxValue), firstHalfEnd));
-      setDraft(null);
+    if (!armedRef.current) {
+      return;
     }
+    armedRef.current = false;
+    const picked = draftRef.current ?? Number(sliderRef.current?.value ?? replayValue);
+    if (draftRef.current === null && (!Number.isFinite(picked) || picked === replayValue)) {
+      return;
+    }
+    onSeek(clockAt(Math.min(picked, maxValue), firstHalfEnd));
+    setDraft(null);
   };
+  // The native change event fires when a range input is released, even where pointerup doesn't arrive (touch drags the
+  // browser takes over, pointer capture). React's onChange is the input event, so this one is added directly.
+  const commitRef = useRef(commit);
+  useEffect(() => {
+    commitRef.current = commit;
+  });
+  useEffect(() => {
+    const el = sliderRef.current;
+    if (!el) {
+      return;
+    }
+    const onNativeChange = () => commitRef.current();
+    el.addEventListener('change', onNativeChange);
+    return () => el.removeEventListener('change', onNativeChange);
+  }, []);
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     const steps: Record<string, number> = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 };
     const step = steps[event.key];
     if (step !== undefined) {
       event.preventDefault();
+      armedRef.current = true;
       setDraft(Math.min(Math.max(value + step, 0), maxValue));
     } else if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault();
+      armedRef.current = true;
       setDraft(event.key === 'Home' ? 0 : maxValue);
     } else if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      if (draft === null) {
+      if (draftRef.current === null) {
         onSeek(clockAt(value, firstHalfEnd));
       } else {
+        armedRef.current = true;
         commit();
       }
     }
@@ -207,6 +246,7 @@ export function MatchTimeline({
           )}
           <input
             className="timeline-slider"
+            ref={sliderRef}
             type="range"
             aria-label="Replay from minute"
             aria-describedby={hintId}
@@ -216,10 +256,27 @@ export function MatchTimeline({
             step={1}
             value={value}
             style={{ width: `${sliderPercent}%` }}
-            onChange={(e) => setDraft(Math.min(Number(e.target.value), maxValue))}
+            onChange={(e) => {
+              armedRef.current = true;
+              setDraft(Math.min(Number(e.target.value), maxValue));
+            }}
+            onPointerDown={() => {
+              armedRef.current = true;
+            }}
             onPointerUp={commit}
+            onMouseDown={() => {
+              armedRef.current = true;
+            }}
+            onMouseUp={commit}
+            onTouchStart={() => {
+              armedRef.current = true;
+            }}
+            onTouchEnd={commit}
             onKeyDown={onKeyDown}
-            onBlur={() => setDraft(null)}
+            onBlur={() => {
+              armedRef.current = false;
+              setDraft(null);
+            }}
           />
           {draft !== null && (
             <output

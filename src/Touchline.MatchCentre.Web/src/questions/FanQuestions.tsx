@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react';
 import type { Viewer } from '../viewer/viewer';
 import { askQuestion, citedMoment, maxQuestionLength, momentAnchor, type AskResult, type Citation } from './askQuestion';
 import './FanQuestions.css';
@@ -106,6 +106,41 @@ function ExchangeItem({
  * triggered one, jumps to it on the timeline. A 503 or a dropped connection gives a friendly message, and the rest of
  * the match carries on. Focus goes into the box on open and back to the pill on close; Escape closes. A citation jump closes it too, so it never covers the moment it points at.
  */
+const desktopQuery = '(min-width: 960px)';
+
+/**
+ * On desktop the open panel docks over the match page's Moments column: its box, or null when the column isn't there
+ * (the CSS then docks it to the right edge) or on a phone, where the panel stays near full width.
+ */
+function useDock(open: boolean): { docked: boolean; style: CSSProperties | undefined } {
+  const [dock, setDock] = useState<{ docked: boolean; style: CSSProperties | undefined }>({ docked: false, style: undefined });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      if (typeof window.matchMedia !== 'function' || !window.matchMedia(desktopQuery).matches) {
+        setDock({ docked: false, style: undefined });
+        return;
+      }
+      const rect = document.querySelector('.match-moments')?.getBoundingClientRect();
+      setDock({
+        docked: true,
+        style: rect
+          ? ({
+              '--dock-top': `${rect.top}px`,
+              '--dock-left': `${rect.left}px`,
+              '--dock-width': `${rect.width}px`,
+              '--dock-height': `${rect.height}px`,
+            } as CSSProperties)
+          : undefined,
+      });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [open]);
+  return open ? dock : { docked: false, style: undefined };
+}
+
 export function FanQuestions({ matchId, viewer, momentIds }: { matchId: string; viewer: Viewer; momentIds: ReadonlySet<string> }) {
   const [open, setOpen] = useState(false);
   // An answer that lands while the panel is closed: a dot on the pill and a polite announcement.
@@ -118,6 +153,7 @@ export function FanQuestions({ matchId, viewer, momentIds }: { matchId: string; 
   const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatRef = useRef<HTMLOListElement>(null);
+  const dock = useDock(open);
   const counterId = useId();
   const panelId = `${counterId}-panel`;
 
@@ -181,11 +217,11 @@ export function FanQuestions({ matchId, viewer, momentIds }: { matchId: string; 
   };
 
   return (
-    <div className="analyst" onKeyDown={onKeyDown}>
+    <div className={dock.docked ? 'analyst analyst-docked' : 'analyst'} onKeyDown={onKeyDown}>
       <div className="visually-hidden" role="status" aria-label="Analyst announcements">
         {unread ? 'The Analyst has answered' : ''}
       </div>
-      <section id={panelId} className="analyst-panel" role="dialog" aria-label="Ask the Analyst" hidden={!open}>
+      <section id={panelId} className="analyst-panel" style={dock.style} role="dialog" aria-label="Ask the Analyst" hidden={!open}>
         <header className="analyst-header">
           <h2>Ask the Analyst</h2>
           <button type="button" className="analyst-close" aria-label="Close" onClick={close}>

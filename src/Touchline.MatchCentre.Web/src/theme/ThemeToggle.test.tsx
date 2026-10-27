@@ -20,17 +20,24 @@ describe('ThemeToggle', () => {
     render(<ThemeToggle />);
 
     expect(document.documentElement.dataset.theme).toBe('dark');
-    expect(screen.getByRole('button', { name: 'Switch to light theme' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Theme' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Light theme' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByText('Theme')).toBeInTheDocument();
   });
 
   it('switches to light, sets data-theme on html and remembers the choice', async () => {
     render(<ThemeToggle />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Light theme' }));
 
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(localStorage.getItem(themeStorageKey)).toBe('light');
-    expect(screen.getByRole('button', { name: 'Switch to dark theme' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Light theme' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'false');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Dark theme' }));
+    expect(document.documentElement.dataset.theme).toBe('dark');
   });
 
   it('restores a saved light theme', () => {
@@ -39,6 +46,7 @@ describe('ThemeToggle', () => {
     render(<ThemeToggle />);
 
     expect(document.documentElement.dataset.theme).toBe('light');
+    expect(screen.getByRole('button', { name: 'Light theme' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('still toggles when storage throws', async () => {
@@ -50,7 +58,7 @@ describe('ThemeToggle', () => {
     });
 
     render(<ThemeToggle />);
-    await userEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Light theme' }));
 
     expect(document.documentElement.dataset.theme).toBe('light');
   });

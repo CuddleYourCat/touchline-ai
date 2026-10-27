@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
@@ -56,8 +56,11 @@ const status = (code: number) => ({ data: undefined, error: { detail: 'secret st
 /** Stubs the detail and gives each recap call the next response, the last one repeating. */
 function stubRecaps(...recaps: unknown[]) {
   let call = 0;
-  return vi.spyOn(api, 'GET').mockImplementation(((path: string) =>
-    Promise.resolve(path === '/api/matches/{matchId}' ? ok(detail()) : recaps[Math.min(call++, recaps.length - 1)])) as never);
+  return vi.spyOn(api, 'GET').mockImplementation(((path: string) => {
+    if (path === '/api/matches/{matchId}') return Promise.resolve(ok(detail()));
+    if (path === '/api/matches/{matchId}/moments') return Promise.resolve(ok([]));
+    return Promise.resolve(recaps[Math.min(call++, recaps.length - 1)]);
+  }) as never);
 }
 
 function recapCalls(get: ReturnType<typeof stubRecaps>) {
@@ -88,6 +91,72 @@ describe('RecapPage', () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     localStorage.clear();
+  });
+
+  describe('scorers', () => {
+    const withPlayers = () =>
+      ({
+        ...detail(),
+        homeLineup: [{ id: 'h9', name: 'Kofi Marlow', shirtNumber: 9 }],
+        awaySubstitutes: [{ id: 'a7', name: 'Ana Torres', shirtNumber: 7 }],
+      }) as unknown as MatchDetail;
+    const goal = (sequence: number, playerId: string, minute: number, team: 'Home' | 'Away', reason = 'a goal') => ({
+      id: `m1:${sequence}`,
+      tier: 'Key',
+      kind: 'Goal',
+      sequence,
+      clock: { period: minute < 45 ? 'FirstHalf' : 'SecondHalf', minute, second: 0, display: `${minute}:00` },
+      team,
+      playerId,
+      reason,
+      commentary: null,
+    });
+
+    function stubGoals(moments: unknown) {
+      return vi.spyOn(api, 'GET').mockImplementation(((path: string) => {
+        if (path === '/api/matches/{matchId}') return Promise.resolve(ok(withPlayers()));
+        if (path === '/api/matches/{matchId}/moments') return moments instanceof Error ? Promise.reject(moments) : Promise.resolve(moments);
+        return Promise.resolve(ok(model));
+      }) as never);
+    }
+
+    it('lists each side’s scorers under the result with full names, minutes and penalties, grouped per player', async () => {
+      stubGoals(
+        ok([
+          goal(1, 'h9', 44, 'Home'),
+          goal(2, 'h9', 92, 'Home', 'from the penalty spot'),
+          goal(3, 'a7', 60, 'Away'),
+        ]),
+      );
+
+      renderPage();
+      await flush();
+
+      const home = screen.getByRole('list', { name: 'Harbourside Rovers scorers' });
+      expect(within(home).getByRole('listitem')).toHaveTextContent("Kofi Marlow 45', 90+3' (pen)");
+      const away = screen.getByRole('list', { name: 'Millbrook Athletic scorers' });
+      expect(within(away).getByRole('listitem')).toHaveTextContent("Ana Torres 61'");
+    });
+
+    it('shows the recap without scorers when the moments cannot be loaded', async () => {
+      stubGoals(status(503));
+
+      renderPage();
+      await flush();
+
+      expect(screen.getByRole('heading', { name: model.headline })).toBeInTheDocument();
+      expect(screen.queryByRole('list', { name: /scorers$/ })).not.toBeInTheDocument();
+    });
+
+    it('shows the recap without scorers when the moments request throws', async () => {
+      stubGoals(new Error('offline'));
+
+      renderPage();
+      await flush();
+
+      expect(screen.getByRole('heading', { name: model.headline })).toBeInTheDocument();
+      expect(screen.queryByRole('list', { name: /scorers$/ })).not.toBeInTheDocument();
+    });
   });
 
   it('has no grey-pitch option, as the recap has no pitch', async () => {

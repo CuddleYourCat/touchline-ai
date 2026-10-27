@@ -286,6 +286,42 @@ describe('useMatchReplay', () => {
     expect(sequenceOf(result.current)).toBe(62);
   });
 
+  it('exposes halfTime during the half-time pause, whether or not the replayed states carry it', () => {
+    const { result } = replayOf(liveAt());
+    act(() => result.current.start({ period: 'FirstHalf', minute: 47 }));
+    const source = FakeEventSource.latest();
+
+    emitEvent(source, event(60, 'FirstHalf', 47, 0));
+    emitEvent(source, event(61, 'FirstHalf', 47, 10, 'PeriodEnd'));
+    emitEvent(source, event(62, 'SecondHalf', 45, 0, 'KickOff'));
+    advance(0);
+    expect(sequenceOf(result.current)).toBe(60);
+    expect(result.current.match?.state.halfTime).toBeFalsy();
+
+    advance(1000);
+    expect(sequenceOf(result.current)).toBe(61);
+    expect(result.current.match?.state.halfTime).toBe(true);
+    advance(60_000);
+    expect(result.current.match?.state.halfTime).toBe(true);
+
+    advance(30_000);
+    expect(sequenceOf(result.current)).toBe(62);
+    expect(result.current.match?.state.halfTime).toBeFalsy();
+  });
+
+  it('keeps halfTime when a state with the flag arrives after the pause has begun', () => {
+    const { result } = replayOf(liveAt());
+    act(() => result.current.start({ period: 'FirstHalf', minute: 47 }));
+    const source = FakeEventSource.latest();
+
+    act(() => source.emit('event', event(61, 'FirstHalf', 47, 10, 'PeriodEnd'), 61));
+    advance(0);
+    act(() => source.emit('state', state(61, clock('FirstHalf', 47, 10), { halfTime: true }), 61));
+    advance(0);
+
+    expect(result.current.match?.state.halfTime).toBe(true);
+  });
+
   it('goes back to idle and closes its stream when the playhead reaches the live edge', () => {
     const { result } = replayOf(liveAt(31, clock('FirstHalf', 30, 20)));
     act(() => result.current.start({ sequence: 30 }));

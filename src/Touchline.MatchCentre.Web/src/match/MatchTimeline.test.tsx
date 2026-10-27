@@ -112,6 +112,61 @@ describe('MatchTimeline', () => {
     expect(onSeek).toHaveBeenCalledWith({ period: 'SecondHalf', minute: 65 });
   });
 
+  it('starts one replay when a drag is released, however many release events the browser raises', () => {
+    const { onSeek } = renderTimeline({ clock: clockOf(67) });
+    const slider = screen.getByRole('slider');
+
+    fireEvent.change(slider, { target: { value: '20' } });
+    fireEvent.pointerUp(slider);
+    fireEvent.mouseUp(slider);
+    fireEvent.touchEnd(slider);
+    slider.dispatchEvent(new Event('change'));
+
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    expect(onSeek).toHaveBeenCalledWith({ period: 'FirstHalf', minute: 20 });
+  });
+
+  it('starts the replay from the native change event when pointerup never arrives', () => {
+    const { onSeek } = renderTimeline({ clock: clockOf(67) });
+    const slider = screen.getByRole('slider');
+
+    fireEvent.change(slider, { target: { value: '50' } });
+    slider.dispatchEvent(new Event('change'));
+
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    expect(onSeek).toHaveBeenCalledWith({ period: 'SecondHalf', minute: 50 });
+  });
+
+  it('replays from a point on a finished match, and not from the end it already shows', () => {
+    const { onSeek } = renderTimeline({ clock: clockOf(94), fullTime: true });
+    const slider = screen.getByRole('slider');
+
+    // A press and release without moving the thumb has nothing to replay.
+    fireEvent.pointerDown(slider);
+    fireEvent.pointerUp(slider);
+    expect(onSeek).not.toHaveBeenCalled();
+
+    fireEvent.change(slider, { target: { value: '30' } });
+    fireEvent.pointerUp(slider);
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    expect(onSeek).toHaveBeenCalledWith({ period: 'FirstHalf', minute: 30 });
+  });
+
+  it('keeps the minutes it sends inside the ranges the server accepts', () => {
+    const late = { ...moment(1, 'Goal', 70), clock: { period: 'FirstHalf', minute: 70, second: 0, display: '70:00' } };
+    const { onSeek } = renderTimeline({ clock: clockOf(130), moments: [late as MomentView] });
+    const slider = screen.getByRole('slider');
+
+    fireEvent.keyDown(slider, { key: 'Home' });
+    fireEvent.keyDown(slider, { key: 'Enter' });
+    expect(onSeek).toHaveBeenLastCalledWith({ period: 'FirstHalf', minute: 0 });
+    fireEvent.keyDown(slider, { key: 'End' });
+    fireEvent.keyDown(slider, { key: 'Enter' });
+    const { period, minute } = onSeek.mock.calls.at(-1)![0];
+    expect(period).toBe('SecondHalf');
+    expect(minute).toBeLessThanOrEqual(120);
+  });
+
   it('discards a half-made choice on blur without seeking', () => {
     const { onSeek } = renderTimeline();
     const slider = screen.getByRole('slider');

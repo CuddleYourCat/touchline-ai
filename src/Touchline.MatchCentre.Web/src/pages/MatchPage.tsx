@@ -60,7 +60,7 @@ function KitKey({ side, name, kit }: { side: 'home' | 'away'; name: string; kit:
 }
 
 /**
- * A side's scorers under its name, like a TV scoreboard: `Ashworth 45+2', 90+3' (pen)`. The surname keeps it compact and
+ * A side's scorers beside the score, like a TV score bug: `Ashworth 45+2', 90+3' (pen)`. The surname keeps it compact and
  * the CSS clips it to two lines; each entry carries the full name for a screen reader.
  */
 function Scorers({ name, scorers }: { name: string; scorers: Scorer[] }) {
@@ -100,6 +100,7 @@ function Scoreboard({ match, replay, homeKit, awayKit, scorers, children }: Scor
         : waiting
           ? 'Kick-off in a moment'
           : `Live, ${clockLabel(clock)}`;
+  const hasScorers = scorers.home.length > 0 || scorers.away.length > 0;
   const label = `${status}, ${home.name} ${score.home}, ${away.name} ${score.away}`;
 
   return (
@@ -110,7 +111,6 @@ function Scoreboard({ match, replay, homeKit, awayKit, scorers, children }: Scor
           <KitKey side="home" name={home.name} kit={homeKit} />
           <span className="scoreboard-name">
             <span>{home.name}</span>
-            <Scorers name={home.name} scorers={scorers.home} />
           </span>
         </span>
         <div className="scoreboard-centre">
@@ -128,16 +128,23 @@ function Scoreboard({ match, replay, homeKit, awayKit, scorers, children }: Scor
             )}
             <span className="match-clock data">{clockText(match)}</span>
           </div>
-          <span className="scoreboard-score data">
-            {score.home} - {score.away}
-          </span>
+          <div className={hasScorers ? 'scoreboard-scoreline scoreboard-scoreline-scorers' : 'scoreboard-scoreline'}>
+            <div className="scoreboard-side scoreboard-side-home">
+              <Scorers name={home.name} scorers={scorers.home} />
+            </div>
+            <span className="scoreboard-score data">
+              {score.home} - {score.away}
+            </span>
+            <div className="scoreboard-side scoreboard-side-away">
+              <Scorers name={away.name} scorers={scorers.away} />
+            </div>
+          </div>
         </div>
         <span className="scoreboard-team scoreboard-team-away">
           <img src={away.crestUrl} alt={`${away.name} crest`} width={52} height={52} />
           <KitKey side="away" name={away.name} kit={awayKit} />
           <span className="scoreboard-name">
             <span>{away.name}</span>
-            <Scorers name={away.name} scorers={scorers.away} />
           </span>
         </span>
         <div className="scoreboard-tools">{children}</div>
@@ -177,7 +184,6 @@ const MomentItem = memo(function MomentItem({ moment, line, analysis, viewerMode
             )}
             {kindLabel(moment.kind)}
           </span>
-          {line?.source === 'Template' && <span className="tag">Template</span>}
           {otherMode && <span className="tag">{line.mode === 'Analyst' ? 'Analyst view' : 'Casual view'}</span>}
         </div>
         <p className="moment-text">{stripClockPrefix(line ? line.text : moment.reason)}</p>
@@ -185,7 +191,7 @@ const MomentItem = memo(function MomentItem({ moment, line, analysis, viewerMode
       </div>
       <button
         type="button"
-        className="moment-replay"
+        className={moment.tier === 'Key' ? 'moment-replay moment-replay-key' : 'moment-replay'}
         aria-label={`Replay from ${minute}, ${kindLabel(moment.kind)}`}
         onClick={() => onReplay(moment.sequence)}
       >
@@ -423,7 +429,7 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
           </button>
         </div>
       )}
-      <div className="match-layout">
+      <div className={shown.momentum.length > 0 ? 'match-layout' : 'match-layout match-layout-no-momentum'}>
         <div className="match-stage">
           <Pitch
             shape={shown.shape}
@@ -467,9 +473,11 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
             onSeek={start}
           />
         </div>
-        <div className="match-momentum">
-          <MomentumBars readings={shown.momentum} homeName={homeName} awayName={awayName} />
-        </div>
+        {shown.momentum.length > 0 && (
+          <div className="match-momentum">
+            <MomentumBars readings={shown.momentum} homeName={homeName} awayName={awayName} />
+          </div>
+        )}
         <MomentsList match={shown} viewerMode={viewer.mode} onReplay={replayFromSequence} />
       </div>
       {lineupsOpen && (

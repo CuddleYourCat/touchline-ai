@@ -299,7 +299,7 @@ describe('MatchPage', () => {
     renderPage();
 
     expect(await screen.findByText('Template text')).toBeInTheDocument();
-    expect(screen.getByText('Template')).toBeInTheDocument();
+    expect(screen.queryByText('Template')).not.toBeInTheDocument();
 
     const source = FakeEventSource.latest();
     act(() => source.emit('commentary', line(30, 'Model', 'Model text', 'Analyst')));
@@ -541,12 +541,10 @@ describe('MatchPage', () => {
     renderPage();
     const scoreboard = await screen.findByRole('region', { name: /^Live/ });
     const pitch = screen.getByRole('region', { name: 'Pitch' });
-    const momentum = screen.getByRole('region', { name: 'Momentum' });
     const moments = screen.getByRole('region', { name: 'Moments' });
-    const order = [scoreboard, pitch, screen.getByRole('region', { name: 'Match timeline' }), momentum, moments];
-    order.slice(1).forEach((el, i) => {
-      expect(order[i]!.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    });
+    // No readings yet: no momentum panel, not even an empty one.
+    expect(screen.queryByRole('region', { name: 'Momentum' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No momentum readings yet.')).not.toBeInTheDocument();
     expect(within(pitch).getByText('Modelled positions, not tracking data')).toBeInTheDocument();
     expect(within(pitch).queryAllByTestId('player-dot')).toHaveLength(0);
     // The line-ups live in a drawer and the chat in a flyout, so neither takes room on the page until opened.
@@ -572,12 +570,30 @@ describe('MatchPage', () => {
       source.emit('momentum', { period: 'FirstHalf', fromMinute: 10, toMinute: 15, value: 0.4 });
     });
 
+    const momentum = screen.getByRole('region', { name: 'Momentum' });
+    const order = [scoreboard, pitch, screen.getByRole('region', { name: 'Match timeline' }), momentum, moments];
+    order.slice(1).forEach((el, i) => {
+      expect(order[i]!.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
     expect(within(pitch).getAllByTestId('player-dot')).toHaveLength(22);
     expect(within(pitch).getByTestId('ball-path')).toHaveAttribute('d', 'M 30 48 L 40 48');
     expect(within(momentum).getAllByTestId('momentum-bar')).toHaveLength(1);
 
     act(() => source.emit('shape', { sequence: 40, positions: positions.map((p) => ({ ...p, x: 0 })) }));
     expect(within(pitch).getAllByTestId('player-dot')[0]!.style.transform).toBe('translate(10px, 34px)');
+  });
+
+  it('gives the Replay button of a key moment the accent style and leaves the others alone', async () => {
+    stubApi(found(detail()), [moment(30, { tier: 'Key' }), moment(31, { tier: 'Notable' })]);
+    renderPage();
+    await screen.findByText('Reason 30');
+
+    const buttons = screen.getAllByRole('button', { name: /^Replay from/ });
+    expect(buttons).toHaveLength(2);
+    // The list may run newest first, so find each button through its own card.
+    const keyed = (reason: string) => within(screen.getByText(reason).closest('li')!).getByRole('button', { name: /^Replay from/ });
+    expect(keyed('Reason 30')).toHaveClass('moment-replay-key');
+    expect(keyed('Reason 31')).not.toHaveClass('moment-replay-key');
   });
 
   it('does not re-render the pitch for a commentary line', async () => {
@@ -916,6 +932,30 @@ describe('MatchPage panels, replay and overlays', () => {
     expect(screen.queryByTestId('replay-badge')).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Replay announcements' })).toHaveTextContent('Back to live');
     expect(live.closed).toBe(false);
+  });
+
+  it('shows the half-time card while a replay holds at the end of the first half', async () => {
+    stubApi(found(detail()), [moment(30)]);
+    renderPage();
+    await screen.findByText('Reason 30');
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Replay from 11', Big chance/ }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    const replay = FakeEventSource.latest();
+    expect(screen.queryByRole('region', { name: 'Half-time stats' })).not.toBeInTheDocument();
+
+    // The replayed state doesn't carry halfTime: the replay works it out from the first half's PeriodEnd.
+    const end = { period: 'FirstHalf', minute: 45, second: 0, display: '45:00' };
+    act(() => {
+      replay.emit(
+        'event',
+        { sequence: 29, matchId: 'm1', possessionId: 1, time: { period: 'FirstHalf', clock: '00:45:00' }, type: 'PeriodEnd', team: 'Home', start: { x: 50, y: 34 }, end: { x: 50, y: 34 } },
+        29,
+      );
+      replay.emit('state', liveState({ lastSequence: 29, clock: end, home: stats, away: stats } as Partial<LiveState>), 29);
+    });
+
+    const card = await screen.findByRole('region', { name: 'Half-time stats' });
+    expect(within(card).getByText('Replay')).toBeInTheDocument();
   });
 
   it('puts a REPLAY badge over the pitch while a replay is on', async () => {

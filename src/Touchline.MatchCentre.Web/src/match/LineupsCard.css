@@ -55,7 +55,7 @@
 
 .lineups-row {
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
   grid-template-areas:
     'num name pos'
     'num facts facts';
@@ -77,6 +77,7 @@
 
 .lineups-number {
   grid-area: num;
+  font-variant-numeric: tabular-nums;
   font-family: var(--font-data);
   font-size: 0.85rem;
   text-align: right;

@@ -71,6 +71,32 @@ describe('FanQuestions', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('docks over the Moments column on desktop, and stays a floating panel on a phone', async () => {
+    const column = document.createElement('div');
+    column.className = 'match-moments';
+    column.getBoundingClientRect = () => ({ top: 90, left: 900, width: 340, height: 600 }) as DOMRect;
+    document.body.append(column);
+    const desktop = (matches: boolean) => vi.stubGlobal('matchMedia', (query: string) => ({ matches, media: query }));
+
+    desktop(true);
+    const { unmount } = renderBox();
+    await openChat();
+    const panel = screen.getByRole('dialog', { name: 'Ask the Analyst' });
+    expect(panel.closest('.analyst')).toHaveClass('analyst-docked');
+    expect(panel.style.getPropertyValue('--dock-left')).toBe('900px');
+    expect(panel.style.getPropertyValue('--dock-width')).toBe('340px');
+    expect(panel.style.getPropertyValue('--dock-height')).toBe('600px');
+    unmount();
+
+    desktop(false);
+    renderBox();
+    await openChat();
+    expect(screen.getByRole('dialog', { name: 'Ask the Analyst' }).closest('.analyst')).not.toHaveClass('analyst-docked');
+
+    column.remove();
+    vi.unstubAllGlobals();
+  });
+
   it('closes on Escape and on its close button, and hands focus back to the pill', async () => {
     renderBox();
     const pill = screen.getByRole('button', { name: 'Ask the Analyst' });

@@ -243,6 +243,51 @@
   color: var(--bg);
 }
 
+/*
+ * On desktop the open panel is a slide-over that covers the Moments column completely: FanQuestions.tsx measures the
+ * column and sets --dock-*. Without the column it docks to the right edge. It blurs and dims what is behind it, and the
+ * pill hides while it is open (the panel has its own close button).
+ */
+@media (min-width: 960px) {
+  .analyst-docked .analyst-panel {
+    position: fixed;
+    top: var(--dock-top, 0);
+    left: var(--dock-left, auto);
+    right: var(--dock-right, 0);
+    width: var(--dock-width, 360px);
+    height: var(--dock-height, 100dvh);
+    border-radius: var(--radius-lg);
+    box-shadow:
+      -16px 0 32px rgb(0 0 0 / 0.45),
+      var(--shadow-glow);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    animation: analyst-slide-in 200ms ease-out both;
+  }
+
+  .analyst-docked .analyst-launcher {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+@keyframes analyst-slide-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analyst-docked .analyst-panel {
+    animation: none;
+  }
+}
+
 @media (max-width: 599px) {
   .analyst {
     right: 12px;

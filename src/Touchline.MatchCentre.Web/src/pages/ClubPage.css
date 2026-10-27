@@ -101,7 +101,7 @@
 
 .club-row {
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 8px;
   padding: 3px 4px;
@@ -115,6 +115,7 @@
 }
 
 .club-number {
+  font-variant-numeric: tabular-nums;
   font-family: var(--font-data);
   font-size: 0.85rem;
   text-align: right;

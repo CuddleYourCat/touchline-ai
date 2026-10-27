@@ -91,18 +91,31 @@
   pointer-events: none;
 }
 
-/* A side's scorers under its name: small, at most two lines, the rest clipped (the full list is in the aria-label). */
-.scoreboard-name {
-  display: flex;
-  flex-direction: column;
+/*
+ * A side's scorers beside the score, like a TV score bug: home's right-aligned against the digits, away's left-aligned.
+ * Each is a fixed-width column (so the score stays centred), one short line per scorer, three at most; the rest is
+ * clipped (the full list is in the aria-label). On a phone they drop below the score, side by side.
+ */
+.scoreboard-scoreline {
+  display: grid;
+  grid-template-columns: auto;
+  align-items: center;
+  justify-items: center;
+  column-gap: 10px;
+}
+
+.scoreboard-scoreline-scorers {
+  grid-template-columns: minmax(0, 9.5rem) auto minmax(0, 9.5rem);
+}
+
+.scoreboard-side {
   min-width: 0;
+  width: 100%;
 }
 
 .scoreboard-scorers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 0.9em;
-  max-height: 2.5em;
+  display: block;
+  max-height: 3.75em;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -114,18 +127,38 @@
   opacity: 0.9;
 }
 
-.scoreboard-team-away .scoreboard-scorers {
-  justify-content: flex-end;
+.scoreboard-scorers li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scoreboard-side-home .scoreboard-scorers {
+  text-align: right;
+}
+
+.scoreboard-side-away .scoreboard-scorers {
+  text-align: left;
 }
 
 @media (max-width: 599px) {
-  .scoreboard-name {
-    align-items: center;
+  .scoreboard-scoreline-scorers {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    row-gap: 2px;
   }
 
-  .scoreboard-scorers,
-  .scoreboard-team-away .scoreboard-scorers {
-    justify-content: center;
+  .scoreboard-scoreline-scorers .scoreboard-score {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .scoreboard-scoreline-scorers .scoreboard-side {
+    grid-row: 2;
+  }
+
+  .scoreboard-side-home .scoreboard-scorers,
+  .scoreboard-side-away .scoreboard-scorers {
+    text-align: center;
   }
 }
 
@@ -211,6 +244,18 @@
 .moment-replay:hover,
 .moment-replay:focus-visible {
   background: var(--highlight);
+  color: var(--on-accent);
+}
+
+/* Key moments (goals, red cards, penalties) get the accent colour; the rest keep the cyan. */
+.moment-replay-key {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.moment-replay-key:hover,
+.moment-replay-key:focus-visible {
+  background: var(--accent);
   color: var(--on-accent);
 }
 
@@ -347,6 +392,14 @@
 
   .match-momentum {
     grid-area: momentum;
+  }
+
+  /* No momentum readings yet: the strip isn't drawn, so its row goes too. */
+  .match-layout-no-momentum {
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'stage moments'
+      'timeline moments';
   }
 
   .match-layout .match-tray {

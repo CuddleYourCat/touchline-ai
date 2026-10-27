@@ -199,6 +199,21 @@ export function useMatchReplay(
       let playedAt = 0;
       let previous: Frame | null = null;
       const queue: Frame[] = [];
+      // True from the first half's PeriodEnd until the second half's first event. The replay tracks it itself, so the
+      // half-time card shows whether or not the server's replayed states carry the flag (ADR-066).
+      let inHalfTime = false;
+
+      const apply = (to: LiveMatch, message: StreamMessage): LiveMatch => {
+        if (message.type === 'event') {
+          if (message.data.type === 'PeriodEnd' && message.data.time.period === 'FirstHalf') inHalfTime = true;
+          else if (message.data.time.period === 'SecondHalf') inHalfTime = false;
+        }
+        const applied = applyMessage(to, message);
+        if (message.type === 'state' && inHalfTime && !applied.state.halfTime) {
+          return { ...applied, state: { ...applied.state, halfTime: true } };
+        }
+        return applied;
+      };
 
       const stop = () => {
         stopped = true;
@@ -234,7 +249,7 @@ export function useMatchReplay(
         }
         previous = frame;
         playedAt = Date.now();
-        if (!show(frame.messages.reduce(applyMessage, match))) schedule();
+        if (!show(frame.messages.reduce(apply, match))) schedule();
       };
 
       // Shows the replay's match, or ends the replay when it has reached the live edge or full time. True when ended.
@@ -277,7 +292,7 @@ export function useMatchReplay(
         } else if (last) {
           last.messages.push(message);
         } else if (match) {
-          if (show(applyMessage(match, message))) return;
+          if (show(apply(match, message))) return;
         } else {
           queue.push({ messages: [message], event: null });
         }
