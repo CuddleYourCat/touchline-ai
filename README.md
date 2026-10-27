@@ -197,3 +197,8 @@ The live stream is described in the OpenAPI document's `/api/matches/{matchId}/s
 
 - **Auto-eventing from video** (the brief's stretch goal) was not attempted. No footage was supplied, and the project has no match footage it has the rights to use.
 - **Offside and VAR** are not modelled. Offside needs every player's exact position, and the engine tracks only the ball (ADR-022). The shape model's positions are modelled, not tracked, so the UI doesn't present them as tracking data (ADR-035).
+- **Favourite club and player focus** don't shape the output. The API accepts `team` and `player` on viewer requests and validates them, but nothing uses them yet, so the web app offers only the viewing mode and the language (ADR-071). A favourite metric of `xG` adds the expected-goals line to overlay cards.
+
+## Licence
+
+[MIT](LICENSE). All clubs, players and match data in this repository are fictional and synthetic.
