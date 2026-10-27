@@ -513,6 +513,8 @@ export interface components {
             dataSource: string;
             /** @description Whether a fan can start a match now: the `FanMatches` flag is on and the launcher can start matches (ADR-072). When false the kick-off page shows Coming Soon. */
             fanMatches: boolean;
+            /** @description Whether fans can ask the Analyst now: the `FanQa` flag is on. When false the match page hides Ask the Analyst. */
+            fanQa: boolean;
         };
         /** @description The players a team names for one match (ADR-032): a starting eleven and its substitutes. */
         MatchdaySheet: {

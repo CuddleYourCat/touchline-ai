@@ -15,6 +15,7 @@ import { parseKit, tokenColours, type Kit } from '../pitch/kitColours';
 import { Pitch } from '../pitch/Pitch';
 import { momentAnchor } from '../questions/askQuestion';
 import { FanQuestions } from '../questions/FanQuestions';
+import { useFanQa } from '../questions/useFanQa';
 import { useTeamDetail } from '../teams/useTeams';
 import { useViewer } from '../viewer/viewer';
 import { ViewerSettings } from '../viewer/ViewerSettings';
@@ -393,6 +394,7 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = selectedId ? allPlayers.find(({ p }) => p.id === selectedId) : undefined;
   const [lineupsOpen, setLineupsOpen] = useState(false);
+  const fanQa = useFanQa();
   const lineupsId = `${useId()}-lineups`;
 
   return (
@@ -493,8 +495,9 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
           suspended={selected !== undefined}
         />
       )}
-      {/* Keyed by match: a new match mounts a new chat, which aborts the old question and starts an empty list. */}
-      <FanQuestions key={id} matchId={id} viewer={viewer} momentIds={momentIds} />
+      {/* Keyed by match: a new match mounts a new chat, which aborts the old question and starts an empty list. Left
+          out only when the service says fan questions are switched off (ADR-072). */}
+      {fanQa !== 'off' && <FanQuestions key={id} matchId={id} viewer={viewer} momentIds={momentIds} />}
       {selected && (
         <PlayerFlyout
           player={selected.p}

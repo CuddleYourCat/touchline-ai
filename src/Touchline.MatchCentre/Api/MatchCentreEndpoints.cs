@@ -61,7 +61,9 @@ internal static partial class MatchCentreEndpoints
     {
         // Fan matches are open only if the kill switch is on (read per request, ADR-062) and a launcher can start them (ADR-072).
         var fanMatches = launcher.CanLaunch && await features.IsEnabledAsync(FeatureNames.FanMatches, cancellationToken);
-        return TypedResults.Ok(new MatchCentreStatus("touchline-ai", "synthetic", fanMatches));
+        // Fan questions follow their flag alone, so the match page can hide Ask the Analyst while it's off (ADR-072).
+        var fanQa = await features.IsEnabledAsync(FeatureNames.FanQa, cancellationToken);
+        return TypedResults.Ok(new MatchCentreStatus("touchline-ai", "synthetic", fanMatches, fanQa));
     }
 
     /// <summary>Maps every API endpoint under <c>/api</c>.</summary>
@@ -402,4 +404,5 @@ internal static partial class MatchCentreEndpoints
 /// <param name="Service">The service name.</param>
 /// <param name="DataSource">Where match data comes from. Always <c>synthetic</c>, because every club, player and event is generated.</param>
 /// <param name="FanMatches">Whether a fan can start a match now: the <c>FanMatches</c> flag is on and the launcher can start matches (ADR-072). When false the kick-off page shows Coming Soon.</param>
-internal sealed record MatchCentreStatus(string Service, string DataSource, bool FanMatches);
+/// <param name="FanQa">Whether fans can ask the Analyst now: the <c>FanQa</c> flag is on. When false the match page hides Ask the Analyst.</param>
+internal sealed record MatchCentreStatus(string Service, string DataSource, bool FanMatches, bool FanQa);

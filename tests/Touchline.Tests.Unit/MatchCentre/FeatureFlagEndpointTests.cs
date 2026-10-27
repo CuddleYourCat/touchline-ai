@@ -144,6 +144,20 @@ public class FeatureFlagEndpointTests
         body.RootElement.GetProperty("fanMatches").GetBoolean().Should().Be(expected);
     }
 
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Status_reports_fan_questions_as_their_flag_says(bool flagOn)
+    {
+        await using var factory = Factory((FeatureNames.FanQa, flagOn));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/api/status", UriKind.Relative));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("fanQa").GetBoolean().Should().Be(flagOn);
+    }
+
     [Test]
     public async Task Status_reports_no_fan_matches_in_the_demo_build_whose_launcher_is_unconnected()
     {

@@ -806,6 +806,29 @@ describe('MatchPage viewer, Q&A and recap', () => {
     expect(streamUrl().searchParams.has('team')).toBe(false);
   });
 
+  it('leaves Ask the Analyst out when the service says fan questions are off, and keeps it when they are on', async () => {
+    const statusSays = (fanQa: boolean) =>
+      vi.spyOn(api, 'GET').mockImplementation(((path: string) =>
+        Promise.resolve(
+          path === '/api/matches/{matchId}'
+            ? found(detail(liveState()))
+            : path === '/api/status'
+              ? { data: { service: 'touchline-ai', dataSource: 'synthetic', fanMatches: false, fanQa }, error: undefined, response: new Response() }
+              : { data: [], error: undefined, response: new Response() },
+        )) as never);
+
+    statusSays(false);
+    const off = renderPage();
+    await screen.findByRole('region', { name: /^Live/ });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Ask the Analyst' })).not.toBeInTheDocument());
+    off.unmount();
+    vi.restoreAllMocks();
+
+    statusSays(true);
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Ask the Analyst' })).toBeInTheDocument();
+  });
+
   it('puts the Ask the Analyst pill on the page, opens the chat and still asks, and links to the recap at full time', async () => {
     stubApi(found(detail(liveState({ fullTime: true }))));
     const post = vi.spyOn(api, 'POST').mockResolvedValue({
