@@ -279,7 +279,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A club's crest, as SVG. */
+        /** A club's crest: generated SVG, or WebP artwork for the built-in clubs. */
         get: operations["GetCrest"];
         put?: never;
         post?: never;
@@ -2452,6 +2452,7 @@ export interface operations {
                 };
                 content: {
                     "image/svg+xml": string;
+                    "image/webp": string;
                 };
             };
             /** @description Not Found */

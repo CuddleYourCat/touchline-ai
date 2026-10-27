@@ -1,8 +1,9 @@
 import { Link, useParams } from 'react-router';
 import { useMemo } from 'react';
 import type { MatchDetail, MomentView } from '../live/matchStreamReducer';
+import { HalfTimeCard } from '../match/HalfTimeCard';
 import { scorerFullText, scorerLabel, scorersBySide, type Scorer } from '../match/playerFacts';
-import { useGoalMoments, useRecap } from '../recap/useRecap';
+import { useGoalMoments, useMomentum, useRecap } from '../recap/useRecap';
 import { useViewer } from '../viewer/viewer';
 import { ViewerSettings } from '../viewer/ViewerSettings';
 
@@ -57,6 +58,7 @@ export function RecapPage() {
   const [viewer, setViewer] = useViewer();
   const { state, retry } = useRecap(id, viewer);
   const moments = useGoalMoments(id);
+  const momentum = useMomentum(id);
   const back = (
     <Link to={`/matches/${encodeURIComponent(id)}`} className="back-link">
       Back to the match
@@ -125,6 +127,10 @@ export function RecapPage() {
               <span className="tag">{recap.source === 'Template' ? 'Quick recap' : `${recap.mode} recap`}</span>
             </div>
             <FinalScore detail={detail} moments={moments} />
+            {/* A detail from an older server may carry no team stats; the card is left out rather than failing the page. */}
+            {detail.state?.home && detail.state.away && (
+              <HalfTimeCard detail={detail} state={detail.state} momentum={momentum} phase="full" />
+            )}
             <h1 className="recap-headline">{recap.headline}</h1>
             {paragraphs.map((p, i) => (
               <p key={i} className="recap-text">

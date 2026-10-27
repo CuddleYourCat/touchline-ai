@@ -1,11 +1,9 @@
 import { Link } from 'react-router';
-// The one import of the Coming Soon image, which the maintenance page also serves (ADR-072): swap the file to change both.
-import comingSoon from '../assets/coming-soon.webp';
 
 /** The holding page shown instead of the kick-off form while fan matches can't be started (ADR-072). */
 export function ComingSoon() {
   return (
-    <section className="coming-soon" style={{ backgroundImage: `url(${comingSoon})` }} aria-labelledby="coming-soon-title">
+    <section className="coming-soon" aria-labelledby="coming-soon-title">
       <div className="coming-soon-body">
         <p className="coming-soon-label" id="coming-soon-title">
           Coming Soon

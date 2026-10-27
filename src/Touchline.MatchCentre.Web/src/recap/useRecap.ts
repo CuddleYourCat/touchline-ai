@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
-import { withBenches, type MatchDetail, type MomentView } from '../live/matchStreamReducer';
+import { withBenches, type MatchDetail, type MomentView, type MomentumReading } from '../live/matchStreamReducer';
 import { viewerQuery, type Viewer } from '../viewer/viewer';
 
 /** The Producer's full-time recap. */
@@ -152,4 +152,32 @@ export function useGoalMoments(matchId: string): MomentView[] {
   }, [matchId]);
 
   return loaded?.matchId === matchId ? loaded.moments : [];
+}
+
+/**
+ * A finished match's momentum readings, for the recap's full-time card. Like the goal moments it never blocks the
+ * recap and never fails it: a failed load (or anything but a list) leaves the list empty, and the card then leaves the
+ * momentum line out.
+ */
+export function useMomentum(matchId: string): MomentumReading[] {
+  const [loaded, setLoaded] = useState<{ matchId: string; readings: MomentumReading[] } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      let readings: MomentumReading[] = [];
+      try {
+        const { data } = await api.GET('/api/matches/{matchId}/momentum', { params: { path: { matchId } } });
+        if (Array.isArray(data)) readings = data;
+      } catch {
+        // The card is still useful without its momentum line.
+      }
+      if (!cancelled) setLoaded({ matchId, readings });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [matchId]);
+
+  return loaded?.matchId === matchId ? loaded.readings : [];
 }

@@ -134,4 +134,32 @@ describe('HalfTimeCard', () => {
     rerender(<HalfTimeCard detail={detail} state={state()} momentum={[]} replay />);
     expect(screen.getByText('Replay')).toBeInTheDocument();
   });
+
+  describe('at full time', () => {
+    it('is titled and labelled for full time, in the page flow', () => {
+      render(<HalfTimeCard detail={detail} state={state()} momentum={[]} phase="full" />);
+      const card = screen.getByRole('region', { name: 'Full-time stats' });
+      expect(card).toHaveClass('half-time-card-static');
+      expect(screen.getByText('Full time')).toBeInTheDocument();
+      expect(screen.queryByText('Half time')).not.toBeInTheDocument();
+    });
+
+    it('summarises every reading, not only the first half', () => {
+      const second: MomentumReading[] = [-0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3].map((value, i) => ({
+        period: 'SecondHalf',
+        fromMinute: 45 + i * 5,
+        toMinute: 50 + i * 5,
+        value,
+      }));
+      render(<HalfTimeCard detail={detail} state={state()} momentum={[...readings([0.5, 0.4]), ...second]} phase="full" />);
+      expect(screen.getByText('Riverside had the better of the match')).toBeInTheDocument();
+    });
+
+    it('says the match was even, and leaves the line out with no readings', () => {
+      const { rerender } = render(<HalfTimeCard detail={detail} state={state()} momentum={readings([0.5, -0.5])} phase="full" />);
+      expect(screen.getByText('An even match')).toBeInTheDocument();
+      rerender(<HalfTimeCard detail={detail} state={state()} momentum={[]} phase="full" />);
+      expect(screen.queryByText(/better of|even match/)).not.toBeInTheDocument();
+    });
+  });
 });

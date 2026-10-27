@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.FeatureManagement;
+using Microsoft.Net.Http.Headers;
 using Touchline.Configuration;
 using Touchline.Domain.Teams;
 using Touchline.Domain.Teams.Builder;
@@ -54,8 +55,8 @@ internal static class TeamBuilderEndpoints
         teams.MapDelete("/{teamId}", DeleteTeam).WithName("DeleteTeam").WithSummary("Deletes a fan team. Needs its edit key.")
             .ProducesProblem(StatusCodes.Status403Forbidden).ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
-        teams.MapGet("/{teamId}/crest.svg", GetCrest).WithName("GetCrest").WithSummary("A club's crest, as SVG.")
-            .Produces<string>(StatusCodes.Status200OK, CrestSvg.ContentType)
+        teams.MapGet("/{teamId}/crest.svg", GetCrest).WithName("GetCrest").WithSummary("A club's crest: generated SVG, or WebP artwork for the built-in clubs.")
+            .Produces<string>(StatusCodes.Status200OK, CrestSvg.ContentType, CrestArtwork.ContentType)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         api.MapPost("/matches", StartMatch).WithTags("Matches").WithName("StartMatch")
@@ -267,7 +268,7 @@ internal static class TeamBuilderEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> GetCrest(
+    private static async Task<Results<ContentHttpResult, FileContentHttpResult, ProblemHttpResult>> GetCrest(
         string teamId,
         ITeamStore store,
         HttpResponse response,
@@ -276,6 +277,13 @@ internal static class TeamBuilderEndpoints
         if (await store.GetAsync(teamId, cancellationToken) is not { } team)
         {
             return NoTeam(teamId);
+        }
+
+        // A built-in club has commissioned artwork, served from this same route (ADR-072 amendment).
+        if (CrestArtwork.TryGet(teamId, out var artwork))
+        {
+            response.Headers.CacheControl = "public, max-age=300";
+            return TypedResults.File(artwork.Bytes, CrestArtwork.ContentType, entityTag: new EntityTagHeaderValue(artwork.ETag));
         }
 
         // The SVG is generated from validated parts, but it's served from the API's own origin,

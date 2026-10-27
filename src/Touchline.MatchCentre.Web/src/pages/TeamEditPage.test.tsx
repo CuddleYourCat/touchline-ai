@@ -77,6 +77,22 @@ describe('TeamEditPage: creating a team', () => {
     expect(document.body.innerHTML).not.toContain(key);
   });
 
+  it('removes a player with an icon button named after them', async () => {
+    stubGets();
+    renderAt('/teams/new');
+    await screen.findByRole('form', { name: 'New team' });
+    type('Player 2 name', 'Kofi Marlow');
+
+    const remove = screen.getByRole('button', { name: 'Remove Kofi Marlow' });
+    expect(remove).toHaveAttribute('title', 'Remove Kofi Marlow');
+    expect(remove).toHaveTextContent('');
+    expect(remove.querySelector('svg')).not.toBeNull();
+    fireEvent.click(remove);
+
+    expect(screen.queryByRole('button', { name: 'Remove Kofi Marlow' })).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText(/^Player \d+ name$/)).toHaveLength(15);
+  });
+
   it("blocks a squad that doesn't meet the rules before calling the service", async () => {
     stubGets();
     const post = vi.spyOn(api, 'POST');

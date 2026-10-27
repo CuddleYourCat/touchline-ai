@@ -1388,7 +1388,7 @@
         "tags": [
           "Teams"
         ],
-        "summary": "A club's crest, as SVG.",
+        "summary": "A club's crest: generated SVG, or WebP artwork for the built-in clubs.",
         "operationId": "GetCrest",
         "parameters": [
           {
@@ -1405,6 +1405,11 @@
             "description": "OK",
             "content": {
               "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/webp": {
                 "schema": {
                   "type": "string"
                 }

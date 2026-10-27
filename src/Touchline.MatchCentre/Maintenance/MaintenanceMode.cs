@@ -18,7 +18,7 @@ public static class MaintenanceMode
     /// <summary>The one path that serves the maintenance page's background image (ADR-072), since the app's bundles aren't served during maintenance.</summary>
     public const string BackgroundPath = "/maintenance/background.webp";
 
-    private const string _backgroundResource = "coming-soon.webp";
+    private const string _backgroundResource = "maintenance.webp";
 
     private static readonly string[] _probePaths = ["/health", "/alive"];
     private static readonly string[] _apiPrefixes = ["/api", "/openapi"];

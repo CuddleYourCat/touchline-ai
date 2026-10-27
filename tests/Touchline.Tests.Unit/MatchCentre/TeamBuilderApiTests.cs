@@ -195,14 +195,32 @@ public class TeamBuilderApiTests
     }
 
     [Test]
-    public async Task A_crest_is_served_as_svg_that_cannot_run_script()
+    public async Task A_fan_crest_is_served_as_svg_that_cannot_run_script()
     {
-        using var response = await _client.GetAsync(Url("/api/teams/north-bank-fc/crest.svg"));
+        var created = await Create("Oakhaven Albion");
+
+        using var response = await _client.GetAsync(Url($"/api/teams/{created.Team.Team.Id}/crest.svg"));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("image/svg+xml");
         response.Headers.GetValues("Content-Security-Policy").Single().Should().StartWith("default-src 'none'");
         (await response.Content.ReadAsStringAsync()).Should().StartWith("<svg");
+    }
+
+    [TestCase("north-bank-fc")]
+    [TestCase("thames-valley-united")]
+    public async Task A_built_in_club_is_served_its_artwork_as_webp_from_the_crest_route(string teamId)
+    {
+        using var response = await _client.GetAsync(Url($"/api/teams/{teamId}/crest.svg"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("image/webp");
+        response.Headers.CacheControl?.Public.Should().BeTrue();
+        response.Headers.ETag.Should().NotBeNull();
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Length.Should().BeGreaterThan(1000).And.BeLessThan(40 * 1024);
+        System.Text.Encoding.ASCII.GetString(bytes, 0, 4).Should().Be("RIFF");
+        System.Text.Encoding.ASCII.GetString(bytes, 8, 4).Should().Be("WEBP");
     }
 
     [Test]

@@ -35,6 +35,8 @@
     url('./assets/hero-stadium.webp');
   --page-art: url('./assets/bg-hud-grid.webp');
   --page-art-opacity: 0.32;
+  --coming-soon-art: url('./assets/coming-soon-dark.webp');
+  --error-page-art: url('./assets/error-page-dark.webp');
   --pitch: #145f33;
   --pitch-stripe: #1f7a44;
   --team-home: #ff5a4d;
@@ -71,8 +73,10 @@
   --accent-wash: rgb(194 94 0 / 0.1);
   --nav-on-masthead: var(--muted);
   --masthead-image: none;
-  --page-art: none;
-  --page-art-opacity: 0;
+  --page-art: url('./assets/bg-hud-grid-light.webp');
+  --page-art-opacity: 0.55;
+  --coming-soon-art: url('./assets/coming-soon-light.webp');
+  --error-page-art: url('./assets/error-page-light.webp');
   --pitch: #207340;
   --pitch-stripe: #2e8a50;
   --team-home: #d7263d;
@@ -1362,6 +1366,11 @@ code,
   flex: none;
 }
 
+/* The built-in clubs' artwork is a navy square (ADR-072 amendment); a soft radius makes it read as a badge tile. The generated SVG crests are transparent, so it does no harm to them. */
+img[src$='/crest.svg'] {
+  border-radius: 12%;
+}
+
 .team-card-names {
   display: flex;
   flex-direction: column;
@@ -1726,8 +1735,9 @@ a.button {
   padding-left: 18px;
 }
 
-/* Kick-off Coming Soon holding page (ADR-072). The background is set inline from the one imported image. */
+/* Kick-off Coming Soon holding page (ADR-072). The background follows the theme through --coming-soon-art. */
 .coming-soon {
+  background-image: var(--coming-soon-art);
   position: relative;
   isolation: isolate;
   display: grid;
@@ -1788,4 +1798,73 @@ a.button {
 .coming-soon .button-ghost {
   color: #e7edf8;
   border-color: rgb(231 237 248 / 0.6);
+}
+
+/* Compact icon-only button; the remove variant is light grey and turns red on hover or focus (ADR-071 amendment 4). */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon-button-remove {
+  color: var(--muted);
+}
+
+.icon-button-remove:hover:not(:disabled),
+.icon-button-remove:focus-visible {
+  color: var(--card-red);
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* The friendly error page (ADR-071 amendment 4): full-bleed artwork that follows the theme, text on the empty left half. */
+.error-page {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: min(70vh, 560px);
+  padding: 40px clamp(20px, 5vw, 56px);
+  overflow: hidden;
+  background: var(--error-page-art) center / cover no-repeat;
+}
+
+.error-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--bg) 90%, transparent) 0%, color-mix(in srgb, var(--bg) 70%, transparent) 45%, transparent 80%);
+}
+
+.error-page > * {
+  max-width: 28rem;
+}
+.error-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.error-page-details {
+  margin-top: 16px;
+}
+
+.error-page-details pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  color: var(--muted);
 }

@@ -59,6 +59,7 @@ function stubRecaps(...recaps: unknown[]) {
   return vi.spyOn(api, 'GET').mockImplementation(((path: string) => {
     if (path === '/api/matches/{matchId}') return Promise.resolve(ok(detail()));
     if (path === '/api/matches/{matchId}/moments') return Promise.resolve(ok([]));
+    if (path === '/api/matches/{matchId}/momentum') return Promise.resolve(ok([]));
     return Promise.resolve(recaps[Math.min(call++, recaps.length - 1)]);
   }) as never);
 }
@@ -173,6 +174,71 @@ describe('RecapPage', () => {
 
       expect(screen.getByRole('heading', { name: model.headline })).toBeInTheDocument();
       expect(screen.queryByRole('list', { name: /scorers$/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('full-time card', () => {
+    const teamStats = {
+      goals: 1,
+      shots: 9,
+      shotsOnTarget: 4,
+      expectedGoals: 1.4,
+      passes: 300,
+      passesCompleted: 250,
+      fouls: 6,
+      yellowCards: 1,
+      redCards: 0,
+      passAccuracy: 0.83,
+    };
+    const withStats = () =>
+      ({
+        ...detail(),
+        state: { fullTime: true, score: { home: 2, away: 1 }, home: teamStats, away: { ...teamStats, shots: 5 } },
+      }) as unknown as MatchDetail;
+
+    function stubWithCard(momentum: unknown) {
+      return vi.spyOn(api, 'GET').mockImplementation(((path: string) => {
+        if (path === '/api/matches/{matchId}') return Promise.resolve(ok(withStats()));
+        if (path === '/api/matches/{matchId}/moments') return Promise.resolve(ok([]));
+        if (path === '/api/matches/{matchId}/momentum') {
+          return momentum instanceof Error ? Promise.reject(momentum) : Promise.resolve(momentum);
+        }
+        return Promise.resolve(ok(model));
+      }) as never);
+    }
+
+    it('shows the final stats and the momentum summary', async () => {
+      const readings = [0.6, 0.5, 0.4].map((value, i) => ({ period: 'FirstHalf', fromMinute: i * 5, toMinute: i * 5 + 5, value }));
+      stubWithCard(ok(readings));
+
+      renderPage();
+      await flush();
+
+      const card = screen.getByRole('region', { name: 'Full-time stats' });
+      expect(within(card).getByRole('heading', { name: 'Full time' })).toBeInTheDocument();
+      expect(within(card).getByRole('rowheader', { name: 'Shots' })).toBeInTheDocument();
+      expect(within(card).getByText('Harbourside Rovers had the better of the match')).toBeInTheDocument();
+    });
+
+    it('still shows the stats, without the momentum line, when the momentum cannot be loaded', async () => {
+      stubWithCard(new Error('offline'));
+
+      renderPage();
+      await flush();
+
+      const card = screen.getByRole('region', { name: 'Full-time stats' });
+      expect(within(card).getByRole('rowheader', { name: 'Shots' })).toBeInTheDocument();
+      expect(within(card).queryByText(/better of|even match/)).not.toBeInTheDocument();
+    });
+
+    it('is left out when the match detail carries no team stats', async () => {
+      stubRecaps(ok(model));
+
+      renderPage();
+      await flush();
+
+      expect(screen.queryByRole('region', { name: 'Full-time stats' })).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: model.headline })).toBeInTheDocument();
     });
   });
 

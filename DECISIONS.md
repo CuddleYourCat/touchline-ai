@@ -2238,6 +2238,12 @@ A second smoke test changed these decisions:
 - **A replay's half-time pause is 10 s.** It was 15 match minutes divided by the replay speed, 90 s at the default, which looked like a crash. Ten seconds is enough to read the half-time card.
 - **The pitch is empty at half time,** live and in a replay: no player tokens and no ball while `halfTime` is on, because the teams are off the pitch.
 
+**Amendment 4 (27 Oct)**
+- **The team builder's Remove buttons are trash-can icons.** A light-grey inline SVG (`--muted`) that turns `--card-red` on hover or focus, in a 36 px square button. The accessible name stays `Remove {player}` (aria-label, with a matching tooltip), and behaviour is unchanged.
+- **The recap shows a full-time stats card.** `HalfTimeCard` takes `phase: 'half' | 'full'` (default `half`). The full variant is titled "Full time", sits in the page flow under the final score and scorers, and summarises every momentum reading ("had the better of the match"). It is fed `detail.state` and `GET /api/matches/{id}/momentum`, fetched beside the recap. A failed momentum call only drops the momentum line; a detail with no team stats leaves the card out.
+- **Render errors show a friendly page.** The router has an `errorElement`, on a pathless route inside the layout (so the header stays) and on the layout itself as a last resort. It says something went wrong on this page, with Try again (reload) and Matches buttons, over full-bleed night-stadium artwork (`error-page-dark.webp`, `error-page-light.webp`, about 200 KB and 130 KB at 1920 px) that follows the theme, with the text on the empty left half under a readable overlay. In a dev build only, the error message sits in a collapsed details element.
+
+
 ## ADR-072 — Kick-off checks fan matches first; Coming Soon page
 
 **Status:** Accepted · 27 Oct 2026, decided by Tracey ("the check should be first, show a Coming Soon holding page")
@@ -2257,3 +2263,9 @@ A fan could pick two teams, set line-ups and click Kick off, and only then learn
 - **The cache is a day, not a year,** because the path is fixed and the file will be replaced by a purpose-made image. A browser may show the old picture on the maintenance page for up to a day after a swap.
 - **The embedded copy is read from the web app's assets folder,** so the .NET build needs that file present. The Dockerfile already copies all of `src/`.
 - **Light mode keeps a dark image treatment.** The Coming Soon text is always light on a dark overlay, regardless of the theme toggle.
+
+**Amendment (27 Oct): artwork**
+- **Coming Soon has its own pictures per theme.** `coming-soon-dark.webp` (131 KB) and `coming-soon-light.webp` (204 KB), 1920 px wide, are applied through a `--coming-soon-art` token set for each theme, so the default (dark) and the toggle both work. The readable overlay stays.
+- **The maintenance page keeps its own picture.** The old file is renamed `maintenance.webp` (assets folder, embedded resource `maintenance.webp`), so the two pages no longer share an image.
+- **The light theme gets page artwork.** `bg-hud-grid-light.webp` (68 KB, its native 1376 px) is the light counterpart of `bg-hud-grid.webp` behind the page.
+- **Built-in clubs have commissioned crests.** North Bank FC and Thames Valley United are 256 x 256 WebP files (17 KB and 18 KB), cropped from the navy-square sources, embedded in `Touchline.MatchCentre`. `GetCrest` serves them as `image/webp` with a hash ETag from the same `/crest.svg` route, so every `crestUrl` works with no client change; browsers decode an `<img>` by content, not by suffix. Fan teams still get the generated SVG. Crest images get a 12% border radius so the navy square reads as a badge tile.
