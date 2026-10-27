@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
+import { api } from '../api/client';
+import { PlayerFlyout } from '../match/PlayerFlyout';
 import { parseKit } from '../pitch/kitColours';
 import { heldTeamIds } from '../teams/editKeys';
 import type { PlayerPosition, TeamDetail } from '../teams/teamDraft';
+
 import { useTeamDetail } from '../teams/useTeams';
 import './ClubPage.css';
 
@@ -27,7 +30,33 @@ function BackLink() {
   );
 }
 
-function Squad({ detail }: { detail: TeamDetail }) {
+type Player = TeamDetail['squad'][number];
+
+/**
+ * The season of the most recent league match, for the player card's season stats. There's no "current season" endpoint,
+ * so it comes from the matches list: the latest match with a season. Null until it loads, or if no match has one (fan
+ * clubs play exhibitions only), and a failed request is just null.
+ */
+function useLatestSeason(): string | null {
+  const [season, setSeason] = useState<string | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .GET('/api/matches', { signal: controller.signal })
+      .then(({ data }) => {
+        if (controller.signal.aborted || !Array.isArray(data)) return;
+        const latest = data
+          .filter((m) => m.season !== null && m.season !== undefined)
+          .sort((a, b) => b.kickOffUtc.localeCompare(a.kickOffUtc))[0];
+        setSeason(latest?.season ?? null);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+  return season;
+}
+
+function Squad({ detail, onSelect }: { detail: TeamDetail; onSelect: (player: Player) => void }) {
   return (
     <section className="club-panel" aria-labelledby="club-squad">
       <h2 id="club-squad" className="club-panel-title">
@@ -43,7 +72,11 @@ function Squad({ detail }: { detail: TeamDetail }) {
               {players.map((p) => (
                 <li key={p.id} className="club-row">
                   <span className="club-number">{p.shirtNumber}</span>
-                  <span className="club-player">{p.name}</span>
+                  <span className="club-player">
+                    <button type="button" className="club-player-name" onClick={() => onSelect(p)}>
+                      {p.name}
+                    </button>
+                  </span>
                   <span className="club-position" title={position}>
                     {short}
                   </span>
@@ -61,6 +94,8 @@ function Club({ detail, canEdit }: { detail: TeamDetail; canEdit: boolean }) {
   const { team, manager } = detail;
   const kit = parseKit(team.colours);
   const fan = team.origin === 'Fan';
+  const season = useLatestSeason();
+  const [selected, setSelected] = useState<Player | null>(null);
   return (
     <div className="club-page">
       <BackLink />
@@ -88,7 +123,7 @@ function Club({ detail, canEdit }: { detail: TeamDetail; canEdit: boolean }) {
       </header>
 
       <div className="club-columns">
-        <Squad detail={detail} />
+        <Squad detail={detail} onSelect={setSelected} />
         <section className="club-panel" aria-labelledby="club-details">
           <h2 id="club-details" className="club-panel-title">
             Club details
@@ -125,6 +160,9 @@ function Club({ detail, canEdit }: { detail: TeamDetail; canEdit: boolean }) {
           </dl>
         </section>
       </div>
+      {selected && (
+        <PlayerFlyout player={selected} teamName={team.name} season={season} inMatch={false} onClose={() => setSelected(null)} />
+      )}
     </div>
   );
 }

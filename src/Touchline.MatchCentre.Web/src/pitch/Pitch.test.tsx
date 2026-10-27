@@ -418,3 +418,33 @@ describe('OverlayToast', () => {
     expect(screen.getByTestId('overlay-toast')).toHaveAttribute('aria-hidden', 'true');
   });
 });
+
+describe('Pitch frame and added time', () => {
+  it('gives the frame the drawing’s aspect ratio and flags a replay', () => {
+    const { container, rerender } = render(
+      <Pitch shape={null} ballPath={null} events={[]} homeLineup={lineup('h')} awayLineup={lineup('a')} />,
+    );
+    // (105 + 6) / (68 + 6)
+    expect(container.querySelector<HTMLElement>('.pitch-frame')!.style.getPropertyValue('--pitch-aspect')).toBe('1.5');
+    expect(screen.queryByTestId('replay-flag')).not.toBeInTheDocument();
+
+    rerender(<Pitch shape={null} ballPath={null} events={[]} homeLineup={lineup('h')} awayLineup={lineup('a')} replay />);
+    expect(screen.getByTestId('replay-flag')).toHaveTextContent('Replay');
+  });
+
+  it('shows a toast in added time as 90+3 and drops a leading clock from its words', () => {
+    const late: OverlayCard = {
+      id: 'o9',
+      at: { period: 'SecondHalf', minute: 92, second: 2, display: '92:02' },
+      type: 'goal',
+      durationMs: 3000,
+      payload: { title: '92:02: GOAL', subtitle: 'Ashworth 3-3', team: 'Home', playerId: null },
+    };
+    render(<OverlayToast overlays={[late]} homeName="Harbourside Rovers" awayName="Millbrook" />);
+
+    const toast = screen.getByTestId('overlay-toast');
+    expect(toast).toHaveTextContent("90+3'");
+    expect(toast).not.toHaveTextContent('92:02');
+    expect(screen.getByRole('status', { name: 'Overlay announcements' })).toHaveTextContent("90+3', GOAL, Ashworth 3-3");
+  });
+});

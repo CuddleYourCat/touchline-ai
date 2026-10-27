@@ -15,7 +15,11 @@ export type ReplayTarget = { sequence: number } | { period: 'FirstHalf' | 'Secon
 
 /** A replay of part of a match, playing beside the live stream (ADR-067). */
 export interface MatchReplay {
-  status: 'idle' | 'loading' | 'playing' | 'error';
+  /**
+   * `ended` is a replay that reached full time on a finished match: it holds its last frame, with the stream closed,
+   * until the fan goes back to live or starts another replay.
+   */
+  status: 'idle' | 'loading' | 'playing' | 'ended' | 'error';
   /** The replay's view of the match, built with the same reducer as the live view, or null when idle. */
   match: LiveMatch | null;
   /** The playhead, or null until the replay's first message has played. */
@@ -132,8 +136,9 @@ const idle = (matchId: string): ReplayView => ({ matchId, status: 'idle', match:
  * `max(15 min / speed, 15 s)` as at half time live (ADR-066). Every message goes through the live view's reducer, so
  * `match` has positions, ball, score, moments, overlays and shapes exactly as live had them.
  *
- * The replay ends on its own, back to `idle`, when its playhead reaches the live edge (the live match's last sequence)
- * or, on a finished match, when it plays full time. `backToLive`, a restart and unmounting all close its stream and
+ * The replay ends on its own, back to `idle`, when its playhead reaches the live edge of a live match (catching up with
+ * live is the natural end). On a finished match it plays to full time and then holds that last frame as `ended` until
+ * `backToLive` or another `start`. `backToLive`, a restart and unmounting all close its stream and
  * clear its timers first. A `start` before the live match has loaded does nothing.
  *
  * **Overlay and goal cards in a replay:** they arrive in `match.overlays` as usual, with the cards' own IDs, as the
@@ -237,7 +242,14 @@ export function useMatchReplay(
         match = next;
         const now = liveRef.current;
         const caughtUp = now && !now.fullTime && next.state.lastSequence >= now.state.lastSequence;
-        if (next.fullTime || caughtUp) {
+        if (next.fullTime) {
+          // Hold the final frame, so the replay doesn't snap back to the full-time view unseen.
+          stop();
+          if (stopRef.current === stop) stopRef.current = null;
+          setView({ matchId: id, status: 'ended', match: next });
+          return true;
+        }
+        if (caughtUp) {
           finish();
           return true;
         }
@@ -310,7 +322,8 @@ export function useMatchReplay(
   );
 
   const current = view.matchId === matchId ? view : idle(matchId);
-  const clock = current.match && current.status === 'playing' ? current.match.state.clock : null;
+  // An ended replay keeps its clock, so the timeline's playhead stays where the replay stopped.
+  const clock = current.match && (current.status === 'playing' || current.status === 'ended') ? current.match.state.clock : null;
   return {
     status: current.status,
     match: current.match,

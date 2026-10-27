@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { OverlayCard } from '../live/matchStreamReducer';
+import { stripClockPrefix } from '../match/playerFacts';
+import { clockLabel } from '../matches/clockLabel';
 
 /** How long the fade-out takes once a card's time is up. */
 export const overlayFadeMs = 400;
@@ -47,9 +49,9 @@ export function OverlayToast({ overlays, homeName, awayName }: { overlays: Overl
     <>
       {announcer}
       <div className={className} aria-hidden="true" data-testid="overlay-toast" data-type={active.type}>
-        <span className="overlay-clock data">{active.at.display}</span>
-        <strong className="overlay-title">{title}</strong>
-        {subtitle && <span className="overlay-subtitle">{subtitle}</span>}
+        <span className="overlay-clock data">{clockLabel(active.at)}</span>
+        <strong className="overlay-title">{stripClockPrefix(title)}</strong>
+        {subtitle && <span className="overlay-subtitle">{stripClockPrefix(subtitle)}</span>}
         {teamName && <span className="overlay-team muted">{teamName}</span>}
       </div>
     </>
@@ -63,5 +65,5 @@ function teamNameOf(team: OverlayCard['payload']['team'], homeName: string, away
 /** What a screen reader hears for a card: `23:04, GOAL, Ashby 1-0, Harbourside Rovers`. */
 function announcement(card: OverlayCard, homeName: string, awayName: string): string {
   const { title, subtitle, team } = card.payload;
-  return [card.at.display, title, subtitle, teamNameOf(team, homeName, awayName)].filter(Boolean).join(', ');
+  return [clockLabel(card.at), stripClockPrefix(title), subtitle && stripClockPrefix(subtitle), teamNameOf(team, homeName, awayName)].filter(Boolean).join(', ');
 }

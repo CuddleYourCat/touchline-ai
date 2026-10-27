@@ -126,6 +126,27 @@
   overflow-wrap: anywhere;
 }
 
+.club-player-name {
+  max-width: 100%;
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.club-player-name:hover {
+  text-decoration: underline;
+}
+
+.club-player-name:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+
 .club-position {
   font-family: var(--font-data);
   font-size: 0.7rem;

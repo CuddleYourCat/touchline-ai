@@ -28,16 +28,15 @@ describe('GoalToast', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows the scorer, team, score and minute', () => {
+  it('shows just the word GOAL!, with the details left to the live region and the standard toast', () => {
     render(<GoalToast {...props()} />);
 
     const toast = screen.getByTestId('goal-toast');
     expect(toast).toHaveAttribute('aria-hidden', 'true');
-    expect(toast).toHaveTextContent('GOAL!');
-    expect(toast).toHaveTextContent('Ana Torres');
-    expect(toast).toHaveTextContent('North Bank 2 – 1 Tavern United');
-    expect(toast).toHaveTextContent("68'");
-    expect(toast).not.toHaveTextContent('Replay');
+    expect(toast).toHaveTextContent(/^GOAL!$/);
+    expect(toast).not.toHaveTextContent('Ana Torres');
+    expect(toast).not.toHaveTextContent('North Bank');
+    expect(toast).not.toHaveTextContent("68'");
   });
 
   it('carries no team colour: no inline style, so the plain white text is all the CSS paints', () => {
@@ -96,7 +95,7 @@ describe('GoalToast', () => {
         {...props({ card: card('g2'), scorerName: 'Mo Reyes', score: { ...props().score, home: 3 }, onDone })}
       />,
     );
-    expect(screen.getByTestId('goal-toast')).toHaveTextContent('Mo Reyes');
+    expect(screen.getByRole('status', { name: 'Goal announcements' })).toHaveTextContent('Mo Reyes');
 
     act(() => vi.advanceTimersByTime(3999));
     expect(screen.getByTestId('goal-toast')).not.toHaveClass('goal-toast-fading');

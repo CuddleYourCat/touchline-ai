@@ -36,10 +36,18 @@ export interface PitchProps {
   /** Each club's kit, so its tokens wear its shirt colour and trim. Without one, a side keeps the house red or blue. */
   homeKit?: Kit | null;
   awayKit?: Kit | null;
+  /** True while a replay is on, which puts a REPLAY badge over the pitch. */
+  replay?: boolean;
 }
 
 // One empty bench for every pitch without one, so the default doesn't defeat the memo.
 const noBench: Player[] = [];
+
+/** The drawing's viewBox: the pitch plus a 3 m margin on every side. */
+const viewWidth = pitchLength + 6;
+const viewHeight = pitchWidth + 6;
+/** Width over height of the drawing, which the green frame takes too so it hugs the pitch (a plain number, for CSS calc). */
+const frameStyle = { '--pitch-aspect': String(viewWidth / viewHeight) } as CSSProperties;
 
 const half = pitchWidth / 2;
 const boxWidth = 40.32;
@@ -111,6 +119,7 @@ export const Pitch = memo(function Pitch({
   awayName = '',
   homeKit = null,
   awayKit = null,
+  replay = false,
 }: PitchProps) {
   const reducedMotion = useReducedMotion();
   const players = useMemo(
@@ -128,84 +137,91 @@ export const Pitch = memo(function Pitch({
   return (
     <section className="match-section pitch-panel" aria-label="Pitch">
       <figure className="pitch-figure" style={kitStyle}>
-        <div className="pitch-frame">
-          <svg
-            className={reducedMotion ? 'pitch pitch-still' : 'pitch'}
-            viewBox={`-3 -3 ${pitchLength + 6} ${pitchWidth + 6}`}
-            preserveAspectRatio="xMidYMid meet"
-            role="img"
-            aria-label="Pitch view, home attacking left to right"
-          >
-            <Markings />
-            <g className="pitch-markers">
-              {markers.map((m) => {
-                const at = toSvg(m.at);
-                return m.kind === 'foul' ? (
-                  <path
-                    key={m.sequence}
-                    data-testid="marker-foul"
-                    className="marker-foul"
-                    d={`M ${at.x - 0.9} ${at.y - 0.9} L ${at.x + 0.9} ${at.y + 0.9} M ${at.x + 0.9} ${at.y - 0.9} L ${at.x - 0.9} ${at.y + 0.9}`}
-                  >
-                    <title>Foul</title>
-                  </path>
-                ) : (
-                  <rect
-                    key={m.sequence}
-                    data-testid={`marker-${m.kind}`}
-                    className={`marker-card marker-${m.kind}`}
-                    x={at.x - 0.6}
-                    y={at.y - 0.9}
-                    width={1.2}
-                    height={1.8}
-                  >
-                    <title>{m.kind === 'red' ? 'Red card' : 'Yellow card'}</title>
-                  </rect>
-                );
-              })}
-            </g>
-            <g className="pitch-players">
-              {shape?.positions.map((p) => {
-                const at = toSvg(p);
-                const player = players.get(p.playerId);
-                const label = player ? String(player.shirtNumber) : unknownPlayerLabel(p.playerId);
-                return (
-                  <g
-                    key={p.playerId}
-                    data-testid="player-dot"
-                    data-player={p.playerId}
-                    className={p.team === 'Home' ? 'player player-home' : 'player player-away'}
-                    style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
-                  >
-                    <title>{player ? `${player.shirtNumber} ${player.name}` : 'Player not in the line-up'}</title>
-                    <PlayerShape team={p.team} />
-                    <text dy="0.6">{label}</text>
+        <div className="pitch-field">
+          <div className="pitch-frame" style={frameStyle}>
+            {replay && (
+              <span className="replay-flag" data-testid="replay-flag">
+                Replay
+              </span>
+            )}
+            <svg
+              className={reducedMotion ? 'pitch pitch-still' : 'pitch'}
+              viewBox={`-3 -3 ${viewWidth} ${viewHeight}`}
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="Pitch view, home attacking left to right"
+            >
+              <Markings />
+              <g className="pitch-markers">
+                {markers.map((m) => {
+                  const at = toSvg(m.at);
+                  return m.kind === 'foul' ? (
+                    <path
+                      key={m.sequence}
+                      data-testid="marker-foul"
+                      className="marker-foul"
+                      d={`M ${at.x - 0.9} ${at.y - 0.9} L ${at.x + 0.9} ${at.y + 0.9} M ${at.x + 0.9} ${at.y - 0.9} L ${at.x - 0.9} ${at.y + 0.9}`}
+                    >
+                      <title>Foul</title>
+                    </path>
+                  ) : (
+                    <rect
+                      key={m.sequence}
+                      data-testid={`marker-${m.kind}`}
+                      className={`marker-card marker-${m.kind}`}
+                      x={at.x - 0.6}
+                      y={at.y - 0.9}
+                      width={1.2}
+                      height={1.8}
+                    >
+                      <title>{m.kind === 'red' ? 'Red card' : 'Yellow card'}</title>
+                    </rect>
+                  );
+                })}
+              </g>
+              <g className="pitch-players">
+                {shape?.positions.map((p) => {
+                  const at = toSvg(p);
+                  const player = players.get(p.playerId);
+                  const label = player ? String(player.shirtNumber) : unknownPlayerLabel(p.playerId);
+                  return (
+                    <g
+                      key={p.playerId}
+                      data-testid="player-dot"
+                      data-player={p.playerId}
+                      className={p.team === 'Home' ? 'player player-home' : 'player player-away'}
+                      style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
+                    >
+                      <title>{player ? `${player.shirtNumber} ${player.name}` : 'Player not in the line-up'}</title>
+                      <PlayerShape team={p.team} />
+                      <text dy="0.6">{label}</text>
+                    </g>
+                  );
+                })}
+              </g>
+              <g className="pitch-ball">
+                {trail.length > 0 && (
+                  <g data-testid="ball-trail" className="ball-trail">
+                    {trail.map((layer, i) => (
+                      <path key={i} data-testid="ball-trail-layer" d={layer} />
+                    ))}
                   </g>
-                );
-              })}
-            </g>
-            <g className="pitch-ball">
-              {trail.length > 0 && (
-                <g data-testid="ball-trail" className="ball-trail">
-                  {trail.map((layer, i) => (
-                    <path key={i} data-testid="ball-trail-layer" d={layer} />
+                )}
+                {ballPath && d && (
+                  <path key={`p${ballPath.sequence}`} data-testid="ball-path" data-kind={ballPath.kind} className={`ball-path ball-path-${ballPath.kind}`} d={d} />
+                )}
+                {ballPath && ballAt &&
+                  (reducedMotion || !d || replayed ? (
+                    <circle data-testid="ball" className="ball" cx={ballAt.x} cy={ballAt.y} r={0.8} />
+                  ) : (
+                    <circle key={`b${ballPath.sequence}`} data-testid="ball" className="ball" r={0.8}>
+                      <animateMotion dur="0.9s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.3 0 0.2 1" path={d} />
+                    </circle>
                   ))}
-                </g>
-              )}
-              {ballPath && d && (
-                <path key={`p${ballPath.sequence}`} data-testid="ball-path" data-kind={ballPath.kind} className={`ball-path ball-path-${ballPath.kind}`} d={d} />
-              )}
-              {ballPath && ballAt &&
-                (reducedMotion || !d || replayed ? (
-                  <circle data-testid="ball" className="ball" cx={ballAt.x} cy={ballAt.y} r={0.8} />
-                ) : (
-                  <circle key={`b${ballPath.sequence}`} data-testid="ball" className="ball" r={0.8}>
-                    <animateMotion dur="0.9s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.3 0 0.2 1" path={d} />
-                  </circle>
-                ))}
-            </g>
-          </svg>
-          {overlays && <OverlayToast overlays={overlays} homeName={homeName} awayName={awayName} />}
+              </g>
+            </svg>
+            {overlays && <OverlayToast overlays={overlays} homeName={homeName} awayName={awayName} />}
+          </div>
         </div>
         <figcaption className="pitch-caption muted">
           <span>Modelled positions, not tracking data</span>

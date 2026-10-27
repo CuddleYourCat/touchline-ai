@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -90,5 +91,56 @@ describe('ClubPage', () => {
     get.mockResolvedValue(ok(detail()) as never);
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Harbour Town' })).toBeInTheDocument());
+  });
+
+  describe('player cards', () => {
+    const stats = {
+      appearances: 7, substituteAppearances: 1, goals: 4, assists: 2, shots: 12, shotsOnTarget: 6, expectedGoals: 3.2,
+      passes: 100, passesCompleted: 80, fouls: 3, yellowCards: 1, redCards: 0, bannedRounds: [],
+    };
+    const summary = (id: string, season: string | null, kickOffUtc: string) => ({ id, season, kickOffUtc });
+
+    /** The club, the matches list and a player's season stats, by path. */
+    function stubApi(matches: unknown, season = vi.fn()) {
+      vi.spyOn(api, 'GET').mockImplementation(((path: string, init?: unknown) => {
+        if (path === '/api/matches') return Promise.resolve(matches);
+        if (path === '/api/seasons/{season}/players/{playerId}') {
+          season(init);
+          return Promise.resolve(ok(stats));
+        }
+        return Promise.resolve(ok(detail()));
+      }) as never);
+      return season;
+    }
+
+    it('opens a player card from the name, with no match section, and gives focus back on close', async () => {
+      const season = stubApi(ok([summary('a', '2025', '2026-01-01T00:00:00Z'), summary('b', '2026', '2026-03-01T00:00:00Z'), summary('c', null, '2026-05-01T00:00:00Z')]));
+      renderPage();
+      const user = userEvent.setup();
+      const name = await screen.findByRole('button', { name: 'Arlo Testwell' });
+
+      await user.click(name);
+
+      const card = await screen.findByRole('dialog', { name: 'Arlo Testwell' });
+      expect(card).toHaveTextContent('Goalkeeper · Harbour Town');
+      expect(within(card).queryByText('This match')).not.toBeInTheDocument();
+      expect(await within(card).findByText('Appearances')).toBeInTheDocument();
+      expect(season).toHaveBeenCalledWith({ params: { path: { season: '2026', playerId: 'fan-harbour-town-p1' } }, signal: expect.anything() });
+
+      await user.click(within(card).getByRole('button', { name: 'Close' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(name).toHaveFocus();
+    });
+
+    it('says there are no season stats when no match has a season, as for fan clubs', async () => {
+      stubApi(ok([summary('c', null, '2026-05-01T00:00:00Z')]));
+      renderPage();
+
+      await userEvent.setup().click(await screen.findByRole('button', { name: 'Arlo Testwell' }));
+
+      const card = await screen.findByRole('dialog', { name: 'Arlo Testwell' });
+      expect(card).toHaveTextContent('No season stats');
+      expect(card).not.toHaveTextContent('This match');
+    });
   });
 });

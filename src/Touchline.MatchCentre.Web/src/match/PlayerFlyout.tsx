@@ -15,12 +15,15 @@ export interface PlayerFlyoutProps {
   /** The player to show, or null when the flyout is closed. */
   player: PlayerSummary | null;
   teamName: string;
-  facts: PlayerFact[] | undefined;
-  /** The match's season (`detail.summary.season`); null for exhibitions and fan matches. */
+  /** The player's facts in the match on show; leave out away from a match. */
+  facts?: PlayerFact[] | undefined;
+  /** The match's season (`detail.summary.season`) or, on a club page, the latest league season; null if there is none. */
   season: string | null;
   onClose: () => void;
-  /** Called with a fact's moment ID, so the page can replay from it (ADR-067). */
-  onSelectMoment: (momentId: string) => void;
+  /** Called with a fact's moment ID, so the page can replay from it (ADR-067). Without it a fact isn't a link. */
+  onSelectMoment?: (momentId: string) => void;
+  /** False on a club page: there is no match to speak of, so the card has no "This match" section. */
+  inMatch?: boolean;
   /**
    * True while the line-ups drawer is open beside the card. The card then has no backdrop and doesn't trap focus, so
    * clicking another player in the drawer switches the card to that player (ADR-071).
@@ -52,7 +55,16 @@ function tallyText(facts: PlayerFact[]): string {
 }
 
 /** A flyout with a player's name, this match and season stats, opened from the line-ups card (ADR-068). */
-export function PlayerFlyout({ player, teamName, facts, season, onClose, onSelectMoment, withDrawer = false }: PlayerFlyoutProps) {
+export function PlayerFlyout({
+  player,
+  teamName,
+  facts,
+  season,
+  onClose,
+  onSelectMoment,
+  inMatch = true,
+  withDrawer = false,
+}: PlayerFlyoutProps) {
   const open = player !== null;
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -182,6 +194,7 @@ export function PlayerFlyout({ player, teamName, facts, season, onClose, onSelec
           </button>
         </header>
 
+        {inMatch && (
         <section className="flyout-section" aria-labelledby={`${titleId}-match`}>
           <h3 id={`${titleId}-match`} className="flyout-heading">
             This match
@@ -194,25 +207,36 @@ export function PlayerFlyout({ player, teamName, facts, season, onClose, onSelec
               <ul className="flyout-facts">
                 {list.map((fact) => (
                   <li key={`${fact.momentId}-${fact.kind}`}>
-                    <button type="button" className="flyout-fact" onClick={() => onSelectMoment(fact.momentId)}>
-                      <MomentIcon kind={fact.kind} />
-                      <span>{momentIconLabel[fact.kind]}</span>
-                      <span className="flyout-minute">{footballMinute(fact.clock)}</span>
-                      <span className="flyout-sr">, replay from here</span>
-                    </button>
+                    {onSelectMoment ? (
+                      <button type="button" className="flyout-fact" onClick={() => onSelectMoment(fact.momentId)}>
+                        <MomentIcon kind={fact.kind} />
+                        <span>{momentIconLabel[fact.kind]}</span>
+                        <span className="flyout-minute">{footballMinute(fact.clock)}</span>
+                        <span className="flyout-sr">, replay from here</span>
+                      </button>
+                    ) : (
+                      <span className="flyout-fact">
+                        <MomentIcon kind={fact.kind} />
+                        <span>{momentIconLabel[fact.kind]}</span>
+                        <span className="flyout-minute">{footballMinute(fact.clock)}</span>
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
             </>
           )}
         </section>
+        )}
 
         <section className="flyout-section" aria-labelledby={`${titleId}-season`}>
           <h3 id={`${titleId}-season`} className="flyout-heading">
             Season
           </h3>
           {season === null ? (
-            <p className="flyout-note">Season stats are kept for league fixtures only. This match isn&apos;t one.</p>
+            <p className="flyout-note">
+              {inMatch ? "Season stats are kept for league fixtures only. This match isn't one." : 'No season stats'}
+            </p>
           ) : !state ? (
             <p className="flyout-note" role="status">
               Loading season stats…

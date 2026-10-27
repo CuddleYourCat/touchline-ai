@@ -53,9 +53,9 @@
   justify-content: space-between;
   gap: 8px 16px;
   padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--highlight);
-  border-left-width: 4px;
+  background: color-mix(in srgb, var(--highlight) 16%, var(--surface));
+  border: 2px solid var(--highlight);
+  border-left-width: 6px;
   border-radius: var(--radius);
   box-shadow: 0 4px 16px var(--shadow);
 }
@@ -66,7 +66,67 @@
 
 .replay-badge {
   color: var(--highlight);
-  font-weight: 600;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* A badge over the pitch's top-left corner while a replay is on. */
+.replay-flag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 6;
+  padding: 2px 12px;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--on-accent);
+  background: var(--highlight);
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.5);
+  pointer-events: none;
+}
+
+/* A side's scorers under its name: small, at most two lines, the rest clipped (the full list is in the aria-label). */
+.scoreboard-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.scoreboard-scorers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.9em;
+  max-height: 2.5em;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1.25;
+  opacity: 0.9;
+}
+
+.scoreboard-team-away .scoreboard-scorers {
+  justify-content: flex-end;
+}
+
+@media (max-width: 599px) {
+  .scoreboard-name {
+    align-items: center;
+  }
+
+  .scoreboard-scorers,
+  .scoreboard-team-away .scoreboard-scorers {
+    justify-content: center;
+  }
 }
 
 .moment-list {
@@ -126,7 +186,7 @@
 }
 
 .match-page .replay-bar {
-  padding: 4px 10px;
+  padding: 4px 12px;
 }
 
 
@@ -231,7 +291,11 @@
     min-height: 0;
   }
 
-  /* The pitch takes whatever height is left and its drawing fills the frame, so it grows and shrinks with the window. */
+  /*
+   * The pitch takes whatever height is left. The field is a size container, so the green frame can be as big as fits
+   * at the drawing's own aspect ratio (--pitch-aspect, set by Pitch.tsx): it hugs the drawn pitch, centred, and the
+   * drawing fills it.
+   */
   .match-stage .pitch-panel,
   .match-stage .pitch-figure {
     display: flex;
@@ -240,18 +304,37 @@
     min-height: 0;
   }
 
-  .match-stage .pitch-frame {
+  .match-stage .pitch-field {
+    display: grid;
     flex: 1 1 0;
+    place-items: center;
     min-height: 0;
+    container-type: size;
+  }
+
+  .match-stage .pitch-frame {
+    width: min(100cqw, calc(100cqh * var(--pitch-aspect)));
+    aspect-ratio: var(--pitch-aspect);
     padding: 0;
   }
 
   .match-stage .pitch {
     position: absolute;
-    inset: 8px;
-    width: calc(100% - 16px);
-    height: calc(100% - 16px);
+    inset: 0;
+    width: 100%;
+    height: 100%;
     aspect-ratio: auto;
+  }
+
+  /* The timeline's hint stays for screen readers (it describes the slider) but takes no room. */
+  .match-timeline .timeline-hint {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .match-stage .pitch-caption {
@@ -277,7 +360,7 @@
   }
 
   .match-momentum .momentum-chart {
-    height: 44px;
+    height: 36px;
   }
 
   .match-moments {

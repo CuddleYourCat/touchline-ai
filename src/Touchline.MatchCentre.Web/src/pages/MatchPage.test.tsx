@@ -852,7 +852,7 @@ describe('MatchPage panels, replay and overlays', () => {
     localStorage.clear();
   });
 
-  it('shows a goal card in the goal toast, with the scorer, and not in the top toast', async () => {
+  it('shows a goal card as the big GOAL! word and in the standard toast with its details', async () => {
     stubApi(found(withPlayers()));
     renderPage();
     await screen.findByText('LIVE');
@@ -864,10 +864,11 @@ describe('MatchPage panels, replay and overlays', () => {
     });
 
     const toast = await screen.findByTestId('goal-toast');
-    expect(toast).toHaveTextContent('GOAL');
-    expect(toast).toHaveTextContent('Kofi Marlow');
-    expect(toast).toHaveTextContent("13'");
-    expect(screen.queryByTestId('overlay-toast')).not.toBeInTheDocument();
+    expect(toast).toHaveTextContent(/^GOAL!$/);
+    expect(screen.getByRole('status', { name: 'Goal announcements' })).toHaveTextContent('Kofi Marlow');
+    const standard = screen.getByTestId('overlay-toast');
+    expect(standard).toHaveAttribute('data-type', 'goal');
+    expect(standard).toHaveTextContent('GOAL');
 
     act(() =>
       FakeEventSource.latest().emit('overlay', {
@@ -915,6 +916,83 @@ describe('MatchPage panels, replay and overlays', () => {
     expect(screen.queryByTestId('replay-badge')).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Replay announcements' })).toHaveTextContent('Back to live');
     expect(live.closed).toBe(false);
+  });
+
+  it('puts a REPLAY badge over the pitch while a replay is on', async () => {
+    stubApi(found(detail()), [moment(30)]);
+    renderPage();
+    await screen.findByText('Reason 30');
+    expect(screen.queryByTestId('replay-flag')).not.toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Replay from 11', Big chance/ }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    act(() => FakeEventSource.latest().emit('state', liveState({ lastSequence: 29 }), 29));
+
+    expect(await screen.findByTestId('replay-flag')).toHaveTextContent('Replay');
+  });
+
+  it('replays from a moment on a finished match, holds the last frame at full time and goes back to live on request', async () => {
+    const finished = liveState({ fullTime: true, lastSequence: 200, score: { home: 1, away: 0 } });
+    stubApi(found(detail(finished)), [moment(30)]);
+    renderPage();
+    await screen.findByText('Reason 30');
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: /^Replay from 11', Big chance/ }));
+
+    // Loading first, with the bar and Back to live on show.
+    expect(screen.getByTestId('replay-badge')).toHaveTextContent('Replay · loading…');
+    // A finished match has no live stream, so the replay's is the only one.
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const replay = FakeEventSource.latest();
+    expect(streamUrl(replay).searchParams.get('after')).toBe('28');
+
+    const at = { period: 'SecondHalf', minute: 92, second: 5, display: '92:05' };
+    act(() => {
+      replay.emit('state', liveState({ lastSequence: 29, clock: at, score: { home: 1, away: 0 } } as Partial<LiveState>), 29);
+    });
+    await waitFor(() => expect(screen.getByTestId('replay-badge')).toHaveTextContent(/^Replay/));
+    expect(await screen.findByTestId('replay-flag')).toBeInTheDocument();
+    act(() => {
+      replay.emit('state', liveState({ lastSequence: 200, fullTime: true, clock: at, score: { home: 1, away: 0 } } as Partial<LiveState>), 200);
+      replay.emit('fulltime', liveState({ lastSequence: 200, fullTime: true, clock: at, score: { home: 1, away: 0 } } as Partial<LiveState>), 200);
+    });
+
+    // Held at full time: the bar says so and Back to live is still there.
+    await waitFor(() => expect(screen.getByTestId('replay-badge')).toHaveTextContent('Replay finished'));
+    expect(screen.getByTestId('replay-flag')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Back to live' }));
+
+    expect(screen.queryByTestId('replay-badge')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('replay-flag')).not.toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Replay announcements' })).toHaveTextContent('Back to live');
+  });
+
+  it('shows added time the scoreboard way and drops a leading clock from template text', async () => {
+    const added = liveState({ clock: { period: 'SecondHalf', minute: 92, second: 2, display: '92:02' } });
+    stubApi(found(detail(added)), [moment(30, { reason: '92:02: GOAL! Reggie Ashworth (NBK) scores from the penalty spot. 3–3.' })]);
+    renderPage();
+
+    expect(await screen.findByText('GOAL! Reggie Ashworth (NBK) scores from the penalty spot. 3–3.')).toBeInTheDocument();
+    expect(screen.getByText("90+3'", { selector: '.match-clock' })).toBeInTheDocument();
+    expect(screen.queryByText('92:02')).not.toBeInTheDocument();
+  });
+
+  it('lists each side’s scorers under its name, grouped by player, and only those so far', async () => {
+    const base = withPlayers();
+    const d = { ...base, awayLineup: [{ ...striker, id: 'a7', name: 'Ana Torres', shirtNumber: 7 }] } as unknown as MatchDetail;
+    stubApi(found(d), [
+      moment(30, { kind: 'Goal', playerId: 'h9', clock: { period: 'FirstHalf', minute: 44, second: 0, display: '44:00' } as never }),
+      moment(31, { kind: 'Goal', playerId: 'h9', reason: 'from the penalty spot', clock: { period: 'SecondHalf', minute: 92, second: 0, display: '92:00' } as never }),
+      moment(32, { kind: 'Goal', playerId: 'a7', team: 'Away' }),
+    ]);
+    renderPage();
+
+    const home = await screen.findByRole('list', { name: 'Harbourside Rovers scorers' });
+    expect(within(home).getByRole('listitem')).toHaveTextContent("Marlow 45', 90+3' (pen)");
+    expect(within(home).getByRole('listitem', { name: "Kofi Marlow 45', 90+3' penalty" })).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Millbrook Athletic scorers' })).getByRole('listitem')).toHaveTextContent("Torres 11'");
   });
 
   it('opens the player flyout from a line-ups name', async () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { MomentView } from '../live/matchStreamReducer';
 import { MomentIcon } from './MomentIcon';
 import { iconForMoment } from './momentIcons';
-import { countOf, footballMinute, playerFacts } from './playerFacts';
+import { countOf, footballMinute, playerFacts, scorerLabel, scorersBySide, scorerText, stripClockPrefix, surname } from './playerFacts';
 
 function moment(
   sequence: number,
@@ -98,5 +98,50 @@ describe('MomentIcon', () => {
     expect(iconForMoment('Substitution')).toBe('sub');
     expect(iconForMoment('ClearedOffLine')).toBe('clearance');
     expect(iconForMoment('ThrowIn')).toBeNull();
+  });
+});
+
+describe('stripClockPrefix', () => {
+  it('removes a leading clock and leaves other text alone', () => {
+    expect(stripClockPrefix('92:02: GOAL! Reggie Ashworth (NBK) scores. 3–3.')).toBe('GOAL! Reggie Ashworth (NBK) scores. 3–3.');
+    expect(stripClockPrefix('7:05:   Corner kick')).toBe('Corner kick');
+    expect(stripClockPrefix('xG 0.41 from 11 m')).toBe('xG 0.41 from 11 m');
+    expect(stripClockPrefix('Scored at 92:02: late')).toBe('Scored at 92:02: late');
+  });
+});
+
+describe('scorers', () => {
+  const names: Record<string, string> = { a: 'Reggie Ashworth', b: 'Mo Reyes', c: 'Ana Torres' };
+  const goal = (sequence: number, playerId: string | null, minute: number, team: 'Home' | 'Away', reason = 'Goal') => ({
+    ...moment(sequence, 'Goal', playerId, null, minute),
+    team,
+    reason,
+  });
+
+  it('groups a player’s goals, marks penalties and splits the sides, in order', () => {
+    const { home, away } = scorersBySide(
+      [
+        goal(5, 'a', 90 + 2, 'Home', '92:02: GOAL! scores from the penalty spot.'),
+        goal(2, 'a', 44, 'Home'),
+        goal(3, 'c', 20, 'Away'),
+        moment(4, 'YellowCard', 'b'),
+        goal(9, 'b', 70, 'Home'),
+      ],
+      (id) => names[id],
+    );
+
+    expect(home.map(scorerText)).toEqual(["Ashworth 45', 90+3' (pen)", "Reyes 71'"]);
+    expect(away.map(scorerText)).toEqual(["Torres 21'"]);
+    expect(scorerLabel(home[0]!)).toBe("Reggie Ashworth 45', 90+3' penalty");
+  });
+
+  it('shows a goal with no known scorer', () => {
+    const { home } = scorersBySide([goal(1, null, 10, 'Home'), goal(2, 'zz', 30, 'Home')], () => undefined);
+    expect(home.map(scorerText)).toEqual(["Goal 11'", "Goal 31'"]);
+  });
+
+  it('takes the last word as the surname', () => {
+    expect(surname('Jo van der Berg')).toBe('Berg');
+    expect(surname('Pele')).toBe('Pele');
   });
 });

@@ -322,7 +322,21 @@ describe('useMatchReplay', () => {
     expect(result.current.status).toBe('idle');
   });
 
-  it('plays a finished match to full time, then goes back to idle', () => {
+  it('starts another replay from an ended one', () => {
+    const { result } = replayOf(liveAt(200, clock('SecondHalf', 93), { fullTime: true }));
+    act(() => result.current.start({ sequence: 199 }));
+    const first = FakeEventSource.latest();
+    emitEvent(first, event(199, 'SecondHalf', 93, 0));
+    act(() => first.emit('fulltime', state(200, clock('SecondHalf', 93, 10), { fullTime: true }), 200));
+    advance(0);
+    expect(result.current.status).toBe('ended');
+
+    act(() => result.current.start({ sequence: 100 }));
+    expect(result.current.status).toBe('loading');
+    expect(FakeEventSource.latest()).not.toBe(first);
+  });
+
+  it('plays a finished match to full time, then holds the last frame as ended until back to live', () => {
     const { result } = replayOf(liveAt(200, clock('SecondHalf', 93), { fullTime: true }));
     act(() => result.current.start({ sequence: 199 }));
     const source = FakeEventSource.latest();
@@ -339,7 +353,16 @@ describe('useMatchReplay', () => {
     advance(1000);
     expect(sequenceOf(result.current)).toBe(199);
     advance(1000);
+    expect(result.current.status).toBe('ended');
+    expect(result.current.match?.fullTime).toBe(true);
+    expect(result.current.clock).toEqual(clock('SecondHalf', 93, 10));
+    expect(vi.getTimerCount()).toBe(0);
+    advance(10_000);
+    expect(result.current.status).toBe('ended');
+
+    act(() => result.current.backToLive());
     expect(result.current.status).toBe('idle');
+    expect(result.current.match).toBeNull();
   });
 
   it('back to live closes the stream, clears its timers and returns to idle', () => {

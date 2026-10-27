@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { LiveState, MatchDetail, MomentView } from '../live/matchStreamReducer';
 import { MomentIcon } from './MomentIcon';
 import { iconForMoment, momentIconLabel } from './momentIcons';
@@ -79,6 +79,7 @@ export function MatchTimeline({
   onSelectMoment,
   onSeek,
 }: MatchTimelineProps) {
+  const hintId = useId();
   const homeName = detail.summary.home.name;
   const awayName = detail.summary.away.name;
   const { firstHalfEnd, axisEnd, position, live } = useMemo(
@@ -208,6 +209,7 @@ export function MatchTimeline({
             className="timeline-slider"
             type="range"
             aria-label="Replay from minute"
+            aria-describedby={hintId}
             aria-valuetext={minuteText(value)}
             min={0}
             max={maxValue}
@@ -233,7 +235,7 @@ export function MatchTimeline({
           {renderIcons(icons.away, awayName, true)}
         </div>
       </div>
-      <p className="timeline-hint muted">Drag or use the arrow keys, then press Enter, to replay from a minute.</p>
+      <p id={hintId} className="timeline-hint muted">Drag or use the arrow keys, then press Enter, to replay from a minute.</p>
     </section>
   );
 }

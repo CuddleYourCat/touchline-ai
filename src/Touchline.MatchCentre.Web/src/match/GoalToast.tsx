@@ -21,10 +21,11 @@ export interface GoalToastProps {
 }
 
 /**
- * A goal celebrated large in the centre of the pitch (ADR-068). Plain white text with a shadow, no box and no team
- * colours (ADR-071). It shows for the card's duration, fades, then calls
- * `onDone`. A new card replaces the current one and restarts the timer. The card is `aria-hidden`; a live region that
- * stays mounted does the announcing, and nothing here takes clicks.
+ * A goal celebrated large in the centre of the pitch (ADR-068): just the word GOAL! in white display capitals
+ * with a shadow, no box and no team colours (ADR-071). The scorer, score and minute are in the standard toast and the
+ * live region, not here. It shows for the card's duration, fades, then calls `onDone`. A new card replaces the
+ * current one and restarts the timer. The card is `aria-hidden`; a live region that stays mounted does the
+ * announcing, and nothing here takes clicks.
  */
 export function GoalToast({ card, scorerName, teamName, score, minute, replay, onDone }: GoalToastProps) {
   const reducedMotion = useReducedMotion();
@@ -79,13 +80,7 @@ export function GoalToast({ card, scorerName, teamName, score, minute, replay, o
       {announcer}
       <div className={className} aria-hidden="true" data-testid="goal-toast">
         {replay && <span className="goal-toast-replay">Replay</span>}
-        <strong className="goal-toast-title">{card.payload.title}</strong>
-        {scorerName && <span className="goal-toast-scorer">{scorerName}</span>}
-        <span className="goal-toast-team">{teamName}</span>
-        <span className="goal-toast-score data">
-          {score.homeName} {score.home} – {score.away} {score.awayName}
-        </span>
-        <span className="goal-toast-minute data">{minute}</span>
+        <strong className="goal-toast-title">GOAL!</strong>
       </div>
     </>
   );

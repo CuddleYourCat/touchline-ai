@@ -7,7 +7,8 @@ import { GoalToast } from '../match/GoalToast';
 import { HalfTimeCard } from '../match/HalfTimeCard';
 import { LineupsDrawer } from '../match/LineupsDrawer';
 import { MatchTimeline } from '../match/MatchTimeline';
-import { footballMinute, playerFacts } from '../match/playerFacts';
+import { footballMinute, playerFacts, scorerLabel, scorersBySide, scorerText, stripClockPrefix, type Scorer } from '../match/playerFacts';
+import { clockLabel } from '../matches/clockLabel';
 import { PlayerFlyout } from '../match/PlayerFlyout';
 import { MomentumBars } from '../pitch/MomentumBars';
 import { parseKit, tokenColours, type Kit } from '../pitch/kitColours';
@@ -33,9 +34,12 @@ function awaitingKickOff(match: LiveMatch): boolean {
   return match.detail.summary.status === 'Scheduled' && !match.fullTime && match.state.lastSequence === 0;
 }
 
-/** The header clock: the running clock, or HT and FT while the match is paused or over (ADR-066). */
+/**
+ * The header clock: the running clock, or HT and FT while the match is paused or over (ADR-066). Added time reads as a
+ * scoreboard does, `90+3'`, the same as the match cards on the home page.
+ */
 function clockText(match: LiveMatch): string {
-  return match.fullTime ? 'FT' : match.state.halfTime ? 'HT' : match.state.clock.display;
+  return match.fullTime ? 'FT' : match.state.halfTime ? 'HT' : clockLabel(match.state.clock);
 }
 
 /**
@@ -55,28 +59,47 @@ function KitKey({ side, name, kit }: { side: 'home' | 'away'; name: string; kit:
   );
 }
 
+/**
+ * A side's scorers under its name, like a TV scoreboard: `Ashworth 45+2', 90+3' (pen)`. The surname keeps it compact and
+ * the CSS clips it to two lines; each entry carries the full name for a screen reader.
+ */
+function Scorers({ name, scorers }: { name: string; scorers: Scorer[] }) {
+  if (scorers.length === 0) return null;
+  return (
+    <ul className="scoreboard-scorers" aria-label={`${name} scorers`}>
+      {scorers.map((scorer) => (
+        <li key={scorer.key} aria-label={scorerLabel(scorer)}>
+          {scorerText(scorer)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 interface ScoreboardProps {
   match: LiveMatch;
   replay: boolean;
   homeKit: Kit | null;
   awayKit: Kit | null;
+  /** Each side's scorers so far, from the moments on show. */
+  scorers: { home: Scorer[]; away: Scorer[] };
   /** The buttons at the end of the row: line-ups and settings. */
   children: ReactNode;
 }
 
-function Scoreboard({ match, replay, homeKit, awayKit, children }: ScoreboardProps) {
+function Scoreboard({ match, replay, homeKit, awayKit, scorers, children }: ScoreboardProps) {
   const { home, away } = match.detail.summary;
   const { score, clock } = match.state;
   const waiting = awaitingKickOff(match);
   const status = replay
-    ? `Replay, ${clock.display}`
+    ? `Replay, ${clockLabel(clock)}`
     : match.fullTime
       ? 'Full time'
       : match.state.halfTime
         ? 'Half time'
         : waiting
           ? 'Kick-off in a moment'
-          : `Live, ${clock.display}`;
+          : `Live, ${clockLabel(clock)}`;
   const label = `${status}, ${home.name} ${score.home}, ${away.name} ${score.away}`;
 
   return (
@@ -85,7 +108,10 @@ function Scoreboard({ match, replay, homeKit, awayKit, children }: ScoreboardPro
         <span className="scoreboard-team scoreboard-team-home">
           <img src={home.crestUrl} alt={`${home.name} crest`} width={52} height={52} />
           <KitKey side="home" name={home.name} kit={homeKit} />
-          <span>{home.name}</span>
+          <span className="scoreboard-name">
+            <span>{home.name}</span>
+            <Scorers name={home.name} scorers={scorers.home} />
+          </span>
         </span>
         <div className="scoreboard-centre">
           <div className="scoreboard-status">
@@ -109,7 +135,10 @@ function Scoreboard({ match, replay, homeKit, awayKit, children }: ScoreboardPro
         <span className="scoreboard-team scoreboard-team-away">
           <img src={away.crestUrl} alt={`${away.name} crest`} width={52} height={52} />
           <KitKey side="away" name={away.name} kit={awayKit} />
-          <span>{away.name}</span>
+          <span className="scoreboard-name">
+            <span>{away.name}</span>
+            <Scorers name={away.name} scorers={scorers.away} />
+          </span>
         </span>
         <div className="scoreboard-tools">{children}</div>
       </div>
@@ -151,7 +180,7 @@ const MomentItem = memo(function MomentItem({ moment, line, analysis, viewerMode
           {line?.source === 'Template' && <span className="tag">Template</span>}
           {otherMode && <span className="tag">{line.mode === 'Analyst' ? 'Analyst view' : 'Casual view'}</span>}
         </div>
-        <p className="moment-text">{line ? line.text : moment.reason}</p>
+        <p className="moment-text">{stripClockPrefix(line ? line.text : moment.reason)}</p>
         {analysis && <p className="moment-analysis muted">{analysis.text}</p>}
       </div>
       <button
@@ -236,9 +265,10 @@ const GoalLayer = memo(function GoalLayer({
   );
 });
 
-/** "Replay · 12 min behind live", or just "Replay" on a finished match or before the playhead has a time. */
+/** "Replay · 12 min behind live", "Replay finished" at full time, or just "Replay" on a finished match or before the playhead has a time. */
 function replayLabel(replay: MatchReplay, liveFinished: boolean): string {
   if (replay.status === 'loading') return 'Replay · loading…';
+  if (replay.status === 'ended') return 'Replay finished';
   const behind = replay.behindLiveSeconds;
   if (liveFinished || behind === null) return 'Replay';
   const minutes = Math.round(behind / 60);
@@ -248,8 +278,11 @@ function replayLabel(replay: MatchReplay, liveFinished: boolean): string {
 function ReplayBar({ replay, liveFinished }: { replay: MatchReplay; liveFinished: boolean }) {
   // The announcer is always mounted, so a screen reader is already listening when a replay starts or ends.
   const on = replay.status !== 'idle';
-  const [announced, setAnnounced] = useState({ on: false, text: '' });
-  if (announced.on !== on) setAnnounced({ on, text: on ? 'Replay started' : 'Back to live' });
+  const phase = replay.status === 'ended' ? 'ended' : on ? 'on' : 'idle';
+  const [announced, setAnnounced] = useState({ phase: 'idle', text: '' });
+  if (announced.phase !== phase) {
+    setAnnounced({ phase, text: phase === 'ended' ? 'Replay finished' : phase === 'on' ? 'Replay started' : 'Back to live' });
+  }
 
   return (
     <>
@@ -310,7 +343,6 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
   // The timeline keeps every moment during a replay, so each icon stays clickable.
   const liveMomentList = useMemo(() => Object.values(live.moments), [live.moments]);
   const facts = useMemo(() => playerFacts(momentList), [momentList]);
-  const toastOverlays = useMemo(() => shown.overlays.filter((card) => card.type !== 'goal'), [shown.overlays]);
 
   const replayFromSequence = useCallback((sequence: number) => start({ sequence }), [start]);
   // The live match has every moment; the replay's view has only those already played.
@@ -347,6 +379,11 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
   const scorer = scorerId ? allPlayers.find(({ p }) => p.id === scorerId) : undefined;
   const goalTeam = goal.card?.payload.team === 'Away' ? awayName : homeName;
 
+  const scorers = useMemo(
+    () => scorersBySide(momentList, (playerId) => allPlayers.find(({ p }) => p.id === playerId)?.p.name),
+    [momentList, allPlayers],
+  );
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = selectedId ? allPlayers.find(({ p }) => p.id === selectedId) : undefined;
   const [lineupsOpen, setLineupsOpen] = useState(false);
@@ -359,7 +396,7 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
           Reconnecting…
         </p>
       )}
-      <Scoreboard match={shown} replay={replay.status !== 'idle'} homeKit={homeKit} awayKit={awayKit}>
+      <Scoreboard match={shown} replay={replay.status !== 'idle'} homeKit={homeKit} awayKit={awayKit} scorers={scorers}>
         <button
           type="button"
           className="button button-quiet"
@@ -396,7 +433,8 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
             awayLineup={detail.awayLineup}
             homeBench={detail.homeSubstitutes}
             awayBench={detail.awaySubstitutes}
-            overlays={toastOverlays}
+            overlays={shown.overlays}
+            replay={replaying}
             homeName={homeName}
             awayName={awayName}
             homeKit={homeKit}
