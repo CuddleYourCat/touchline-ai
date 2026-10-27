@@ -1,7 +1,10 @@
 /*
- * The match page's layout (ADR-066 to 068). One column on a phone, in reading order: pitch, timeline, moments,
- * line-ups, momentum, questions. From 960px the pitch and timeline take the left column, the moments sit beside them
- * in a scrolling column, and the line-ups run full width below.
+ * The match page's layout (ADR-066 to 068, ADR-071). On a phone it is one column in reading order: scoreboard, pitch,
+ * timeline, momentum, moments. From 960px it fits one screen with no page scroll (the viewport height less the site
+ * header): a compact scoreboard row on top (colour key, score, clock, and the Line-ups and settings buttons), then
+ * the pitch big on the left with the timeline and a slim momentum strip under it, and the moments in a right column
+ * that scrolls on its own. The line-ups drawer (from the left), the player card (from the right) and the Ask the
+ * Analyst chat (bottom-right) float over the page and take no room in the grid.
  */
 .match-page {
   min-width: 0;
@@ -71,6 +74,62 @@
   overflow-y: auto;
 }
 
+.button-quiet {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--glass-edge);
+}
+
+.button.button-quiet:hover:not(:disabled),
+.button.button-quiet:focus-visible,
+.button.button-quiet[aria-expanded='true'] {
+  color: var(--highlight);
+  background: var(--surface);
+  border-color: var(--highlight);
+}
+
+/* The settings popover hangs from the scoreboard, so the scoreboard sits above the panels below it. */
+.match-page .scoreboard {
+  position: relative;
+  z-index: 20;
+}
+
+.scoreboard-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+/* A side's kit colours: a circle for home and a diamond for away, as on the pitch. */
+.kit-key {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid var(--key-rim, var(--pitch-home-rim));
+  background: var(--key-fill, var(--pitch-home));
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.55);
+}
+
+.kit-key-away {
+  border-color: var(--key-rim, var(--pitch-away-rim));
+  background: var(--key-fill, var(--pitch-away));
+  border-radius: 2px;
+  transform: rotate(45deg) scale(0.85);
+}
+
+.match-page .recap-teaser {
+  padding: 6px 12px;
+}
+
+.match-page .replay-bar {
+  padding: 4px 10px;
+}
+
+
 .match-page .moment {
   grid-template-columns: 3.5em minmax(0, 1fr);
 }
@@ -100,49 +159,141 @@
 }
 
 @media (min-width: 960px) {
+  /*
+   * Fit the screen without knowing the header's height: the shell is a column as tall as the viewport, the header takes
+   * what it needs and the page takes the rest. Other pages are unchanged.
+   */
+  .shell:has(.match-page) {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+  }
+
+  .shell:has(.match-page) > .main {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    width: 100%;
+    max-width: 1440px;
+    min-height: 0;
+    padding-block: 12px 8px;
+  }
+
+  .match-page {
+    flex: 1 1 0;
+    gap: 8px;
+    min-height: 420px;
+  }
+
+  .match-page .scoreboard {
+    padding: 6px 12px;
+    gap: 2px;
+  }
+
+  .match-page .scoreboard-teams {
+    grid-template-columns: 1fr auto 1fr auto;
+    gap: 12px;
+  }
+
+  .scoreboard-tools {
+    grid-column: auto;
+  }
+
+  .match-page .scoreboard .scoreboard-team img {
+    width: 40px;
+  }
+
+  .match-page .scoreboard .scoreboard-score {
+    font-size: 2rem;
+  }
+
+  .match-page .scoreboard-meta {
+    padding-top: 2px;
+    font-size: 0.75rem;
+  }
+
   .match-layout {
-    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+    flex: 1 1 0;
+    min-height: 0;
+    gap: 8px 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-rows: minmax(0, 1fr) auto auto;
     grid-template-areas:
       'stage moments'
       'timeline moments'
-      'lineups lineups'
-      'momentum questions';
-    align-items: start;
+      'momentum moments';
   }
 
   .match-stage {
     grid-area: stage;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* The pitch takes whatever height is left and its drawing fills the frame, so it grows and shrinks with the window. */
+  .match-stage .pitch-panel,
+  .match-stage .pitch-figure {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .match-stage .pitch-frame {
+    flex: 1 1 0;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .match-stage .pitch {
+    position: absolute;
+    inset: 8px;
+    width: calc(100% - 16px);
+    height: calc(100% - 16px);
+    aspect-ratio: auto;
+  }
+
+  .match-stage .pitch-caption {
+    margin-top: 2px;
   }
 
   .match-timeline {
     grid-area: timeline;
   }
 
+  .match-momentum {
+    grid-area: momentum;
+  }
+
+  .match-layout .match-tray {
+    padding: 6px 12px 8px;
+  }
+
+  .match-layout .match-tray h2 {
+    margin: 0 0 2px;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+  }
+
+  .match-momentum .momentum-chart {
+    height: 44px;
+  }
+
   .match-moments {
     grid-area: moments;
-    align-self: stretch;
     display: flex;
     flex-direction: column;
-    /* Ignore its own content when sizing the row, so a long list scrolls instead of stretching the page. */
+    /* Ignore its own content when sizing the rows, so a long list scrolls instead of stretching the page. */
     contain: size;
-    min-height: 24rem;
+    min-height: 0;
   }
 
   .match-moments .moment-list {
     flex: 1 1 0;
     min-height: 0;
     max-height: none;
-  }
-
-  .match-lineups {
-    grid-area: lineups;
-  }
-
-  .match-momentum {
-    grid-area: momentum;
-  }
-
-  .match-questions {
-    grid-area: questions;
+    /* Room under the last moment for the Ask the Analyst pill. */
+    padding-bottom: 56px;
   }
 }

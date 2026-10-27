@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { checkForMaintenance } from '../api/maintenance';
-import { defaultViewer, viewerForMatch, viewerQuery, type Viewer } from '../viewer/viewer';
+import { defaultViewer, viewerQuery, type Viewer } from '../viewer/viewer';
 import {
   applyMessage,
   initialLiveMatch,
@@ -152,7 +152,6 @@ export function useMatchStream(
   const fallback = defaultViewer();
   const mode = viewer?.mode ?? fallback.mode;
   const language = viewer?.language ?? fallback.language;
-  const team = viewer?.team;
   // A new match, or a retry, shows the loading state. A new viewer keeps the match on screen while it reloads.
   const shown = useRef<string | undefined>(undefined);
 
@@ -162,7 +161,7 @@ export function useMatchStream(
       shown.current = key;
       dispatch({ type: 'reset' });
     }
-    let who: Viewer = team ? { mode, language, team } : { mode, language };
+    const who: Viewer = { mode, language };
     let cancelled = false;
     let finished = false;
     let source: EventSource | undefined;
@@ -239,8 +238,6 @@ export function useMatchStream(
         dispatch({ type: detail.kind });
         return;
       }
-      const { home, away } = detail.detail.summary;
-      who = viewerForMatch(who, [home.id, away.id]);
       const moments = await fetchMoments(matchId, who);
       if (cancelled) return;
       dispatch({ type: 'loaded', detail: detail.detail, moments, language: who.language });
@@ -253,17 +250,14 @@ export function useMatchStream(
       cancelled = true;
       close();
     };
-  }, [matchId, attempt, mode, language, team]);
+  }, [matchId, attempt, mode, language]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
-  const clubs = state.kind === 'ready' ? [state.match.detail.summary.home.id, state.match.detail.summary.away.id] : [];
-  const sentTeam = viewerForMatch(team ? { mode, language, team } : { mode, language }, clubs).team;
-
   const retryMoments = useCallback(() => {
-    const who: Viewer = sentTeam ? { mode, language, team: sentTeam } : { mode, language };
+    const who: Viewer = { mode, language };
     void fetchMoments(matchId, who).then((moments) => dispatch({ type: 'moments', matchId, moments }));
-  }, [matchId, mode, language, sentTeam]);
+  }, [matchId, mode, language]);
 
-  return { state, retry, retryMoments, viewer: sentTeam ? { mode, language, team: sentTeam } : { mode, language } };
+  return { state, retry, retryMoments, viewer: { mode, language } };
 }

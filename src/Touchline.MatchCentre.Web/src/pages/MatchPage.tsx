@@ -1,16 +1,16 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import type { CommentaryLine, LiveMatch, MomentAnalysis, MomentView, OverlayCard } from '../live/matchStreamReducer';
 import { useMatchReplay, type MatchReplay } from '../live/useMatchReplay';
 import { useMatchStream, type Viewer } from '../live/useMatchStream';
 import { GoalToast } from '../match/GoalToast';
 import { HalfTimeCard } from '../match/HalfTimeCard';
-import { LineupsCard } from '../match/LineupsCard';
+import { LineupsDrawer } from '../match/LineupsDrawer';
 import { MatchTimeline } from '../match/MatchTimeline';
 import { footballMinute, playerFacts } from '../match/playerFacts';
 import { PlayerFlyout } from '../match/PlayerFlyout';
 import { MomentumBars } from '../pitch/MomentumBars';
-import { parseKit } from '../pitch/kitColours';
+import { parseKit, tokenColours, type Kit } from '../pitch/kitColours';
 import { Pitch } from '../pitch/Pitch';
 import { momentAnchor } from '../questions/askQuestion';
 import { FanQuestions } from '../questions/FanQuestions';
@@ -38,7 +38,33 @@ function clockText(match: LiveMatch): string {
   return match.fullTime ? 'FT' : match.state.halfTime ? 'HT' : match.state.clock.display;
 }
 
-function Scoreboard({ match, replay }: { match: LiveMatch; replay: boolean }) {
+/**
+ * The colour key for one side (ADR-071): its kit colours in the shape its players have on the pitch, a circle for home
+ * and a diamond for away, so the sides don't depend on colour alone. A club whose kit hasn't loaded keeps the house colours.
+ */
+function KitKey({ side, name, kit }: { side: 'home' | 'away'; name: string; kit: Kit | null }) {
+  const colours = kit ? tokenColours(kit) : null;
+  const style = colours ? ({ '--key-fill': colours.fill, '--key-rim': colours.rim } as CSSProperties) : undefined;
+  return (
+    <span
+      className={`kit-key kit-key-${side}`}
+      style={style}
+      role="img"
+      aria-label={`${name} colours, shown as ${side === 'home' ? 'circles' : 'diamonds'} on the pitch`}
+    />
+  );
+}
+
+interface ScoreboardProps {
+  match: LiveMatch;
+  replay: boolean;
+  homeKit: Kit | null;
+  awayKit: Kit | null;
+  /** The buttons at the end of the row: line-ups and settings. */
+  children: ReactNode;
+}
+
+function Scoreboard({ match, replay, homeKit, awayKit, children }: ScoreboardProps) {
   const { home, away } = match.detail.summary;
   const { score, clock } = match.state;
   const waiting = awaitingKickOff(match);
@@ -58,6 +84,7 @@ function Scoreboard({ match, replay }: { match: LiveMatch; replay: boolean }) {
       <div className="scoreboard-teams">
         <span className="scoreboard-team scoreboard-team-home">
           <img src={home.crestUrl} alt={`${home.name} crest`} width={52} height={52} />
+          <KitKey side="home" name={home.name} kit={homeKit} />
           <span>{home.name}</span>
         </span>
         <div className="scoreboard-centre">
@@ -81,8 +108,10 @@ function Scoreboard({ match, replay }: { match: LiveMatch; replay: boolean }) {
         </div>
         <span className="scoreboard-team scoreboard-team-away">
           <img src={away.crestUrl} alt={`${away.name} crest`} width={52} height={52} />
+          <KitKey side="away" name={away.name} kit={awayKit} />
           <span>{away.name}</span>
         </span>
+        <div className="scoreboard-tools">{children}</div>
       </div>
       <div className="match-card-meta scoreboard-meta">
         <span>{match.detail.venue}</span>
@@ -199,7 +228,6 @@ const GoalLayer = memo(function GoalLayer({
       card={card}
       scorerName={scorerName}
       teamName={teamName}
-      teamColour={null}
       score={{ home, away, homeName, awayName }}
       minute={minute}
       replay={replay}
@@ -321,6 +349,8 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = selectedId ? allPlayers.find(({ p }) => p.id === selectedId) : undefined;
+  const [lineupsOpen, setLineupsOpen] = useState(false);
+  const lineupsId = `${useId()}-lineups`;
 
   return (
     <div className="match-live match-page">
@@ -329,7 +359,18 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
           Reconnecting…
         </p>
       )}
-      <Scoreboard match={shown} replay={replay.status !== 'idle'} />
+      <Scoreboard match={shown} replay={replay.status !== 'idle'} homeKit={homeKit} awayKit={awayKit}>
+        <button
+          type="button"
+          className="button button-quiet"
+          aria-expanded={lineupsOpen}
+          aria-controls={lineupsId}
+          onClick={() => setLineupsOpen((o) => !o)}
+        >
+          Line-ups
+        </button>
+        <ViewerSettings showPitchOption viewer={saved} onChange={onViewerChange} />
+      </Scoreboard>
       <ReplayBar replay={replay} liveFinished={live.fullTime} />
       {live.fullTime && (
         <Link to={`/matches/${encodeURIComponent(id)}/recap`} className="panel recap-teaser">
@@ -337,12 +378,6 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
           <span>Read the full-time recap</span>
         </Link>
       )}
-      <ViewerSettings
-        showPitchOption
-        viewer={saved}
-        onChange={onViewerChange}
-        clubs={[detail.summary.home, detail.summary.away].map(({ id: clubId, name }) => ({ id: clubId, name }))}
-      />
       {momentsFailed && (
         <div className="banner">
           <p>Earlier moments couldn't be loaded.</p>
@@ -394,28 +429,35 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
             onSeek={start}
           />
         </div>
-        <MomentsList match={shown} viewerMode={viewer.mode} onReplay={replayFromSequence} />
-        <section className="match-section match-lineups" aria-label="Line-ups">
-          <h2>Line-ups</h2>
-          <LineupsCard detail={detail} moments={momentList} onSelectPlayer={setSelectedId} selectedPlayerId={selectedId} />
-        </section>
         <div className="match-momentum">
           <MomentumBars readings={shown.momentum} homeName={homeName} awayName={awayName} />
         </div>
-        {/* Keyed by match: a new match mounts a new box, which aborts the old question and starts an empty list. */}
-        <div className="match-questions">
-          <FanQuestions key={id} matchId={id} viewer={viewer} momentIds={momentIds} />
-        </div>
+        <MomentsList match={shown} viewerMode={viewer.mode} onReplay={replayFromSequence} />
       </div>
+      {lineupsOpen && (
+        <LineupsDrawer
+          id={lineupsId}
+          detail={detail}
+          moments={momentList}
+          selectedPlayerId={selectedId}
+          onSelectPlayer={setSelectedId}
+          onClose={() => setLineupsOpen(false)}
+          suspended={selected !== undefined}
+        />
+      )}
+      {/* Keyed by match: a new match mounts a new chat, which aborts the old question and starts an empty list. */}
+      <FanQuestions key={id} matchId={id} viewer={viewer} momentIds={momentIds} />
       {selected && (
         <PlayerFlyout
           player={selected.p}
+          withDrawer={lineupsOpen}
           teamName={selected.team}
           facts={facts[selected.p.id]}
           season={detail.summary.season ?? null}
           onClose={() => setSelectedId(null)}
           onSelectMoment={(momentId) => {
             setSelectedId(null);
+            setLineupsOpen(false);
             replayFromMoment(momentId);
           }}
         />

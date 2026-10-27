@@ -2182,3 +2182,35 @@ Consecutive notable moments of the same kind read as copies in the feed. A run o
 - **The wording stays neutral.** It is filled only from roster names, with no invented tactical or medical detail. The roster guardrail is unaffected.
 - **No change on the wire or in storage.** Only the text of a `CommentaryLine` changes. Lines are built when read, not stored, so a finished match shows the new wording too.
 - **There are 27 new strings to keep in step across three languages.** A test checks every kind and language has the same number of variants.
+
+---
+
+## ADR-071 — Match page on one screen; club pages
+
+**Status:** Accepted · 27 Oct 2026, Tracey's call
+
+**Context**
+The match page had grown into a long scroll. Settings were a wide card at the top, the line-ups and the Ask the Analyst box sat in the middle of the page, and three legends (pitch, timeline, momentum) each explained which side was which. The pitch, the thing a fan came for, was pushed down. "Favourite club" was offered in the settings, but the server validates the `team` parameter and never uses it, so choosing a club changed nothing. On the Teams page, club cards were plain and not clickable, and the empty fan-made clubs message gave no way forward.
+
+**Decision**
+Match page:
+- **Favourite club is removed from the UI.** The viewer is now only a mode and a language, and the web app no longer stores or sends `team`. The server parameter is left in place, unused, so nothing on the API changes.
+- **Settings sit behind a gear button in the scoreboard.** It opens a small popover with View (Casual or Analyst), Language and the grey-pitch accessibility option. It closes on Escape (focus returns to the gear), on a click outside and when focus leaves it. The recap page uses the same gear.
+- **The colour key lives only in the scoreboard.** Each team's kit colour is shown beside its name, as a circle for home and a diamond for away, matching the shapes on the pitch. The legends under the pitch, the timeline and the momentum strip are removed. Their meaning stays in visually-hidden text and chart labels for screen readers.
+- **The "Goal!" toast is plain.** White text with a shadow over the pitch, no background, border or team colour. The animation and the replay tag stay.
+- **Ask the Analyst is a chat flyout pinned bottom-right.** A pill opens a panel above it: the fan's questions on the right, the Analyst's answers on the left, cited moments still clickable, input and send at the bottom. Escape or the close button closes it, and focus moves into the box on open and back to the pill on close. On a phone the panel is close to full width.
+- **The page fits one screen with no scroll on desktop (960px and up).** A compact scoreboard row on top (names, colour key, score, clock, Line-ups and gear), the pitch big on the left with the timeline and a slim momentum strip under it, and the Moments list in a right column that scrolls on its own. A phone still stacks and scrolls.
+- **Line-ups open in a drawer from the left; clicking a player opens the player card from the right.** Both can be open at once. Escape closes the topmost first. Both respect reduced motion.
+
+Teams page (built in a separate change):
+- **Club cards are clickable** and styled like the home page's match cards, in the club's home colour.
+- **Each card opens `/teams/:id`**, a club page that shows the club the way the line-ups do, plus the full squad, the manager and the stadium, with a back link to Teams.
+- **The empty fan-made clubs message** links "Build the first one" to `/teams/new`.
+
+**Consequences**
+- **The page is denser.** The pitch scales with the window height; very short windows get a minimum height and then scroll.
+- **Line-ups are one click away instead of always visible.** That is the price of the pitch-first layout. Players are still clickable, and the drawer is non-modal so the pitch stays in view.
+- **The colour key depends on the team records loading.** Until a kit loads, the key and the pitch both use the house red and blue.
+- **Existing saved viewers keep working.** A stored `team` is ignored on load and dropped on the next save.
+- **The Ask the Analyst conversation survives closing the panel** but not a change of match, as before.
+- **The fixed bottom-right pill covers the end of the moments list**, so the list leaves room under its last item.

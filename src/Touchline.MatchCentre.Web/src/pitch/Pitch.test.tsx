@@ -236,18 +236,15 @@ describe('Pitch', () => {
     expect(screen.queryByTestId('ball-trail')).not.toBeInTheDocument();
   });
 
-  it('shows a key to the foul and card markers under the pitch', () => {
+  it('has no visible key under the pitch, but says in text what the shapes and markers mean', () => {
     renderPitch();
 
-    const key = screen.getByRole('list', { name: 'Pitch key' });
-    expect(key).toHaveTextContent('Foul');
-    expect(key).toHaveTextContent('Yellow card');
-    expect(key).toHaveTextContent('Red card');
-    expect(key.querySelector('.marker-yellow')).not.toBeNull();
-    expect(key.querySelector('.marker-red')).not.toBeNull();
+    expect(screen.queryByRole('list', { name: 'Pitch key' })).not.toBeInTheDocument();
+    expect(screen.getByText(/players are circles and .* players are diamonds/)).toBeInTheDocument();
+    expect(screen.getByText(/cross marks a foul/)).toBeInTheDocument();
   });
 
-  it('draws home as circles and away as diamonds, and says so in the key, so colour is not the only cue', () => {
+  it('draws home as circles and away as diamonds, so colour is not the only cue', () => {
     renderPitch({ shape: shape(10) });
 
     const dots = screen.getAllByTestId('player-dot');
@@ -257,9 +254,6 @@ describe('Pitch', () => {
     expect(home.querySelector('polygon')).toBeNull();
     expect(away.querySelector('polygon')).not.toBeNull();
     expect(away.querySelector('circle')).toBeNull();
-    const key = screen.getByRole('list', { name: 'Pitch key' });
-    expect(key.querySelector('.player-home circle')).not.toBeNull();
-    expect(key.querySelector('.player-away polygon')).not.toBeNull();
   });
 
   it("dresses each side's tokens in its kit: shirt colour, trim rim and a readable number", () => {
@@ -338,6 +332,19 @@ describe('MomentumBars', () => {
     expect(bars[2]).toHaveClass('momentum-away');
     expect(bars[2]).toHaveAttribute('y', '0');
     expect(bars[2]).toHaveAttribute('height', '10');
+  });
+
+  it('has no legend, and the chart says in its label which side is above the line', () => {
+    const { container } = render(
+      <MomentumBars readings={[reading('FirstHalf', 0, 0.8)]} homeName="Harbourside Rovers" awayName="Millbrook Athletic" />,
+    );
+
+    expect(container.querySelector('.momentum-legend')).toBeNull();
+    expect(
+      screen.getByRole('img', {
+        name: 'Momentum by five-minute window, Harbourside Rovers above the line, Millbrook Athletic below',
+      }),
+    ).toBeInTheDocument();
   });
 
   it('shifts the second half past first-half added time, so the windows never overlap', () => {

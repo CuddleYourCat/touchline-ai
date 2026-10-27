@@ -5,7 +5,6 @@ import {
   normaliseLanguage,
   saveViewer,
   supportedLanguage,
-  viewerForMatch,
   viewerQuery,
   viewerStorageKey,
 } from './viewer';
@@ -53,9 +52,9 @@ describe('viewer', () => {
   });
 
   it('remembers the viewer and reads it back', () => {
-    saveViewer({ mode: 'Analyst', language: 'fr', team: 'north-bank-fc' });
+    saveViewer({ mode: 'Analyst', language: 'fr' });
 
-    expect(loadViewer()).toEqual({ mode: 'Analyst', language: 'fr', team: 'north-bank-fc' });
+    expect(loadViewer()).toEqual({ mode: 'Analyst', language: 'fr' });
   });
 
   it('reads a saved language the picker no longer offers as English', () => {
@@ -66,7 +65,7 @@ describe('viewer', () => {
 
   it('falls back field by field when storage holds something odd', () => {
     vi.spyOn(navigator, 'language', 'get').mockReturnValue('fr-FR');
-    localStorage.setItem(viewerStorageKey, JSON.stringify({ mode: 'Pundit', language: 42, team: '<script>' }));
+    localStorage.setItem(viewerStorageKey, JSON.stringify({ mode: 'Pundit', language: 42, team: 'north-bank-fc' }));
 
     expect(loadViewer()).toEqual({ mode: 'Casual', language: 'fr' });
 
@@ -86,12 +85,10 @@ describe('viewer', () => {
     expect(loadViewer().mode).toBe('Casual');
   });
 
-  it('keeps the favourite club only for a match it plays in, and leaves team out of the query otherwise', () => {
-    const viewer = { mode: 'Casual' as const, language: 'en', team: 'north-bank-fc' };
+  it('no longer carries a favourite club: a saved one is ignored and none goes in the query', () => {
+    localStorage.setItem(viewerStorageKey, JSON.stringify({ mode: 'Casual', language: 'en', team: 'north-bank-fc' }));
 
-    expect(viewerForMatch(viewer, ['north-bank-fc', 'thames-valley-united'])).toEqual(viewer);
-    expect(viewerForMatch(viewer, ['a', 'b'])).toEqual({ mode: 'Casual', language: 'en' });
-    expect(viewerQuery(viewer)).toEqual({ mode: 'Casual', lang: 'en', team: 'north-bank-fc' });
+    expect(loadViewer()).toEqual({ mode: 'Casual', language: 'en' });
     expect(viewerQuery({ mode: 'Analyst', language: 'fr' })).toEqual({ mode: 'Analyst', lang: 'fr' });
   });
 });

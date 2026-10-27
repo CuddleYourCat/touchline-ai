@@ -1,10 +1,17 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ViewerSettings } from '../viewer/ViewerSettings';
 import { pitchStorageKey } from './pitchColour';
 
 const viewer = { mode: 'Casual', language: 'en' } as const;
+
+/** The settings with the pop-over open, so the grey-pitch checkbox can be reached. */
+function renderSettings() {
+  const result = render(<ViewerSettings viewer={viewer} onChange={() => {}} showPitchOption />);
+  fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+  return result;
+}
 
 describe('the grey-pitch option', () => {
   beforeEach(() => {
@@ -19,14 +26,14 @@ describe('the grey-pitch option', () => {
   });
 
   it('is off by default, so the pitch stays green', () => {
-    render(<ViewerSettings viewer={viewer} onChange={() => {}} clubs={[]} showPitchOption />);
+    renderSettings();
 
     expect(screen.getByRole('checkbox', { name: 'Grey pitch' })).not.toBeChecked();
     expect(document.documentElement.dataset.pitch).toBe('green');
   });
 
   it('puts data-pitch=grey on html and remembers the choice', async () => {
-    render(<ViewerSettings viewer={viewer} onChange={() => {}} clubs={[]} showPitchOption />);
+    renderSettings();
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'Grey pitch' }));
 
@@ -37,7 +44,7 @@ describe('the grey-pitch option', () => {
   it('restores a saved grey pitch', () => {
     localStorage.setItem(pitchStorageKey, 'grey');
 
-    render(<ViewerSettings viewer={viewer} onChange={() => {}} clubs={[]} showPitchOption />);
+    renderSettings();
 
     expect(screen.getByRole('checkbox', { name: 'Grey pitch' })).toBeChecked();
     expect(document.documentElement.dataset.pitch).toBe('grey');
@@ -46,7 +53,7 @@ describe('the grey-pitch option', () => {
   it('starts grey when the browser asks for more contrast and nothing was saved', () => {
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(prefers-contrast: more)', media: query }));
 
-    render(<ViewerSettings viewer={viewer} onChange={() => {}} clubs={[]} showPitchOption />);
+    renderSettings();
 
     expect(screen.getByRole('checkbox', { name: 'Grey pitch' })).toBeChecked();
     expect(document.documentElement.dataset.pitch).toBe('grey');
@@ -56,14 +63,14 @@ describe('the grey-pitch option', () => {
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query }));
     localStorage.setItem(pitchStorageKey, 'green');
 
-    render(<ViewerSettings viewer={viewer} onChange={() => {}} clubs={[]} showPitchOption />);
+    renderSettings();
 
     expect(screen.getByRole('checkbox', { name: 'Grey pitch' })).not.toBeChecked();
     expect(document.documentElement.dataset.pitch).toBe('green');
   });
 
   it('labels the option as an accessibility setting and describes why', () => {
-    render(<ViewerSettings viewer={viewer} onChange={() => {}} clubs={[]} showPitchOption />);
+    renderSettings();
 
     expect(screen.getByRole('group', { name: /Accessibility/ })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Grey pitch' })).toHaveAccessibleDescription(
@@ -81,7 +88,7 @@ describe('the grey-pitch option', () => {
       removeEventListener,
     }));
 
-    const { unmount } = render(<ViewerSettings viewer={viewer} onChange={() => {}} clubs={[]} showPitchOption />);
+    const { unmount } = renderSettings();
     expect(document.documentElement.dataset.pitch).toBe('green');
 
     act(() => listener?.({ matches: true }));
@@ -102,7 +109,7 @@ describe('the grey-pitch option', () => {
     }));
     localStorage.setItem(pitchStorageKey, 'green');
 
-    render(<ViewerSettings viewer={viewer} onChange={() => {}} clubs={[]} showPitchOption />);
+    renderSettings();
     act(() => listener?.({ matches: true }));
 
     expect(document.documentElement.dataset.pitch).toBe('green');
@@ -116,7 +123,7 @@ describe('the grey-pitch option', () => {
       throw new Error('blocked');
     });
 
-    render(<ViewerSettings viewer={viewer} onChange={() => {}} clubs={[]} showPitchOption />);
+    renderSettings();
     await userEvent.click(screen.getByRole('checkbox', { name: 'Grey pitch' }));
 
     expect(document.documentElement.dataset.pitch).toBe('grey');

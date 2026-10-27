@@ -5,7 +5,7 @@ import { api } from '../api/client';
 import { citedMoment, maxQuestionLength, momentAnchor, type FanAnswer } from './askQuestion';
 import { FanQuestions } from './FanQuestions';
 
-const viewer = { mode: 'Analyst' as const, language: 'en', team: 'h' };
+const viewer = { mode: 'Analyst' as const, language: 'en' };
 
 function answered(answer: FanAnswer) {
   return { data: answer, error: undefined, response: new Response() };
@@ -37,16 +37,67 @@ function renderBox(momentIds: string[] = []) {
   );
 }
 
-async function ask(text: string) {
+/** Opens the chat from its pill. */
+async function openChat() {
   const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: 'Ask the Analyst' }));
+  return user;
+}
+
+async function ask(text: string) {
+  const user = await openChat();
   await user.type(screen.getByRole('textbox', { name: 'Your question about this match' }), text);
-  await user.click(screen.getByRole('button', { name: 'Ask' }));
+  await user.click(screen.getByRole('button', { name: 'Send' }));
   return user;
 }
 
 describe('FanQuestions', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('is a pill until it is clicked, then a chat panel with the box focused', async () => {
+    renderBox();
+    const pill = screen.getByRole('button', { name: 'Ask the Analyst' });
+    expect(pill).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    const user = await openChat();
+
+    expect(pill).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('dialog', { name: 'Ask the Analyst' })).toHaveAttribute('id', pill.getAttribute('aria-controls'));
+    expect(screen.getByRole('textbox', { name: 'Your question about this match' })).toHaveFocus();
+    await user.click(pill);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('closes on Escape and on its close button, and hands focus back to the pill', async () => {
+    renderBox();
+    const pill = screen.getByRole('button', { name: 'Ask the Analyst' });
+    const user = await openChat();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(pill).toHaveFocus();
+
+    await user.click(pill);
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(pill).toHaveFocus();
+  });
+
+  it('keeps the chat when it is closed and opened again, fan on the right and Analyst on the left', async () => {
+    vi.spyOn(api, 'POST').mockResolvedValue(answered({ text: 'They tired.', language: 'en', citations: [] }) as never);
+    renderBox();
+    const user = await ask('Why?');
+    await screen.findByText('They tired.');
+
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Ask the Analyst' }));
+
+    const answers = screen.getByRole('list', { name: 'Answers' });
+    expect(answers.querySelector('.chat-bubble-fan')).toHaveTextContent('Why?');
+    expect(answers.querySelector('.chat-bubble-analyst')).toHaveTextContent('They tired.');
   });
 
   it("posts the question with the viewer's settings, shows a loading state, then the answer and its citations", async () => {
@@ -57,7 +108,7 @@ describe('FanQuestions', () => {
     await ask('Why did the home side tire?');
 
     expect(post).toHaveBeenCalledWith('/api/matches/{matchId}/questions', {
-      params: { path: { matchId: 'm1' }, query: { mode: 'Analyst', lang: 'en', team: 'h' } },
+      params: { path: { matchId: 'm1' }, query: { mode: 'Analyst', lang: 'en' } },
       body: { question: 'Why did the home side tire?' },
       signal: expect.any(AbortSignal),
     });
@@ -94,6 +145,37 @@ describe('FanQuestions', () => {
     await user.click(await screen.findByRole('button', { name: 'Jump to 23:00 Shot' }));
 
     expect(screen.getByText('Moment m1:412')).toHaveFocus();
+    // The panel closes on a jump at any width, so it never sits over the moment it points at.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('announces an answer that lands while the chat is closed, and shows a dot until it is reopened', async () => {
+    const reply = deferred<unknown>();
+    vi.spyOn(api, 'POST').mockReturnValue(reply.promise as never);
+    renderBox();
+    const user = await ask('Anyone tired?');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('analyst-unread')).not.toBeInTheDocument();
+
+    reply.resolve(answered({ text: 'Yes, the home side.', language: 'en', citations: [] }));
+
+    expect(await screen.findByTestId('analyst-unread')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Analyst announcements' })).toHaveTextContent('The Analyst has answered');
+
+    await user.click(screen.getByRole('button', { name: 'Ask the Analyst' }));
+    expect(screen.queryByTestId('analyst-unread')).not.toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Analyst announcements' })).toBeEmptyDOMElement();
+  });
+
+  it('says nothing extra when the answer lands while the chat is open', async () => {
+    vi.spyOn(api, 'POST').mockResolvedValue(answered({ text: 'Fine.', language: 'en', citations: [] }) as never);
+    renderBox();
+
+    await ask('Ok?');
+    await screen.findByText('Fine.');
+
+    expect(screen.queryByTestId('analyst-unread')).not.toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Analyst announcements' })).toBeEmptyDOMElement();
   });
 
   it('shows the model text and the question as text, never as HTML', async () => {
@@ -123,7 +205,7 @@ describe('FanQuestions', () => {
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.queryByText(/Foundry|stack trace|Boom/)).not.toBeInTheDocument();
     await user.type(screen.getByRole('textbox'), 'And now?');
-    expect(screen.getByRole('button', { name: 'Ask' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
   });
 
   it('degrades to the same friendly message when the network drops', async () => {
@@ -138,14 +220,14 @@ describe('FanQuestions', () => {
   it(`limits a question to ${maxQuestionLength} characters and refuses a blank one`, async () => {
     const post = vi.spyOn(api, 'POST');
     renderBox();
+    const user = await openChat();
     const box = screen.getByRole('textbox');
 
     expect(box).toHaveAttribute('maxLength', String(maxQuestionLength));
-    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
 
-    const user = userEvent.setup();
     await user.type(box, '   ');
-    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
     await user.keyboard('{Enter}');
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByText(`3/${maxQuestionLength}`)).toBeInTheDocument();

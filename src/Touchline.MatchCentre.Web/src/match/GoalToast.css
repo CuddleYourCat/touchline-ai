@@ -1,5 +1,4 @@
 .goal-toast {
-  --goal-toast-team: var(--accent);
   position: absolute;
   top: 50%;
   left: 50%;
@@ -12,12 +11,13 @@
   max-width: 90%;
   padding: 20px 36px;
   text-align: center;
-  background: var(--surface);
-  color: var(--text);
-  border: 2px solid var(--goal-toast-team);
-  border-top-width: 8px;
-  border-radius: var(--radius);
-  box-shadow: 0 12px 40px var(--shadow);
+  background: transparent;
+  border: 0;
+  /* White in both themes, with a shadow to stay legible over the grass. */
+  color: #ffffff;
+  text-shadow:
+    0 2px 4px rgb(0 0 0 / 0.85),
+    0 0 16px rgb(0 0 0 / 0.6);
   pointer-events: none;
   opacity: 1;
   transition: opacity 0.5s ease;
@@ -54,7 +54,6 @@
   font-size: clamp(2.5rem, 9vw, 5rem);
   line-height: 1;
   letter-spacing: 0.06em;
-  color: var(--goal-toast-team);
 }
 
 .goal-toast-scorer {
@@ -66,8 +65,6 @@
 .goal-toast-team {
   font-size: 1rem;
   font-weight: 600;
-  padding-bottom: 2px;
-  border-bottom: 3px solid var(--goal-toast-team);
 }
 
 .goal-toast-score {
@@ -76,7 +73,6 @@
 
 .goal-toast-minute {
   font-size: 0.95rem;
-  color: var(--muted);
 }
 
 @keyframes goal-toast-pop {

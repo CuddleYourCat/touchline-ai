@@ -178,10 +178,9 @@ export function MatchTimeline({
   return (
     <section className="match-section match-tray timeline" aria-label="Match timeline">
       <h2>Timeline</h2>
-      <div className="timeline-legend muted">
-        <span className="timeline-key timeline-key-home">{homeName} above</span>
-        <span className="timeline-key timeline-key-away">{awayName} below</span>
-      </div>
+      <p className="visually-hidden">
+        {homeName} moments sit above the bar and {awayName} moments below it.
+      </p>
       <div className="timeline-track" ref={trackRef}>
         <div className="timeline-icons timeline-icons-home" style={{ height: laneCount(icons.home) * laneHeight }}>
           {renderIcons(icons.home, homeName, false)}

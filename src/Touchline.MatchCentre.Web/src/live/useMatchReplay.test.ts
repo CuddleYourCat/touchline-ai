@@ -105,7 +105,7 @@ const advance = (ms: number) => act(() => vi.advanceTimersByTime(ms));
 function replayOf(live: LiveMatch | null, speed?: number) {
   return renderHook(
     ({ current }: { current: LiveMatch | null }) =>
-      useMatchReplay('m1', current, { speed, viewer: { mode: 'Analyst', language: 'es', team: 'h' } }),
+      useMatchReplay('m1', current, { speed, viewer: { mode: 'Analyst', language: 'es' } }),
     { initialProps: { current: live } },
   );
 }
@@ -143,7 +143,7 @@ describe('useMatchReplay', () => {
     expect(url.searchParams.get('replay')).toBe('true');
     expect(url.searchParams.get('mode')).toBe('Analyst');
     expect(url.searchParams.get('lang')).toBe('es');
-    expect(url.searchParams.get('team')).toBe('h');
+    expect(url.searchParams.has('team')).toBe(false);
     expect(result.current.status).toBe('loading');
   });
 

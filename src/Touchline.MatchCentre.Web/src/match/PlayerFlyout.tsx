@@ -21,6 +21,11 @@ export interface PlayerFlyoutProps {
   onClose: () => void;
   /** Called with a fact's moment ID, so the page can replay from it (ADR-067). */
   onSelectMoment: (momentId: string) => void;
+  /**
+   * True while the line-ups drawer is open beside the card. The card then has no backdrop and doesn't trap focus, so
+   * clicking another player in the drawer switches the card to that player (ADR-071).
+   */
+  withDrawer?: boolean;
 }
 
 type SeasonState =
@@ -47,7 +52,7 @@ function tallyText(facts: PlayerFact[]): string {
 }
 
 /** A flyout with a player's name, this match and season stats, opened from the line-ups card (ADR-068). */
-export function PlayerFlyout({ player, teamName, facts, season, onClose, onSelectMoment }: PlayerFlyoutProps) {
+export function PlayerFlyout({ player, teamName, facts, season, onClose, onSelectMoment, withDrawer = false }: PlayerFlyoutProps) {
   const open = player !== null;
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -69,7 +74,8 @@ export function PlayerFlyout({ player, teamName, facts, season, onClose, onSelec
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // Something above the card (the settings popover) may already have taken this Escape.
+      if (e.key === 'Escape' && !e.defaultPrevented) {
         e.stopPropagation();
         onCloseRef.current();
       }
@@ -118,7 +124,7 @@ export function PlayerFlyout({ player, teamName, facts, season, onClose, onSelec
   }
 
   const trapTab = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'Tab' || !dialogRef.current) {
+    if (e.key !== 'Tab' || !dialogRef.current || withDrawer) {
       return;
     }
 
@@ -147,12 +153,15 @@ export function PlayerFlyout({ player, teamName, facts, season, onClose, onSelec
   const tally = tallyText(list);
 
   return (
-    <div className="flyout-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className={withDrawer ? 'flyout-backdrop flyout-backdrop-clear' : 'flyout-backdrop'}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div
         ref={dialogRef}
         className={reduced ? 'flyout flyout--still' : 'flyout'}
         role="dialog"
-        aria-modal="true"
+        aria-modal={!withDrawer}
         aria-labelledby={titleId}
         onKeyDown={trapTab}
       >

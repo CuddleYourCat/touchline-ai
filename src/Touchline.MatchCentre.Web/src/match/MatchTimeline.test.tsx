@@ -61,6 +61,15 @@ describe('MatchTimeline', () => {
     expect(screen.getByRole('button', { name: "Substitution, 61', North Bank" })).toBeInTheDocument();
   });
 
+  it('has no visible legend, but tells a screen reader which side is above and which below', () => {
+    renderTimeline();
+
+    expect(screen.queryByText('North Bank above')).not.toBeInTheDocument();
+    expect(screen.queryByText('Harbour Town below')).not.toBeInTheDocument();
+    const note = screen.getByText('North Bank moments sit above the bar and Harbour Town moments below it.');
+    expect(note).toHaveClass('visually-hidden');
+  });
+
   it('offsets icons that sit at the same minute so they do not overlap', () => {
     renderTimeline({ moments: [moment(1, 'Goal', 50), moment(2, 'YellowCard', 50)] });
 

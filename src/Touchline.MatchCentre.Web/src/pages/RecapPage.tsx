@@ -84,11 +84,12 @@ export function RecapPage() {
       );
     case 'ready': {
       const { detail, recap, provisional, waiting } = state;
-      const clubs = [detail.summary.home, detail.summary.away].map(({ id: clubId, name }) => ({ id: clubId, name }));
       const paragraphs = recap.text.split(/\n{2,}/).filter((p) => p.trim().length > 0);
       return (
         <div className="recap">
-          <ViewerSettings viewer={viewer} onChange={setViewer} clubs={clubs} />
+          <div className="recap-tools">
+            <ViewerSettings viewer={viewer} onChange={setViewer} />
+          </div>
           <article className="panel recap-article" lang={recap.language}>
             <div className="match-card-top">
               <span className="pill">Full time</span>

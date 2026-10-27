@@ -40,6 +40,12 @@ describe('GoalToast', () => {
     expect(toast).not.toHaveTextContent('Replay');
   });
 
+  it('carries no team colour: no inline style, so the plain white text is all the CSS paints', () => {
+    render(<GoalToast {...props()} />);
+
+    expect(screen.getByTestId('goal-toast')).not.toHaveAttribute('style');
+  });
+
   it('keeps one live region mounted, empty until a goal arrives, and announces the goal', () => {
     const { rerender } = render(<GoalToast {...props({ card: null })} />);
     const region = screen.getByRole('status', { name: 'Goal announcements' });

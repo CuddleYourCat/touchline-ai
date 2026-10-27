@@ -96,12 +96,14 @@ describe('RecapPage', () => {
     renderPage();
     await flush();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
     expect(screen.getByRole('combobox', { name: 'Language' })).toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: 'Grey pitch' })).not.toBeInTheDocument();
   });
 
   it('shows the model recap, paragraph by paragraph, for the saved viewer', async () => {
-    localStorage.setItem(viewerStorageKey, JSON.stringify({ mode: 'Analyst', language: 'es', team: 'h' }));
+    localStorage.setItem(viewerStorageKey, JSON.stringify({ mode: 'Analyst', language: 'es' }));
     const get = stubRecaps(ok(model));
 
     renderPage();
@@ -112,7 +114,7 @@ describe('RecapPage', () => {
     expect(screen.getByText('Millbrook pulled one back, but never found a leveller.')).toBeInTheDocument();
     expect(screen.queryByText(/Full recap on its way/)).not.toBeInTheDocument();
     expect(get).toHaveBeenCalledWith('/api/matches/{matchId}/recap', {
-      params: { path: { matchId: 'm1' }, query: { mode: 'Analyst', lang: 'es', team: 'h' } },
+      params: { path: { matchId: 'm1' }, query: { mode: 'Analyst', lang: 'es' } },
     });
   });
 

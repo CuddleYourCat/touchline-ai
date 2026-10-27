@@ -95,47 +95,6 @@ function PlayerShape({ team }: { team: 'Home' | 'Away' }) {
 }
 
 /**
- * The key to the pitch markers, drawn with the same shapes and classes as the markers themselves. Home's players are
- * circles and away's are diamonds, so the sides don't depend on colour to be told apart.
- */
-const PitchLegend = memo(function PitchLegend({ homeName, awayName }: { homeName: string; awayName: string }) {
-  return (
-    <ul className="pitch-legend" aria-label="Pitch key">
-      <li>
-        <svg viewBox="-2.8 -2.8 5.6 5.6" width="16" height="16" aria-hidden="true" className="player player-home">
-          <PlayerShape team="Home" />
-        </svg>
-        {homeName || 'Home'}
-      </li>
-      <li>
-        <svg viewBox="-2.8 -2.8 5.6 5.6" width="16" height="16" aria-hidden="true" className="player player-away">
-          <PlayerShape team="Away" />
-        </svg>
-        {awayName || 'Away'}
-      </li>
-      <li>
-        <svg viewBox="-1.2 -1.2 2.4 2.4" width="12" height="12" aria-hidden="true">
-          <path className="marker-foul" d="M -0.9 -0.9 L 0.9 0.9 M 0.9 -0.9 L -0.9 0.9" />
-        </svg>
-        Foul
-      </li>
-      <li>
-        <svg viewBox="-1.2 -1.2 2.4 2.4" width="12" height="12" aria-hidden="true">
-          <rect className="marker-card marker-yellow" x={-0.6} y={-0.9} width={1.2} height={1.8} />
-        </svg>
-        Yellow card
-      </li>
-      <li>
-        <svg viewBox="-1.2 -1.2 2.4 2.4" width="12" height="12" aria-hidden="true">
-          <rect className="marker-card marker-red" x={-0.6} y={-0.9} width={1.2} height={1.8} />
-        </svg>
-        Red card
-      </li>
-    </ul>
-  );
-});
-
-/**
  * The live pitch (ADR-035): player dots from the server's shape model, the ball's latest path with a short fading
  * trail, and markers for fouls and cards. Home attacks left to right. Positions are modelled, not tracked.
  */
@@ -250,7 +209,10 @@ export const Pitch = memo(function Pitch({
         </div>
         <figcaption className="pitch-caption muted">
           <span>Modelled positions, not tracking data</span>
-          <PitchLegend homeName={homeName} awayName={awayName} />
+          <span className="visually-hidden">
+            {homeName || 'Home'} players are circles and {awayName || 'Away'} players are diamonds. A cross marks a foul;
+            yellow and red rectangles mark cards.
+          </span>
         </figcaption>
       </figure>
     </section>

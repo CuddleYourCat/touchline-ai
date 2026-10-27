@@ -4,7 +4,7 @@ import { ThemeToggle } from './theme/ThemeToggle';
 /** The shell every page sits in: header, synthetic-data badge, navigation and theme toggle. */
 export function Layout() {
   return (
-    <div>
+    <div className="shell">
       <div className="masthead">
         <header className="header shell-inner">
           <NavLink to="/" className="brand">

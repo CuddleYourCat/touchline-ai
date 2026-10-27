@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
 import type { MatchDetail } from '../live/matchStreamReducer';
-import { viewerForMatch, viewerQuery, type Viewer } from '../viewer/viewer';
+import { viewerQuery, type Viewer } from '../viewer/viewer';
 
 /** The Producer's full-time recap. */
 export type MatchRecap = components['schemas']['MatchRecap'];
@@ -72,7 +72,7 @@ async function fetchDetail(matchId: string): Promise<MatchDetail | 'notFound' | 
 export function useRecap(matchId: string, viewer: Viewer): { state: RecapState; retry: () => void } {
   const [state, setState] = useState<RecapState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  const { mode, language, team } = viewer;
+  const { mode, language } = viewer;
 
   useEffect(() => {
     let cancelled = false;
@@ -85,7 +85,7 @@ export function useRecap(matchId: string, viewer: Viewer): { state: RecapState; 
         setState({ kind: detail });
         return;
       }
-      const who = viewerForMatch(team ? { mode, language, team } : { mode, language }, [detail.summary.home.id, detail.summary.away.id]);
+      const who: Viewer = { mode, language };
 
       const check = async (polls: number) => {
         const result = await fetchRecap(matchId, who);
@@ -116,7 +116,7 @@ export function useRecap(matchId: string, viewer: Viewer): { state: RecapState; 
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [matchId, mode, language, team, attempt]);
+  }, [matchId, mode, language, attempt]);
 
   // A retry shows the loading state, unless a recap is already on screen (it stays while the page checks again).
   const retry = useCallback(() => {

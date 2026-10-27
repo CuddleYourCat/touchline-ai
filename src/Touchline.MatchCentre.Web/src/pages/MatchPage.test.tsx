@@ -106,6 +106,11 @@ function found(d: MatchDetail) {
   return { data: d, error: undefined, response: new Response() };
 }
 
+/** Opens the settings pop-over from the scoreboard's gear. */
+async function openSettings(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Settings' }));
+}
+
 function renderPage(id = 'm1') {
   return render(
     <MemoryRouter initialEntries={[`/matches/${id}`]}>
@@ -155,6 +160,33 @@ describe('MatchPage kit colours', () => {
     expect(figure.style.getPropertyValue('--away-fill')).toBe('#0b1f4f');
   });
 
+  it("shows each club's kit colours beside its name in the scoreboard, as the only colour key", async () => {
+    vi.spyOn(api, 'GET').mockImplementation(((path: string, init?: { params?: { path?: { teamId?: string } } }) => {
+      if (path === '/api/matches/{matchId}') return Promise.resolve(found(detail()));
+      if (path === '/api/teams/{teamId}') {
+        return Promise.resolve(
+          init?.params?.path?.teamId === 'h'
+            ? team({ primary: '#d62828', secondary: '#ffffff' })
+            : team({ primary: '#0b1f4f', secondary: '#ffe066' }),
+        );
+      }
+      return Promise.resolve({ data: [], error: undefined, response: new Response() });
+    }) as never);
+
+    renderPage();
+
+    const scoreboard = await screen.findByRole('region', { name: /^Live/ });
+    const home = within(scoreboard).getByRole('img', { name: 'Harbourside Rovers colours, shown as circles on the pitch' });
+    const away = within(scoreboard).getByRole('img', { name: 'Millbrook Athletic colours, shown as diamonds on the pitch' });
+    await waitFor(() => expect(away.style.getPropertyValue('--key-fill')).toBe('#0b1f4f'));
+    expect(home.style.getPropertyValue('--key-fill')).toBe('#d62828');
+    expect(away.style.getPropertyValue('--key-rim')).toBe('#ffe066');
+    // The legends under the pitch, the timeline and the momentum strip are gone.
+    expect(screen.queryByRole('list', { name: 'Pitch key' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/ above$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ below$/)).not.toBeInTheDocument();
+  });
+
   it('keeps the house colours when a team record cannot be loaded', async () => {
     vi.spyOn(api, 'GET').mockImplementation(((path: string) => {
       if (path === '/api/matches/{matchId}') return Promise.resolve(found(detail()));
@@ -167,6 +199,8 @@ describe('MatchPage kit colours', () => {
     const figure = (await screen.findByRole('region', { name: 'Pitch' })).querySelector('figure')!;
     expect(figure.style.getPropertyValue('--home-fill')).toBe('');
     expect(figure.style.getPropertyValue('--away-fill')).toBe('');
+    const home = within(await screen.findByRole('region', { name: /^Live/ })).getByRole('img', { name: /Harbourside Rovers colours/ });
+    expect(home.style.getPropertyValue('--key-fill')).toBe('');
   });
 });
 
@@ -501,7 +535,7 @@ describe('MatchPage', () => {
     expect(screen.getByText('Ocasión clarísima')).toBeInTheDocument();
   });
 
-  it('puts the pitch, timeline, moments, line-ups and momentum after the scoreboard in that order, and draws streamed shapes, events and momentum', async () => {
+  it('puts the pitch, timeline, momentum and moments after the scoreboard in that order, and draws streamed shapes, events and momentum', async () => {
     stubApi(found(detail()));
 
     renderPage();
@@ -509,12 +543,15 @@ describe('MatchPage', () => {
     const pitch = screen.getByRole('region', { name: 'Pitch' });
     const momentum = screen.getByRole('region', { name: 'Momentum' });
     const moments = screen.getByRole('region', { name: 'Moments' });
-    const order = [scoreboard, pitch, screen.getByRole('region', { name: 'Match timeline' }), moments, screen.getByRole('region', { name: 'Line-ups' }), momentum];
+    const order = [scoreboard, pitch, screen.getByRole('region', { name: 'Match timeline' }), momentum, moments];
     order.slice(1).forEach((el, i) => {
       expect(order[i]!.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
     expect(within(pitch).getByText('Modelled positions, not tracking data')).toBeInTheDocument();
     expect(within(pitch).queryAllByTestId('player-dot')).toHaveLength(0);
+    // The line-ups live in a drawer and the chat in a flyout, so neither takes room on the page until opened.
+    expect(screen.queryByRole('region', { name: 'Line-ups' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     const positions = (['Home', 'Away'] as const).flatMap((team) =>
       Array.from({ length: 11 }, (_, i) => ({ playerId: `${team}${i}`, team, x: 10 + i * 8, y: 34 })),
@@ -605,19 +642,14 @@ describe('useMatchStream', () => {
     expect(streamUrl().searchParams.get('lang')).toBe('fr');
   });
 
-  it("sends a favourite club only when it's playing in the match", async () => {
+  it('sends no favourite club, as the viewer no longer has one', async () => {
     stubApi(found(detail()));
 
-    const playing = renderHook(() => useMatchStream('m1', { mode: 'Casual', language: 'en', team: 'h' }));
-    await waitFor(() => expect(playing.result.current.state.kind).toBe('ready'));
-    expect(streamUrl().searchParams.get('team')).toBe('h');
-    expect(playing.result.current.viewer.team).toBe('h');
-    playing.unmount();
+    const { result } = renderHook(() => useMatchStream('m1', { mode: 'Casual', language: 'en' }));
+    await waitFor(() => expect(result.current.state.kind).toBe('ready'));
 
-    const elsewhere = renderHook(() => useMatchStream('m1', { mode: 'Casual', language: 'en', team: 'some-other-club' }));
-    await waitFor(() => expect(elsewhere.result.current.state.kind).toBe('ready'));
     expect(streamUrl().searchParams.has('team')).toBe(false);
-    expect(elsewhere.result.current.viewer.team).toBeUndefined();
+    expect(result.current.viewer).toEqual({ mode: 'Casual', language: 'en' });
   });
 });
 
@@ -640,6 +672,7 @@ describe('MatchPage viewer, Q&A and recap', () => {
     expect(streamUrl(first).searchParams.get('mode')).toBe('Casual');
 
     const user = userEvent.setup();
+    await openSettings(user);
     await user.click(screen.getByRole('radio', { name: 'Analyst' }));
 
     expect(screen.getByText('LIVE')).toBeInTheDocument();
@@ -687,6 +720,7 @@ describe('MatchPage viewer, Q&A and recap', () => {
           : { data: [moment(30, { commentary: line(30, 'Template', 'Analyst words', 'Analyst') })], error: undefined, response: new Response() },
       )) as never);
     const user = userEvent.setup();
+    await openSettings(user);
     await user.click(screen.getByRole('radio', { name: 'Analyst' }));
 
     expect(await screen.findByText('Analyst words')).toBeInTheDocument();
@@ -717,8 +751,9 @@ describe('MatchPage viewer, Q&A and recap', () => {
     await screen.findByText('LIVE');
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Ask the Analyst' }));
     await user.type(screen.getByRole('textbox', { name: 'Your question about this match' }), 'Who scored?');
-    await user.click(screen.getByRole('button', { name: 'Ask' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     expect(screen.getByRole('list', { name: 'Answers' })).toHaveTextContent('Who scored?');
 
     await user.click(screen.getByRole('link', { name: 'Next match' }));
@@ -736,28 +771,46 @@ describe('MatchPage viewer, Q&A and recap', () => {
     renderPage();
     await screen.findByText('LIVE');
 
+    await openSettings(userEvent.setup());
     const select = screen.getByRole('combobox', { name: 'Language' });
     expect(within(select).getAllByRole('option').map((o) => o.getAttribute('value'))).toEqual(['en', 'es', 'fr']);
     expect(select).toHaveValue('en');
     expect(streamUrl().searchParams.get('lang')).toBe('en');
   });
 
-  it('offers the two clubs as favourites and sends the one picked', async () => {
+  it('no longer offers a favourite club, and sends none even if an old one is saved', async () => {
+    localStorage.setItem(viewerStorageKey, JSON.stringify({ mode: 'Casual', language: 'en', team: 'h' }));
     stubApi(found(detail()));
     renderPage();
     await screen.findByText('LIVE');
 
-    const user = userEvent.setup();
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Favourite club' }), 'Millbrook Athletic');
+    await openSettings(userEvent.setup());
 
-    await waitFor(() => expect(streamUrl().searchParams.get('team')).toBe('a'));
+    expect(screen.queryByText('Favourite club')).not.toBeInTheDocument();
+    expect(streamUrl().searchParams.has('team')).toBe(false);
   });
 
-  it('puts the Q&A box on the page and links to the recap at full time', async () => {
+  it('puts the Ask the Analyst pill on the page, opens the chat and still asks, and links to the recap at full time', async () => {
     stubApi(found(detail(liveState({ fullTime: true }))));
+    const post = vi.spyOn(api, 'POST').mockResolvedValue({
+      data: { text: 'A tight game.', citations: [], language: 'en' },
+      error: undefined,
+      response: new Response(),
+    } as never);
     renderPage();
 
-    expect(await screen.findByRole('region', { name: 'Ask the Analyst' })).toBeInTheDocument();
+    const pill = await screen.findByRole('button', { name: 'Ask the Analyst' });
+    expect(screen.queryByRole('dialog', { name: 'Ask the Analyst' })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(pill);
+    await user.type(screen.getByRole('textbox', { name: 'Your question about this match' }), 'How was it?');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByText('A tight game.')).toBeInTheDocument();
+    expect(post).toHaveBeenCalledWith(
+      '/api/matches/{matchId}/questions',
+      expect.objectContaining({ params: { path: { matchId: 'm1' }, query: { mode: 'Casual', lang: 'en' } } }),
+    );
     expect(screen.getByRole('link', { name: /Read the full-time recap/ })).toHaveAttribute('href', '/matches/m1/recap');
   });
 
@@ -867,13 +920,114 @@ describe('MatchPage panels, replay and overlays', () => {
   it('opens the player flyout from a line-ups name', async () => {
     stubApi(found(withPlayers()));
     renderPage();
-    const lineups = await screen.findByRole('region', { name: 'Line-ups' });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Line-ups' }));
+    const lineups = screen.getByRole('dialog', { name: 'Line-ups' });
 
-    await userEvent.setup().click(within(lineups).getByRole('button', { name: 'Kofi Marlow' }));
+    await user.click(within(lineups).getByRole('button', { name: 'Kofi Marlow' }));
 
-    const flyout = await screen.findByRole('dialog');
+    const flyout = await screen.findByRole('dialog', { name: 'Kofi Marlow' });
     expect(flyout).toHaveTextContent('Kofi Marlow');
     expect(flyout).toHaveTextContent('Harbourside Rovers');
+  });
+
+  it('opens the line-ups in a drawer from the left and the player card over it from the right, closing them one at a time', async () => {
+    stubApi(found(withPlayers()));
+    renderPage();
+    const user = userEvent.setup();
+    const button = await screen.findByRole('button', { name: 'Line-ups' });
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('dialog', { name: 'Line-ups' })).not.toBeInTheDocument();
+
+    await user.click(button);
+
+    const drawer = screen.getByRole('dialog', { name: 'Line-ups' });
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(button).toHaveAttribute('aria-controls', drawer.id);
+    expect(drawer).toHaveAttribute('aria-modal', 'false');
+    expect(drawer).toHaveClass('drawer-left');
+    expect(within(drawer).getByRole('button', { name: 'Close line-ups' })).toHaveFocus();
+
+    const player = within(drawer).getByRole('button', { name: 'Kofi Marlow' });
+    await user.click(player);
+    const card = await screen.findByRole('dialog', { name: 'Kofi Marlow' });
+    expect(card.parentElement).toHaveClass('flyout-backdrop');
+    expect(screen.getByRole('dialog', { name: 'Line-ups' })).toBeInTheDocument();
+
+    // Escape closes the topmost first: the player card, then the drawer.
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Kofi Marlow' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Line-ups' })).toBeInTheDocument();
+    expect(player).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Line-ups' })).not.toBeInTheDocument();
+    expect(button).toHaveFocus();
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('switches the player card straight to another player clicked in the open drawer', async () => {
+    const winger = { id: 'h7', name: 'Ines Calder', shirtNumber: 7, position: 'Midfielder', teamId: 'h', archetype: null, preferredFoot: 'Left' };
+    const two = { ...withPlayers(), homeLineup: [striker, winger] } as unknown as MatchDetail;
+    stubApi(found(two));
+    renderPage();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Line-ups' }));
+    const drawer = screen.getByRole('dialog', { name: 'Line-ups' });
+
+    await user.click(within(drawer).getByRole('button', { name: 'Kofi Marlow' }));
+    const card = await screen.findByRole('dialog', { name: 'Kofi Marlow' });
+    // Beside the drawer the card has no dimming backdrop and no focus trap, so the drawer stays usable.
+    expect(card.parentElement).toHaveClass('flyout-backdrop-clear');
+    expect(card).toHaveAttribute('aria-modal', 'false');
+
+    await user.click(within(drawer).getByRole('button', { name: 'Ines Calder' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Ines Calder' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Kofi Marlow' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Line-ups' })).toBeInTheDocument();
+  });
+
+  it('gives the player card its dimming backdrop back when no drawer is open', async () => {
+    stubApi(found(withPlayers()));
+    renderPage();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Line-ups' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Line-ups' })).getByRole('button', { name: 'Kofi Marlow' }));
+    await screen.findByRole('dialog', { name: 'Kofi Marlow' });
+    await user.keyboard('{Escape}');
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('closes only the settings popover on the first Escape and the drawer on the second', async () => {
+    stubApi(found(withPlayers()));
+    renderPage();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Line-ups' }));
+    await openSettings(user);
+    expect(screen.getByRole('dialog', { name: 'Your view' })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('dialog', { name: 'Your view' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Line-ups' })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Line-ups' })).not.toBeInTheDocument();
+  });
+
+  it('closes the line-ups drawer with its close button', async () => {
+    stubApi(found(withPlayers()));
+    renderPage();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Line-ups' }));
+
+    await user.click(screen.getByRole('button', { name: 'Close line-ups' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Line-ups' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Line-ups' })).toHaveFocus();
   });
 
   it('still renders, line-ups and flyout included, when the server sends no benches (a pre-substitutions server)', async () => {
@@ -882,11 +1036,12 @@ describe('MatchPage panels, replay and overlays', () => {
     delete noBenches.awaySubstitutes;
     stubApi(found(noBenches as MatchDetail));
     renderPage();
-    const lineups = await screen.findByRole('region', { name: 'Line-ups' });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Line-ups' }));
 
-    await userEvent.setup().click(within(lineups).getByRole('button', { name: 'Kofi Marlow' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Line-ups' })).getByRole('button', { name: 'Kofi Marlow' }));
 
-    expect(await screen.findByRole('dialog')).toHaveTextContent('Kofi Marlow');
+    expect(await screen.findByRole('dialog', { name: 'Kofi Marlow' })).toHaveTextContent('Kofi Marlow');
   });
 
   it('keeps every moment on the timeline during a replay, including those after its start point', async () => {

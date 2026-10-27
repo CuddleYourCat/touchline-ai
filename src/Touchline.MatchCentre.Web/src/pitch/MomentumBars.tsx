@@ -71,10 +71,6 @@ export const MomentumBars = memo(function MomentumBars({
               );
             })}
           </svg>
-          <div className="momentum-legend muted">
-            <span className="momentum-key momentum-key-home">{homeName}</span>
-            <span className="momentum-key momentum-key-away">{awayName}</span>
-          </div>
         </>
       )}
     </section>

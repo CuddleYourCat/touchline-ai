@@ -5,15 +5,13 @@ import type { components } from '../api/schema';
 export type ViewingMode = components['schemas']['ViewingMode'];
 
 /**
- * Who is watching (ADR-027): the viewing mode, the language (a BCP 47 tag such as `es-MX`) and, optionally, a
- * favourite club's ID. The service stores no profile; the browser keeps this and sends it with every request that
- * produces words.
+ * Who is watching (ADR-027): the viewing mode and the language (a BCP 47 tag such as `es-MX`). The service stores
+ * no profile; the browser keeps this and sends it with every request that produces words. A favourite club was
+ * dropped in ADR-071: the server still accepts `team` but never used it.
  */
 export interface Viewer {
   mode: ViewingMode;
   language: string;
-  /** The favourite club's ID, or undefined for none. */
-  team?: string;
 }
 
 /** The viewing modes, in picker order. */
@@ -58,14 +56,11 @@ export function normaliseLanguage(tag: string | undefined | null): string {
   return languageTag.test(base.toLowerCase()) ? base.toLowerCase() : 'en';
 }
 
-/** A casual viewer in the browser's language if it's supported (English otherwise), with no favourite club. */
+/** A casual viewer in the browser's language if it's supported (English otherwise). */
 export function defaultViewer(): Viewer {
   const language = typeof navigator !== 'undefined' ? navigator.language : undefined;
   return { mode: 'Casual', language: supportedLanguage(language) };
 }
-
-/** Club IDs are slugs (`north-bank-fc`); anything else in storage is ignored rather than sent. */
-const clubId = /^[a-z0-9-]{1,64}$/;
 
 /**
  * The viewer saved last time, or the default. Storage can be blocked, throw or hold anything (it's the visitor's
@@ -81,11 +76,10 @@ export function loadViewer(): Viewer {
     return fallback;
   }
   if (typeof saved !== 'object' || saved === null) return fallback;
-  const { mode, language, team } = saved as Record<string, unknown>;
+  const { mode, language } = saved as Record<string, unknown>;
   return {
     mode: mode === 'Analyst' || mode === 'Casual' ? mode : fallback.mode,
     language: typeof language === 'string' ? supportedLanguage(language) : fallback.language,
-    ...(typeof team === 'string' && clubId.test(team) ? { team } : {}),
   };
 }
 
@@ -98,18 +92,9 @@ export function saveViewer(viewer: Viewer): void {
   }
 }
 
-/** The viewer as query parameters, in the contract's names. `team` is left out when there's no favourite. */
-export function viewerQuery(viewer: Viewer): { mode: ViewingMode; lang: string; team?: string } {
-  return viewer.team ? { mode: viewer.mode, lang: viewer.language, team: viewer.team } : { mode: viewer.mode, lang: viewer.language };
-}
-
-/**
- * The viewer for one match: the favourite club is kept only when it's playing. A club that isn't in this match adds
- * nothing to its words, and one that's since been deleted would make the server refuse every request with a 400.
- */
-export function viewerForMatch(viewer: Viewer, clubIds: readonly string[]): Viewer {
-  if (!viewer.team || clubIds.includes(viewer.team)) return viewer;
-  return { mode: viewer.mode, language: viewer.language };
+/** The viewer as query parameters, in the contract's names. */
+export function viewerQuery(viewer: Viewer): { mode: ViewingMode; lang: string } {
+  return { mode: viewer.mode, lang: viewer.language };
 }
 
 /** The saved viewer, and a setter that saves each change. */

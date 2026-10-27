@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import type { OverlayCard } from '../live/matchStreamReducer';
 import { useReducedMotion } from '../pitch/useReducedMotion';
 import './GoalToast.css';
@@ -14,8 +13,6 @@ export interface GoalToastProps {
   card: OverlayCard | null;
   scorerName: string | null;
   teamName: string;
-  /** A CSS colour for the team's accent; falls back to the theme accent. */
-  teamColour?: string | null;
   score: { home: number; away: number; homeName: string; awayName: string };
   /** Already formatted, e.g. `68'`. */
   minute: string;
@@ -24,11 +21,12 @@ export interface GoalToastProps {
 }
 
 /**
- * A goal celebrated large in the centre of the pitch (ADR-068). It shows for the card's duration, fades, then calls
+ * A goal celebrated large in the centre of the pitch (ADR-068). Plain white text with a shadow, no box and no team
+ * colours (ADR-071). It shows for the card's duration, fades, then calls
  * `onDone`. A new card replaces the current one and restarts the timer. The card is `aria-hidden`; a live region that
  * stays mounted does the announcing, and nothing here takes clicks.
  */
-export function GoalToast({ card, scorerName, teamName, teamColour, score, minute, replay, onDone }: GoalToastProps) {
+export function GoalToast({ card, scorerName, teamName, score, minute, replay, onDone }: GoalToastProps) {
   const reducedMotion = useReducedMotion();
   // Keyed on the card object, not its id: a replay delivers the same ids again in fresh objects.
   const [fading, setFading] = useState<OverlayCard | null>(null);
@@ -75,12 +73,11 @@ export function GoalToast({ card, scorerName, teamName, teamColour, score, minut
   ]
     .filter(Boolean)
     .join(' ');
-  const style = teamColour ? ({ '--goal-toast-team': teamColour } as CSSProperties) : undefined;
 
   return (
     <>
       {announcer}
-      <div className={className} style={style} aria-hidden="true" data-testid="goal-toast">
+      <div className={className} aria-hidden="true" data-testid="goal-toast">
         {replay && <span className="goal-toast-replay">Replay</span>}
         <strong className="goal-toast-title">{card.payload.title}</strong>
         {scorerName && <span className="goal-toast-scorer">{scorerName}</span>}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { defaultViewer, viewerForMatch, viewerQuery, type Viewer } from '../viewer/viewer';
+import { defaultViewer, viewerQuery, type Viewer } from '../viewer/viewer';
 import {
   applyMessage,
   initialLiveMatch,
@@ -152,16 +152,15 @@ export function useMatchReplay(
   const fallback = defaultViewer();
   const mode = options?.viewer?.mode ?? fallback.mode;
   const language = options?.viewer?.language ?? fallback.language;
-  const team = options?.viewer?.team;
 
   const [view, setView] = useState<ReplayView>(() => idle(matchId));
   const liveRef = useRef(live);
   const stopRef = useRef<(() => void) | null>(null);
-  const settings = useRef({ speed, mode, language, team, matchId });
+  const settings = useRef({ speed, mode, language, matchId });
 
   useEffect(() => {
     liveRef.current = live;
-    settings.current = { speed, mode, language, team, matchId };
+    settings.current = { speed, mode, language, matchId };
   });
 
   // A new match, or unmounting, stops the replay and frees its stream.
@@ -185,7 +184,7 @@ export function useMatchReplay(
       stopRef.current = null;
       const startedWith = liveRef.current;
       if (!startedWith) return;
-      const { speed: pace, mode: who, language: lang, team: club, matchId: id } = settings.current;
+      const { speed: pace, mode: who, language: lang, matchId: id } = settings.current;
 
       let source: EventSource | undefined;
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -278,15 +277,11 @@ export function useMatchReplay(
         schedule();
       };
 
-      const viewer = viewerForMatch(club ? { mode: who, language: lang, team: club } : { mode: who, language: lang }, [
-        startedWith.detail.summary.home.id,
-        startedWith.detail.summary.away.id,
-      ]);
       const from: Record<string, string> =
         'sequence' in target
           ? { after: String(Math.max(0, target.sequence - replayBuildUp)) }
           : { fromPeriod: target.period, fromMinute: String(target.minute) };
-      const query = new URLSearchParams({ ...from, replay: 'true', ...viewerQuery(viewer) });
+      const query = new URLSearchParams({ ...from, replay: 'true', ...viewerQuery({ mode: who, language: lang }) });
       const es = new EventSource(`/api/matches/${encodeURIComponent(id)}/stream?${query.toString()}`);
       source = es;
       for (const name of streamEventNames) {
