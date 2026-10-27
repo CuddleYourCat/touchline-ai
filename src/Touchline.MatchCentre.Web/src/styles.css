@@ -1753,7 +1753,7 @@ a.button {
   background-size: cover;
   background-repeat: no-repeat;
   text-align: center;
-  /* The text sits on a dark overlay in both themes, so it uses light colours that don't follow the toggle. */
+  /* Light text on a dark overlay; the light theme swaps both below. */
   color: #e7edf8;
 }
 
@@ -1800,6 +1800,28 @@ a.button {
 .coming-soon .button-ghost {
   color: #e7edf8;
   border-color: rgb(231 237 248 / 0.6);
+}
+
+/* In the light theme the page fades to the light background with dark text, as the error and not-found pages do. */
+:root[data-theme='light'] .coming-soon {
+  color: var(--text);
+}
+
+:root[data-theme='light'] .coming-soon::before {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg) 45%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 75%, transparent) 100%
+  );
+}
+
+:root[data-theme='light'] .coming-soon-label {
+  text-shadow: 0 2px 18px rgb(255 255 255 / 0.7);
+}
+
+:root[data-theme='light'] .coming-soon .button-ghost {
+  color: var(--text);
+  border-color: var(--line-strong);
 }
 
 /* Compact icon-only button; the remove variant is light grey and turns red on hover or focus (ADR-071 amendment 4). */
