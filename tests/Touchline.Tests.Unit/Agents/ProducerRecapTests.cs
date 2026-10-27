@@ -119,6 +119,18 @@ public sealed class ProducerRecapTests
     }
 
     [Test]
+    public async Task A_recap_whose_sentences_open_with_ordinary_words_is_kept_on_the_first_try()
+    {
+        _chat.Returns(Reply("Victoria para North Bank FC", "Victoria cómoda en Harbour Lane. Después del descanso, Tom Okafor marcó."));
+
+        var recap = await Producer().RecapAsync(_matchId, SpanishAnalyst(), CancellationToken.None);
+
+        recap.Source.Should().Be(CommentarySource.Model);
+        recap.Headline.Should().Be("Victoria para North Bank FC");
+        _chat.Requests.Should().ContainSingle();
+    }
+
+    [Test]
     public async Task Two_guardrail_misses_give_the_template_recap_and_count_a_fallback()
     {
         var fallbacks = new ConcurrentQueue<string>();

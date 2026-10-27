@@ -109,12 +109,43 @@ public static partial class RosterGuardrail
     public static IReadOnlyList<string> FindUnknownNames(
         string text,
         IEnumerable<string> rosterNames,
-        IEnumerable<string>? otherKnownNames = null)
+        IEnumerable<string>? otherKnownNames = null) =>
+        FindAgainstNames(text, rosterNames, otherKnownNames, skipSentenceOpeners: false);
+
+    /// <summary>
+    /// Returns the capitalised personal names in longer prose, such as a recap, that aren't on
+    /// the match's rosters or among the other known names, without treating a sentence's first
+    /// word as a possible name.
+    /// </summary>
+    /// <remarks>
+    /// Paragraphs of prose open many sentences with ordinary words this check has no list for:
+    /// <c>Victoria</c> and <c>Después</c> in Spanish, <c>Ensuite</c> in French, <c>Pressing</c> or
+    /// <c>Possession</c> in an analyst's English. The strict check flags them, and two misses leave
+    /// the template. Here every sentence's first word is skipped, as in the translation check, and
+    /// the rest of a run is still checked: <c>Marco Rossi scored</c> is still caught by
+    /// <c>Rossi</c>. An invented single surname as a sentence's first word isn't caught, which
+    /// the recap accepts in return for being written in every language and mode.
+    /// </remarks>
+    /// <param name="text">The generated prose.</param>
+    /// <param name="rosterNames">Every player's full name, from both teams' rosters.</param>
+    /// <param name="otherKnownNames">Other names that may appear: team names and short names, venues, the referee.</param>
+    /// <returns>The unknown names, as written, first appearance first, without duplicates. Empty when the text is clean.</returns>
+    public static IReadOnlyList<string> FindUnknownNamesInProse(
+        string text,
+        IEnumerable<string> rosterNames,
+        IEnumerable<string>? otherKnownNames = null) =>
+        FindAgainstNames(text, rosterNames, otherKnownNames, skipSentenceOpeners: true);
+
+    private static IReadOnlyList<string> FindAgainstNames(
+        string text,
+        IEnumerable<string> rosterNames,
+        IEnumerable<string>? otherKnownNames,
+        bool skipSentenceOpeners)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(rosterNames);
 
-        return Find(text, KnownPhrases(rosterNames.Concat(otherKnownNames ?? [])), skipSentenceOpeners: false);
+        return Find(text, KnownPhrases(rosterNames.Concat(otherKnownNames ?? [])), skipSentenceOpeners);
     }
 
     /// <summary>

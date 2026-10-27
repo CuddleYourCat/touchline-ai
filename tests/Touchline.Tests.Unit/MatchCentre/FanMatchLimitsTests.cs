@@ -20,7 +20,7 @@ using Touchline.Storage;
 namespace Touchline.Tests.Unit.MatchCentre;
 
 /// <summary>
-/// The fan-match limits (ADR-032, ADR-050): five a day, one live, the <c>Idempotency-Key</c> and
+/// The fan-match limits (ADR-032, ADR-050): ten a day, one live, the <c>Idempotency-Key</c> and
 /// refunds. The limit store is the real Cosmos DB one over an in-memory container that honours
 /// ETags; the requests and the job are mocked.
 /// </summary>
@@ -82,20 +82,20 @@ public class FanMatchLimitsTests
     }
 
     [Test]
-    public async Task The_sixth_match_of_a_day_is_busy_until_midnight_UTC_and_a_new_day_resets()
+    public async Task The_eleventh_match_of_a_day_is_busy_until_midnight_UTC_and_a_new_day_resets()
     {
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < 10; i++)
         {
             (await PlayToFullTimeAsync()).Outcome.Should().Be(LaunchOutcome.Accepted);
         }
 
-        var sixth = await Launcher().LaunchAsync(_match, null, CancellationToken.None);
+        var eleventh = await Launcher().LaunchAsync(_match, null, CancellationToken.None);
 
-        sixth.Outcome.Should().Be(LaunchOutcome.Busy);
-        sixth.RetryAfter.Should().Be(TimeSpan.FromHours(15), "it's 09:00 UTC");
-        sixth.Reason.Should().Be("Today's five fan matches have been played. The next slot opens at midnight UTC.");
-        DayCount().Should().Be(5);
-        _job.Verify(j => j.StartAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(5));
+        eleventh.Outcome.Should().Be(LaunchOutcome.Busy);
+        eleventh.RetryAfter.Should().Be(TimeSpan.FromHours(15), "it's 09:00 UTC");
+        eleventh.Reason.Should().Be("Today's ten fan matches have been played. The next slot opens at midnight UTC.");
+        DayCount().Should().Be(10);
+        _job.Verify(j => j.StartAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(10));
 
         _time.Advance(TimeSpan.FromHours(15));
         (await Launcher().LaunchAsync(_match, null, CancellationToken.None)).Outcome.Should().Be(LaunchOutcome.Accepted);

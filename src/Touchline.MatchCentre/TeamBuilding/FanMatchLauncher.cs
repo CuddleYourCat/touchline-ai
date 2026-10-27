@@ -236,7 +236,7 @@ internal sealed partial class FanMatchLauncher(
     private static MatchLaunch DayFull(DateTimeOffset now, int limit)
     {
         var midnight = new DateTimeOffset(DateOnly.FromDateTime(now.UtcDateTime).AddDays(1), TimeOnly.MinValue, TimeSpan.Zero);
-        var played = limit == 5 ? "five" : limit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var played = limit switch { 5 => "five", 10 => "ten", _ => limit.ToString(System.Globalization.CultureInfo.InvariantCulture) };
         return new MatchLaunch(
             LaunchOutcome.Busy, null, midnight - now, $"Today's {played} fan matches have been played. The next slot opens at midnight UTC.");
     }

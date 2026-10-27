@@ -138,7 +138,7 @@ public sealed partial class ProducerRecap
                 ModelFailures.ThrowIfFiltered(response);
                 var (headline, text) = Parse(response);
 
-                var unknown = RosterGuardrail.FindUnknownNames($"{headline}\n{text}", sheet.AllowedPlayerNames, sheet.OtherKnownNames);
+                var unknown = RosterGuardrail.FindUnknownNamesInProse($"{headline}\n{text}", sheet.AllowedPlayerNames, sheet.OtherKnownNames);
                 if (unknown.Count == 0)
                 {
                     return new ProducedRecap(new MatchRecap(matchId, headline, text, viewer.Mode, viewer.Language, CommentarySource.Model), FromModel: true);

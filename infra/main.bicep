@@ -263,7 +263,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
     sku: { name: 'PerGB2018' }
     retentionInDays: 30
     workspaceCapping: {
-      dailyQuotaGb: json('0.1') // hard cap on ingestion, to protect the £30 budget
+      dailyQuotaGb: json('0.2') // hard cap on ingestion, to protect the budget: ten fan matches a day at about 14 MB each (ADR-032 amendment)
     }
   }
 }

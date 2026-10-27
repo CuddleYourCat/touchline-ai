@@ -83,4 +83,26 @@ public sealed class RosterGuardrailTests
     public void A_translation_with_an_unknown_name_mid_sentence_is_caught() =>
         RosterGuardrail.FindUnknownNames("Gran pase de Haaland", _roster, _others, ["Great pass from Okafor."])
             .Should().Equal("Haaland");
+
+    // Prose (the recap): ordinary words opening a sentence in any language or mode aren't names.
+    [TestCase("Victoria cómoda para North Bank FC. Después del descanso, Okafor amplió la ventaja.")]
+    [TestCase("Large victoire de North Bank FC. Ensuite, Mensah a doublé la mise.")]
+    [TestCase("North Bank FC won 2-0. Pressing in the second half told. Expected goals favoured them.")]
+    [TestCase("Possession was even. Clinical finishing from Okafor settled it.")]
+    public void Prose_opening_sentences_with_ordinary_words_passes(string text)
+    {
+        RosterGuardrail.FindUnknownNamesInProse(text, _roster, _others).Should().BeEmpty();
+        RosterGuardrail.FindUnknownNames(text, _roster, _others).Should().NotBeEmpty("the strict check flags these openers");
+    }
+
+    [TestCase("Marco Rossi scored the winner.", "Rossi")]
+    [TestCase("Okafor set it up. A late cross found Ivo Bellingford at the back post.", "Ivo Bellingford")]
+    [TestCase("Victoria para North Bank FC. El pase llegó a Bellingford en el minuto 80.", "Bellingford")]
+    public void Prose_still_catches_unknown_names_after_the_first_word_or_mid_sentence(string text, string expected) =>
+        RosterGuardrail.FindUnknownNamesInProse(text, _roster, _others).Should().Equal(expected);
+
+    [Test]
+    public void Prose_with_roster_and_team_names_passes() =>
+        RosterGuardrail.FindUnknownNamesInProse("Tom Okafor scored. North Bank FC held on at Harbour Lane.", _roster, _others)
+            .Should().BeEmpty();
 }

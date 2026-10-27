@@ -1230,7 +1230,7 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 - **`POST /api/matches` starts an exhibition.** It names the home and away teams and, for each, an optional team sheet: a starting eleven and up to 7 substitutes, all from that team's squad. Without a sheet, the engine picks its default eleven. Anyone can pick a sheet for any team: a team sheet is for one match, not an edit to the team.
 - **Sheet rules:** exactly 11 distinct starters with exactly one goalkeeper, and a bench of 0 to 7 distinct players not in the eleven, every player in the squad. Bans don't apply: they're served in fixtures (ADR-025), and fan matches are exhibitions. `MatchdaySheetRules` still takes an unavailable list for when fixtures use sheets. The formation shown is derived from the eleven's positions (for example 4-4-2).
 - **The full pipeline plays it.** The Match Centre writes a match request to Cosmos DB and starts the simulator job (ADR-024) with the request's ID, so fan matches get the event pipeline, the agents and commentary like any other. The Match Centre's identity needs a role that can start the job.
-- **Limits.** At most one fan match is live at once, and at most 5 a day (`MatchCentre:FanMatches`). Beyond either, the response is `429` with `Retry-After` and a plain message. Each match is about 14 MB of telemetry against the 0.1 GB daily cap (ADR-011), so the daily limit also protects monitoring.
+- **Limits.** At most one fan match is live at once, and at most 5 a day (`MatchCentre:FanMatches`; ten from 27 Oct, see the amendment below). Beyond either, the response is `429` with `Retry-After` and a plain message. Each match is about 14 MB of telemetry against the 0.1 GB daily cap (ADR-011; 0.2 GB from 27 Oct), so the daily limit also protects monitoring.
 - **Double-clicks are safe.** An optional `Idempotency-Key` header returns the same match for a repeated request.
 - **The bench is stored, not yet used.** The engine plays the chosen eleven. Substitutions are a backlog slice, built only if time allows; until then the UI shows the bench as named substitutes.
 - **The response** is `202 Accepted`, with the match ID, its status (`Scheduled`), its stream URL and a `Location` header. The match appears in `GET /api/matches` and streams like any other.
@@ -1248,6 +1248,9 @@ How does a fan pick a line-up and kick off a match between any two teams, and wh
 - **The engine needs a change** to take a chosen eleven instead of picking its own (lane H).
 - **A starting role for the Match Centre** widens its permissions: scope it to the one job.
 - **Five matches a day is a low ceiling.** It's configuration, and can rise if the telemetry cap does.
+
+**Amendment (27 Oct, Tracey's call): ten a day for judging**
+- **`DailyLimit` defaults to 10,** so several judges a day can each start a match. The Log Analytics daily cap rises from 0.1 to 0.2 GB with it (ADR-011), because ten matches is about 140 MB of telemetry. The extra ingestion is at most about 25p a day. Fan matches stay on (the `FanMatches` flag) for judging.
 
 **As built (contract slice, 22 Oct)**
 - The endpoint validates the request and the sheets, then answers `503` ("fan matches need the live pipeline") from the demo launcher. The job launch, the request document, the limits and the idempotency store are lane work.
@@ -1480,6 +1483,12 @@ ADR-031 makes fan players archetypes and managers styles, and ADR-032 lets a fan
 - **Prompt injection:** Prompt Shields switched on in the deployments' content filter. The fan's question is wrapped as delimited user data, never in a system prompt. Agents can call read-only tools only. Rosters and names always arrive as tool results. The roster check runs on output as well.
 
 **Alternatives considered:** redacting unknown names (awkward lines); dropping the line (gaps in the feed); a separate Content Safety `shieldPrompt` call (another resource, about 100 ms and cost); role separation only (the weakest defence).
+
+**Amendment (27 Oct, Tracey's call): the recap skips sentence openers**
+- **The bug.** In Azure only one recap of six was ever the model's (Casual, English); the other five served the template. The strict check treats an unknown word opening a sentence as a possible name, and its opener lists are short and mostly English. Recap prose opens sentences with ordinary words it has no list for: `Victoria` and `Después` in Spanish, `Large` and `Ensuite` in French, `Pressing`, `Expected` and `Possession` in analyst English. Two misses per pair left the template, and the attempt marker then stopped retries.
+- **The fix.** The Producer uses `RosterGuardrail.FindUnknownNamesInProse`, which skips every sentence's first word, as the translation check already does. The rest of a run is still checked, so `Marco Rossi scored` is caught by `Rossi`, and so is any unknown capitalised word mid-sentence. The Commentator, the Analyst and the indexer keep the strict check: their lines are short and often open with a name.
+- **Trade-off.** An invented single surname as a sentence's first word (`Rossi scored.`) passes in a recap, and that includes the headline's first word. Matches recapped before this change keep their template pairs (their attempt markers are spent); the wipe before judging clears them. Ask the Analyst still uses the strict check, so a Spanish or French answer can fall back the same way (backlog). The prompt still restricts names to the data, the facts carry only roster names, and Prompt Shields stay on.
+- **Rejected:** per-language opener lists and an analytics term list. Both are whack-a-mole, and still miss the next ordinary word the model picks.
 
 ---
 
@@ -2127,7 +2136,7 @@ The match page needs to look and feel more professional before the demo. Which p
 
 ## ADR-069 — Visual system and image assets
 
-**Status:** Proposed · 26 Oct, awaiting Tracey's choice
+**Status:** Accepted · 27 Oct, Tracey's call: look A, images A, as built in #97
 
 **Question**
 The UI polish (a sci-fi broadcast look: glass panels, neon edges, a hero header and art behind the page) needs a visual system and a way to ship three generated images (two arrive with the foundation slice, the third, the offline state, with the states slice). How are they built and shipped?
@@ -2143,7 +2152,7 @@ The UI polish (a sci-fi broadcast look: glass panels, neon edges, a hero header 
 - **C. Host them outside the app** (Blob Storage, CDN). Another moving part, and a failure mode on demo day.
 
 **Decision**
-Proposed: look A, images A.
+Look A, images A.
 - **Tokens carry the theme.** `--glass`, `--glass-strong`, `--glass-edge`, `--masthead-image`, `--page-art` and `--page-art-opacity` are defined for dark and light. Light theme sets the images to `none` and the glass to opaque surfaces, so contrast does not depend on a picture.
 - **Images are decoration only.** They sit behind a dark gradient overlay and carry no information, so they have no alt text and nothing relies on them. Text over them keeps WCAG AA contrast.
 - **Fallback.** Where `backdrop-filter` is missing, glass panels fall back to the opaque surface colour.
