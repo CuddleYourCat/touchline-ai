@@ -2243,6 +2243,9 @@ A second smoke test changed these decisions:
 - **The recap shows a full-time stats card.** `HalfTimeCard` takes `phase: 'half' | 'full'` (default `half`). The full variant is titled "Full time", sits in the page flow under the final score and scorers, and summarises every momentum reading ("had the better of the match"). It is fed `detail.state` and `GET /api/matches/{id}/momentum`, fetched beside the recap. A failed momentum call only drops the momentum line; a detail with no team stats leaves the card out.
 - **Render errors show a friendly page.** The router has an `errorElement`, on a pathless route inside the layout (so the header stays) and on the layout itself as a last resort. It says something went wrong on this page, with Try again (reload) and Matches buttons, over full-bleed night-stadium artwork (`error-page-dark.webp`, `error-page-light.webp`, about 200 KB and 130 KB at 1920 px) that follows the theme, with the text on the empty left half under a readable overlay. In a dev build only, the error message sits in a collapsed details element.
 
+**Amendment 5 (27 Oct)**
+- **Unknown paths call offside.** The not-found page uses the error page's layout: "Offside!", "That page isn't where it should be. The flag's up.", and links to Matches and Teams, over its own theme-following artwork (`--not-found-art`). The unused `Placeholder` page is removed.
+
 
 ## ADR-072 — Kick-off checks fan matches first; Coming Soon page
 

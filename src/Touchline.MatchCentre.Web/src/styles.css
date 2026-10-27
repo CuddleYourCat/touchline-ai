@@ -37,6 +37,7 @@
   --page-art-opacity: 0.32;
   --coming-soon-art: url('./assets/coming-soon-dark.webp');
   --error-page-art: url('./assets/error-page-dark.webp');
+  --not-found-art: url('./assets/not-found-dark.webp');
   --pitch: #145f33;
   --pitch-stripe: #1f7a44;
   --team-home: #ff5a4d;
@@ -77,6 +78,7 @@
   --page-art-opacity: 0.55;
   --coming-soon-art: url('./assets/coming-soon-light.webp');
   --error-page-art: url('./assets/error-page-light.webp');
+  --not-found-art: url('./assets/not-found-light.webp');
   --pitch: #207340;
   --pitch-stripe: #2e8a50;
   --team-home: #d7263d;
@@ -1851,6 +1853,11 @@ a.button {
 
 .error-page > * {
   max-width: 28rem;
+}
+
+/* The not-found page shares the error page's layout, over its own artwork. */
+.not-found-page {
+  background-image: var(--not-found-art);
 }
 .error-page-actions {
   display: flex;
