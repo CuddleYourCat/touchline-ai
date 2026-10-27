@@ -442,6 +442,7 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
             overlays={shown.overlays}
             replay={replaying}
             highlightPlayerId={selected ? selected.p.id : null}
+            halfTime={shown.state.halfTime && !shown.fullTime}
             homeName={homeName}
             awayName={awayName}
             homeKit={homeKit}

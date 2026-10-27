@@ -38,16 +38,11 @@ export const defaultReplaySpeed = 10;
 /** How many events before the chosen one a replay starts, so the build-up shows (the server's `BuildUp`). */
 export const replayBuildUp = 2;
 
-/** The half-time pause in match seconds (ADR-066), before dividing by the speed. */
-const halfTimeMatchSeconds = 15 * 60;
-
-/** The shortest half-time pause, so the card can be read at any speed (ADR-066). */
-const minHalfTimeMs = 15_000;
-
-/** The half-time pause at a speed: `max(15 min / speed, 15 s)`. */
-export function halfTimePauseMs(speed: number): number {
-  return Math.max((halfTimeMatchSeconds / speed) * 1000, minHalfTimeMs);
-}
+/**
+ * A replay's half-time pause: long enough to read the half-time card, short enough not to look stuck (ADR-071
+ * amendment 3). It was 15 match minutes divided by the speed, 90 s at the default, which looked like a crash.
+ */
+export const halfTimePauseMs = 10_000;
 
 /** Seconds on a match clock reading. The second half counts on from 45:00, so the halves share one scale. */
 function clockSeconds(clock: LiveState['clock']): number {
@@ -133,7 +128,7 @@ const idle = (matchId: string): ReplayView => ({ matchId, status: 'idle', match:
  * `fromMinute`, which the server resolves the same way), with `replay=true` so every shape comes back and the players
  * move as they did. The messages are buffered and played on a client clock: each event plays its match-time gap after
  * the one before, divided by `speed` (the match speed; 10 by default), and the first half's `PeriodEnd` holds for
- * `max(15 min / speed, 15 s)` as at half time live (ADR-066). Every message goes through the live view's reducer, so
+ * {@link halfTimePauseMs} while the half-time card shows. Every message goes through the live view's reducer, so
  * `match` has positions, ball, score, moments, overlays and shapes exactly as live had them.
  *
  * The replay ends on its own, back to `idle`, when its playhead reaches the live edge of a live match (catching up with
@@ -231,7 +226,7 @@ export function useMatchReplay(
 
       const waitBefore = (next: Frame): number => {
         if (!previous) return 0;
-        if (isFirstHalfEnd(previous)) return halfTimePauseMs(pace);
+        if (isFirstHalfEnd(previous)) return halfTimePauseMs;
         const from = frameSeconds(previous);
         const to = frameSeconds(next);
         return from === null || to === null ? 0 : (Math.max(0, to - from) / pace) * 1000;

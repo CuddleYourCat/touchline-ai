@@ -2234,6 +2234,10 @@ A second smoke test changed these decisions:
 - **UI audit fixes:** on desktop Ask the Analyst docks as a slide-over that covers the Moments column (measured from the column; phones keep the near-full-width panel); the `Template` tag is gone from moment cards; the momentum panel is not drawn until there are readings, and its grid row closes; the pitch frame has a soft inner shadow and a 1px edge (darker in the light theme); key moments' Replay buttons use the accent colour; shirt numbers sit in a fixed-width, right-aligned, tabular column in the line-ups and the club squad.
 - **The open player card's player is ringed on the pitch** (audit item A): the card stays on the right, and a pulsing cyan ring marks that player's token, still under reduced motion, so the fan can find them. Tracey chose this over moving the card into the line-ups drawer.
 
+**Amendment 3 (27 Oct)**
+- **A replay's half-time pause is 10 s.** It was 15 match minutes divided by the replay speed, 90 s at the default, which looked like a crash. Ten seconds is enough to read the half-time card.
+- **The pitch is empty at half time,** live and in a replay: no player tokens and no ball while `halfTime` is on, because the teams are off the pitch.
+
 ## ADR-072 — Kick-off checks fan matches first; Coming Soon page
 
 **Status:** Accepted · 27 Oct 2026, decided by Tracey ("the check should be first, show a Coming Soon holding page")

@@ -265,9 +265,8 @@ describe('useMatchReplay', () => {
     expect(result.current.match?.shape).toEqual(shape);
   });
 
-  it('pauses at the first half’s end for max(15 min / speed, 15 s)', () => {
-    expect(halfTimePauseMs(10)).toBe(90_000);
-    expect(halfTimePauseMs(100)).toBe(15_000);
+  it('pauses at the first half’s end for 10 s', () => {
+    expect(halfTimePauseMs).toBe(10_000);
 
     const { result } = replayOf(liveAt());
     act(() => result.current.start({ period: 'FirstHalf', minute: 47 }));
@@ -280,7 +279,7 @@ describe('useMatchReplay', () => {
     advance(1000);
     expect(sequenceOf(result.current)).toBe(61);
 
-    advance(89_999);
+    advance(9_999);
     expect(sequenceOf(result.current)).toBe(61);
     advance(1);
     expect(sequenceOf(result.current)).toBe(62);
@@ -301,10 +300,10 @@ describe('useMatchReplay', () => {
     advance(1000);
     expect(sequenceOf(result.current)).toBe(61);
     expect(result.current.match?.state.halfTime).toBe(true);
-    advance(60_000);
+    advance(8_000);
     expect(result.current.match?.state.halfTime).toBe(true);
 
-    advance(30_000);
+    advance(2_000);
     expect(sequenceOf(result.current)).toBe(62);
     expect(result.current.match?.state.halfTime).toBeFalsy();
   });

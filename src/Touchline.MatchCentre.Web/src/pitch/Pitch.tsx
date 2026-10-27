@@ -40,6 +40,8 @@ export interface PitchProps {
   replay?: boolean;
   /** The player whose card is open, whose token gets a ring so the fan can find them on the pitch. */
   highlightPlayerId?: string | null;
+  /** True at half time, when the players are off the pitch: no tokens and no ball are drawn. */
+  halfTime?: boolean;
 }
 
 // One empty bench for every pitch without one, so the default doesn't defeat the memo.
@@ -123,6 +125,7 @@ export const Pitch = memo(function Pitch({
   awayKit = null,
   replay = false,
   highlightPlayerId = null,
+  halfTime = false,
 }: PitchProps) {
   const reducedMotion = useReducedMotion();
   const players = useMemo(
@@ -182,6 +185,9 @@ export const Pitch = memo(function Pitch({
                   );
                 })}
               </g>
+              {/* At half time the teams are in the dressing rooms, so the pitch is empty. */}
+              {!halfTime && (
+              <>
               <g className="pitch-players">
                 {shape?.positions.map((p) => {
                   const at = toSvg(p);
@@ -225,6 +231,8 @@ export const Pitch = memo(function Pitch({
                     </circle>
                   ))}
               </g>
+              </>
+              )}
             </svg>
             {overlays && <OverlayToast overlays={overlays} homeName={homeName} awayName={awayName} />}
           </div>

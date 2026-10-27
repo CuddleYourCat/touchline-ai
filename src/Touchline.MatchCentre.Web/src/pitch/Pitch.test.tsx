@@ -70,6 +70,19 @@ describe('Pitch', () => {
     expect(screen.getByText('Modelled positions, not tracking data')).toBeInTheDocument();
   });
 
+  it('draws no players and no ball at half time, and brings them back after', () => {
+    const pass = event(20);
+    const { rerender } = render(
+      <Pitch shape={shape(20)} ballPath={ballPathOf(pass)} events={[pass]} homeLineup={lineup('h')} awayLineup={lineup('a')} halfTime />,
+    );
+    expect(screen.queryAllByTestId('player-dot')).toHaveLength(0);
+    expect(screen.queryByTestId('ball')).not.toBeInTheDocument();
+
+    rerender(<Pitch shape={shape(20)} ballPath={ballPathOf(pass)} events={[pass]} homeLineup={lineup('h')} awayLineup={lineup('a')} />);
+    expect(screen.getAllByTestId('player-dot')).toHaveLength(22);
+    expect(screen.getByTestId('ball')).toBeInTheDocument();
+  });
+
   it('rings only the highlighted player, and no one without a highlight', () => {
     const { rerender } = renderPitch({ shape: shape(10), highlightPlayerId: 'a3' });
 
