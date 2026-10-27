@@ -120,6 +120,23 @@ describe('RecapPage', () => {
       }) as never);
     }
 
+    it('survives a match detail with no benches, as an older server sends', async () => {
+      const noBenches = { ...withPlayers() } as Record<string, unknown>;
+      delete noBenches.homeSubstitutes;
+      delete noBenches.awaySubstitutes;
+      vi.spyOn(api, 'GET').mockImplementation(((path: string) => {
+        if (path === '/api/matches/{matchId}') return Promise.resolve(ok(noBenches));
+        if (path === '/api/matches/{matchId}/moments') return Promise.resolve(ok([goal(1, 'h9', 44, 'Home')]));
+        return Promise.resolve(ok(model));
+      }) as never);
+
+      renderPage();
+      await flush();
+
+      const home = screen.getByRole('list', { name: 'Harbourside Rovers scorers' });
+      expect(within(home).getByRole('listitem')).toHaveTextContent("Kofi Marlow 45'");
+    });
+
     it('lists each side’s scorers under the result with full names, minutes and penalties, grouped per player', async () => {
       stubGoals(
         ok([

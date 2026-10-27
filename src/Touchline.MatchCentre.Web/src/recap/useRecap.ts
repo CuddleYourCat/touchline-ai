@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
-import type { MatchDetail, MomentView } from '../live/matchStreamReducer';
+import { withBenches, type MatchDetail, type MomentView } from '../live/matchStreamReducer';
 import { viewerQuery, type Viewer } from '../viewer/viewer';
 
 /** The Producer's full-time recap. */
@@ -57,7 +57,8 @@ async function fetchRecap(matchId: string, viewer: Viewer): Promise<RecapResult>
 async function fetchDetail(matchId: string): Promise<MatchDetail | 'notFound' | 'error'> {
   try {
     const { data, response } = await api.GET('/api/matches/{matchId}', { params: { path: { matchId } } });
-    if (data) return data;
+    // A server from before substitutions (ADR-064) sends no benches; the page treats them as empty, as the match page does.
+    if (data) return withBenches(data);
     return response.status === 404 ? 'notFound' : 'error';
   } catch {
     return 'error';
