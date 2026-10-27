@@ -116,6 +116,60 @@ function renderPage(id = 'm1') {
   );
 }
 
+describe('MatchPage kit colours', () => {
+  beforeEach(() => {
+    FakeEventSource.install();
+    resetMaintenanceForTests();
+    vi.spyOn(maintenanceDeps, 'fetch').mockResolvedValue(new Response(null, { status: 405 }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const team = (colours: { primary: string; secondary: string }) => ({
+    data: { team: { id: 'x', colours }, squad: [], version: 1 },
+    error: undefined,
+    response: new Response(),
+  });
+
+  it("dresses the pitch tokens in each club's kit once the team records load", async () => {
+    vi.spyOn(api, 'GET').mockImplementation(((path: string, init?: { params?: { path?: { teamId?: string } } }) => {
+      if (path === '/api/matches/{matchId}') return Promise.resolve(found(detail()));
+      if (path === '/api/teams/{teamId}') {
+        return Promise.resolve(
+          init?.params?.path?.teamId === 'h'
+            ? team({ primary: '#d62828', secondary: '#ffffff' })
+            : team({ primary: '#0b1f4f', secondary: '#ffe066' }),
+        );
+      }
+      return Promise.resolve({ data: [], error: undefined, response: new Response() });
+    }) as never);
+
+    renderPage();
+
+    const figure = (await screen.findByRole('region', { name: 'Pitch' })).querySelector('figure')!;
+    await waitFor(() => expect(figure.style.getPropertyValue('--away-rim')).toBe('#ffe066'));
+    expect(figure.style.getPropertyValue('--home-fill')).toBe('#d62828');
+    expect(figure.style.getPropertyValue('--away-fill')).toBe('#0b1f4f');
+  });
+
+  it('keeps the house colours when a team record cannot be loaded', async () => {
+    vi.spyOn(api, 'GET').mockImplementation(((path: string) => {
+      if (path === '/api/matches/{matchId}') return Promise.resolve(found(detail()));
+      if (path === '/api/teams/{teamId}') return Promise.reject(new Error('down'));
+      return Promise.resolve({ data: [], error: undefined, response: new Response() });
+    }) as never);
+
+    renderPage();
+
+    const figure = (await screen.findByRole('region', { name: 'Pitch' })).querySelector('figure')!;
+    expect(figure.style.getPropertyValue('--home-fill')).toBe('');
+    expect(figure.style.getPropertyValue('--away-fill')).toBe('');
+  });
+});
+
 describe('MatchPage', () => {
   beforeEach(() => {
     FakeEventSource.install();
@@ -137,6 +191,10 @@ describe('MatchPage', () => {
     const scoreboard = await screen.findByRole('region', { name: /^Live, 12:05, Harbourside Rovers 0/ });
     expect(within(scoreboard).getByText('LIVE')).toBeInTheDocument();
     expect(within(scoreboard).getByAltText('Harbourside Rovers crest')).toHaveAttribute('src', '/crests/h.svg');
+    expect(within(scoreboard).getByAltText('Harbourside Rovers crest').closest('.scoreboard-team')).toHaveClass(
+      'scoreboard-team-home',
+    );
+    expect(within(scoreboard).getByAltText('Harbourside Rovers crest')).toHaveAttribute('width', '52');
     expect(screen.getByText('Reason 30')).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith('/api/matches/{matchId}', { params: { path: { matchId: 'm1' } } });
     expect(streamUrl().pathname).toBe('/api/matches/m1/stream');

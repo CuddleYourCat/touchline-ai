@@ -247,6 +247,44 @@ describe('Pitch', () => {
     expect(key.querySelector('.marker-red')).not.toBeNull();
   });
 
+  it('draws home as circles and away as diamonds, and says so in the key, so colour is not the only cue', () => {
+    renderPitch({ shape: shape(10) });
+
+    const dots = screen.getAllByTestId('player-dot');
+    const home = dots.find((d) => d.classList.contains('player-home'))!;
+    const away = dots.find((d) => d.classList.contains('player-away'))!;
+    expect(home.querySelector('circle')).not.toBeNull();
+    expect(home.querySelector('polygon')).toBeNull();
+    expect(away.querySelector('polygon')).not.toBeNull();
+    expect(away.querySelector('circle')).toBeNull();
+    const key = screen.getByRole('list', { name: 'Pitch key' });
+    expect(key.querySelector('.player-home circle')).not.toBeNull();
+    expect(key.querySelector('.player-away polygon')).not.toBeNull();
+  });
+
+  it("dresses each side's tokens in its kit: shirt colour, trim rim and a readable number", () => {
+    renderPitch({
+      shape: shape(10),
+      homeKit: { primary: '#d62828', secondary: '#ffffff' },
+      awayKit: { primary: '#0b1f4f', secondary: '#ffe066' },
+    });
+
+    const figure = screen.getByRole('figure');
+    expect(figure.style.getPropertyValue('--home-fill')).toBe('#d62828');
+    expect(figure.style.getPropertyValue('--home-rim')).toBe('#ffffff');
+    expect(figure.style.getPropertyValue('--away-fill')).toBe('#0b1f4f');
+    expect(figure.style.getPropertyValue('--away-rim')).toBe('#ffe066');
+    expect(figure.style.getPropertyValue('--away-ink')).toBe('#ffffff');
+  });
+
+  it('keeps the house colours for a side with no kit', () => {
+    renderPitch({ shape: shape(10), awayKit: { primary: '#0b1f4f', secondary: '#ffe066' } });
+
+    const figure = screen.getByRole('figure');
+    expect(figure.style.getPropertyValue('--home-fill')).toBe('');
+    expect(figure.style.getPropertyValue('--away-fill')).toBe('#0b1f4f');
+  });
+
   it('marks fouls and cards', () => {
     const events = [event(1, { type: 'Foul', end: null }), event(2, { type: 'Card', card: 'Yellow', end: null }), event(3, { type: 'Card', card: 'Red', end: null })];
 

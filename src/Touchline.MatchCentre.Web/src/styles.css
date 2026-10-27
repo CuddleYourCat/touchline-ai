@@ -35,8 +35,11 @@
     url('./assets/hero-stadium.webp');
   --page-art: url('./assets/bg-hud-grid.webp');
   --page-art-opacity: 0.32;
-  --pitch: #176b3a;
-  --pitch-stripe: #1d7541;
+  --pitch: #145f33;
+  --pitch-stripe: #1f7a44;
+  --team-home: #ff5a4d;
+  --team-away: #3b9bff;
+  --neon: rgb(56 214 227 / 0.45);
 }
 
 :root[data-theme='light'] {
@@ -69,8 +72,11 @@
   --masthead-image: none;
   --page-art: none;
   --page-art-opacity: 0;
-  --pitch: #247b45;
-  --pitch-stripe: #2b854c;
+  --pitch: #207340;
+  --pitch-stripe: #2e8a50;
+  --team-home: #d7263d;
+  --team-away: #1f6fd1;
+  --neon: transparent;
 }
 
 :root {
@@ -82,9 +88,20 @@
   --radius-lg: 12px;
   --gutter: 20px;
   --transition-fast: 160ms cubic-bezier(0.16, 1, 0.3, 1);
-  --pitch-home: #ff8a1f;
-  --pitch-away: #38d6e3;
+  /* The pitch is green in both themes, so its player colours are the dark-theme team colours, not the themed ones. */
+  --pitch-home: #ff5a4d;
+  --pitch-away: #3b9bff;
+  --pitch-home-rim: #ffe1dd;
+  --pitch-away-rim: #d4e9ff;
   --pitch-ink: #080d1a;
+  --pitch-trail: #5ee5f0;
+  --pitch-shot: #ffb347;
+}
+
+/* The grey-pitch accessibility option: the grass goes grey in both themes, and the mowing stripes stay. */
+:root[data-pitch='grey'] {
+  --pitch: #4a515c;
+  --pitch-stripe: #5c6470;
 }
 
 *,
@@ -575,7 +592,19 @@ code,
 .scoreboard {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--glass);
+  border-color: var(--glass-edge);
+  box-shadow:
+    var(--shadow-md),
+    var(--shadow-glow);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .scoreboard {
+    backdrop-filter: blur(10px);
+  }
 }
 
 .scoreboard-teams {
@@ -600,6 +629,88 @@ code,
   font-size: 2.2rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The match page's HUD scoreboard, one compact band: each club's crest beside its name, the status pill, clock and
+ * score between them, and the venue underneath. The recap's final score reuses the two classes above, so the HUD
+ * styling is scoped.
+ */
+.scoreboard .scoreboard-team {
+  flex-direction: row;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 3px solid var(--team-edge, var(--line-strong));
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(to top, color-mix(in srgb, var(--team-edge, transparent) 20%, transparent), transparent 75%);
+  font-size: 1rem;
+  line-height: 1.2;
+  text-align: left;
+  overflow-wrap: break-word;
+}
+
+.scoreboard .scoreboard-team-away {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.scoreboard-centre {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.scoreboard-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scoreboard-status .match-clock {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+@media (max-width: 599px) {
+  .scoreboard .scoreboard-team,
+  .scoreboard .scoreboard-team-away {
+    flex-direction: column;
+    gap: 4px;
+    text-align: center;
+  }
+}
+
+.scoreboard-team-home {
+  --team-edge: var(--team-home);
+}
+
+.scoreboard-team-away {
+  --team-edge: var(--team-away);
+}
+
+.scoreboard .scoreboard-team img {
+  flex: none;
+  width: clamp(36px, 9vw, 52px);
+  height: auto;
+  filter: drop-shadow(0 3px 8px rgb(0 0 0 / 0.45));
+}
+
+.scoreboard .scoreboard-score {
+  font-size: clamp(1.7rem, 6vw, 2.6rem);
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 0 18px var(--neon);
+}
+
+.scoreboard-meta {
+  justify-content: center;
+  gap: 2px 20px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  font-size: 0.85rem;
+  opacity: 0.88;
 }
 
 .moment-list {
@@ -679,19 +790,22 @@ code,
 
 .pitch-frame {
   position: relative;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--pitch) 0,
-    var(--pitch) 40px,
-    var(--pitch-stripe) 40px,
-    var(--pitch-stripe) 80px
-  );
-  border: 1px solid var(--line-strong);
+  background:
+    radial-gradient(ellipse at 50% 50%, transparent 55%, rgb(0 0 0 / 0.3) 100%),
+    repeating-linear-gradient(
+      90deg,
+      var(--pitch) 0,
+      var(--pitch) 48px,
+      var(--pitch-stripe) 48px,
+      var(--pitch-stripe) 96px
+    );
+  border: 1px solid var(--glass-edge);
   border-radius: var(--radius-lg);
   padding: 12px;
   box-shadow:
     inset 0 0 40px rgb(0 0 0 / 0.25),
-    var(--shadow-md);
+    var(--shadow-md),
+    var(--shadow-glow);
 }
 
 .pitch {
@@ -717,10 +831,13 @@ code,
   transition: transform 0.6s ease-in-out;
 }
 
-.player circle {
+/* Every token has a rim: the club's trim colour once its kit has loaded, a pale tint of the house colour before that. The dark halo helps it show on either pitch. */
+.player circle,
+.player polygon {
+  stroke-linejoin: round;
   stroke: #ffffff;
-  stroke-width: 0.25;
-  filter: drop-shadow(0 0.5px 1.5px rgb(0 0 0 / 0.8));
+  stroke-width: 0.5;
+  filter: drop-shadow(0 0.7px 1.2px rgb(0 0 0 / 0.85));
 }
 
 .player text {
@@ -731,17 +848,24 @@ code,
   pointer-events: none;
 }
 
-.player-home circle {
-  fill: var(--pitch-home);
+.player-home circle,
+.player-home polygon {
+  fill: var(--home-fill, var(--pitch-home));
+  stroke: var(--home-rim, var(--pitch-home-rim));
 }
 
-.player-home text,
+.player-home text {
+  fill: var(--home-ink, var(--pitch-ink));
+}
+
 .player-away text {
-  fill: var(--pitch-ink);
+  fill: var(--away-ink, var(--pitch-ink));
 }
 
-.player-away circle {
-  fill: var(--pitch-away);
+.player-away circle,
+.player-away polygon {
+  fill: var(--away-fill, var(--pitch-away));
+  stroke: var(--away-rim, var(--pitch-away-rim));
 }
 
 .ball {
@@ -754,7 +878,7 @@ code,
 /* Stacked layers of one line: each is faint, and the newest stretch sits under them all, so the trail fades with age. */
 .ball-trail path {
   fill: none;
-  stroke: var(--pitch-away);
+  stroke: var(--pitch-trail);
   stroke-width: 0.45;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -763,17 +887,17 @@ code,
 
 .ball-path {
   fill: none;
-  stroke: var(--pitch-away);
+  stroke: var(--pitch-trail);
   stroke-width: 0.4;
   stroke-dasharray: 1.2 0.8;
   opacity: 0.9;
 }
 
 .ball-path-shot {
-  stroke: var(--pitch-home);
+  stroke: var(--pitch-shot);
   stroke-width: 0.5;
   stroke-dasharray: none;
-  filter: drop-shadow(0 0 1px var(--pitch-home));
+  filter: drop-shadow(0 0 1px var(--pitch-shot));
 }
 
 .marker-foul {
@@ -885,11 +1009,11 @@ code,
 }
 
 .momentum-home {
-  fill: var(--accent);
+  fill: var(--team-home);
 }
 
 .momentum-away {
-  fill: var(--highlight);
+  fill: var(--team-away);
 }
 
 .momentum-legend {
@@ -910,11 +1034,11 @@ code,
 }
 
 .momentum-key-home::before {
-  background: var(--accent);
+  background: var(--team-home);
 }
 
 .momentum-key-away::before {
-  background: var(--highlight);
+  background: var(--team-away);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -986,6 +1110,43 @@ code,
   display: flex;
   flex-direction: column;
   min-width: min(100%, 180px);
+}
+
+.viewer-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-family: var(--font-display);
+  cursor: pointer;
+}
+
+.viewer-access {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  max-width: 320px;
+}
+
+.viewer-access-icon {
+  margin-right: 4px;
+}
+
+.viewer-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.viewer-check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .segmented {

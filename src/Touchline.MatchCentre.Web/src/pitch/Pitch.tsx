@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type CSSProperties } from 'react';
 import {
   pitchLength,
   pitchWidth,
@@ -8,6 +8,7 @@ import {
   type OverlayCard,
   type ShapeView,
 } from '../live/matchStreamReducer';
+import { tokenColours, type Kit } from './kitColours';
 import { OverlayToast } from './OverlayToast';
 import { ballPathD, ballTrail, incidentMarkers, isReplayed, toSvg, trailLayers, unknownPlayerLabel } from './pitchGeometry';
 import { useReducedMotion } from './useReducedMotion';
@@ -32,6 +33,9 @@ export interface PitchProps {
   overlays?: OverlayCard[];
   homeName?: string;
   awayName?: string;
+  /** Each club's kit, so its tokens wear its shirt colour and trim. Without one, a side keeps the house red or blue. */
+  homeKit?: Kit | null;
+  awayKit?: Kit | null;
 }
 
 // One empty bench for every pitch without one, so the default doesn't defeat the memo.
@@ -68,10 +72,47 @@ const Markings = memo(function Markings() {
   );
 });
 
-/** The key to the pitch markers, drawn with the same shapes and classes as the markers themselves. */
-const PitchLegend = memo(function PitchLegend() {
+/** The CSS custom properties that dress each side's tokens in its kit; a side with no kit sets none and keeps the house colours. */
+function kitProperties(home: Kit | null, away: Kit | null): CSSProperties {
+  const properties: Record<string, string> = {};
+  for (const [side, kit] of [['home', home], ['away', away]] as const) {
+    if (!kit) continue;
+    const colours = tokenColours(kit);
+    properties[`--${side}-fill`] = colours.fill;
+    properties[`--${side}-rim`] = colours.rim;
+    properties[`--${side}-ink`] = colours.ink;
+  }
+  return properties as CSSProperties;
+}
+
+/** A player's token: a circle for home, a diamond for away. Each carries its side's rim from the CSS. */
+function PlayerShape({ team }: { team: 'Home' | 'Away' }) {
+  return team === 'Home' ? (
+    <circle r={1.7} />
+  ) : (
+    <polygon points="0,-2.4 2.4,0 0,2.4 -2.4,0" />
+  );
+}
+
+/**
+ * The key to the pitch markers, drawn with the same shapes and classes as the markers themselves. Home's players are
+ * circles and away's are diamonds, so the sides don't depend on colour to be told apart.
+ */
+const PitchLegend = memo(function PitchLegend({ homeName, awayName }: { homeName: string; awayName: string }) {
   return (
     <ul className="pitch-legend" aria-label="Pitch key">
+      <li>
+        <svg viewBox="-2.8 -2.8 5.6 5.6" width="16" height="16" aria-hidden="true" className="player player-home">
+          <PlayerShape team="Home" />
+        </svg>
+        {homeName || 'Home'}
+      </li>
+      <li>
+        <svg viewBox="-2.8 -2.8 5.6 5.6" width="16" height="16" aria-hidden="true" className="player player-away">
+          <PlayerShape team="Away" />
+        </svg>
+        {awayName || 'Away'}
+      </li>
       <li>
         <svg viewBox="-1.2 -1.2 2.4 2.4" width="12" height="12" aria-hidden="true">
           <path className="marker-foul" d="M -0.9 -0.9 L 0.9 0.9 M 0.9 -0.9 L -0.9 0.9" />
@@ -109,6 +150,8 @@ export const Pitch = memo(function Pitch({
   overlays,
   homeName = '',
   awayName = '',
+  homeKit = null,
+  awayKit = null,
 }: PitchProps) {
   const reducedMotion = useReducedMotion();
   const players = useMemo(
@@ -120,11 +163,12 @@ export const Pitch = memo(function Pitch({
   const markers = useMemo(() => incidentMarkers(events), [events]);
   const d = ballPath ? ballPathD(ballPath) : null;
   const ballAt = ballPath ? toSvg(ballPath.to) : null;
+  const kitStyle = useMemo(() => kitProperties(homeKit, awayKit), [homeKit, awayKit]);
   const replayed = ballPath !== null && isReplayed(ballPath, shape);
 
   return (
     <section className="match-section pitch-panel" aria-label="Pitch">
-      <figure className="pitch-figure">
+      <figure className="pitch-figure" style={kitStyle}>
         <div className="pitch-frame">
           <svg
             className={reducedMotion ? 'pitch pitch-still' : 'pitch'}
@@ -175,7 +219,7 @@ export const Pitch = memo(function Pitch({
                     style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
                   >
                     <title>{player ? `${player.shirtNumber} ${player.name}` : 'Player not in the line-up'}</title>
-                    <circle r={1.7} />
+                    <PlayerShape team={p.team} />
                     <text dy="0.6">{label}</text>
                   </g>
                 );
@@ -206,7 +250,7 @@ export const Pitch = memo(function Pitch({
         </div>
         <figcaption className="pitch-caption muted">
           <span>Modelled positions, not tracking data</span>
-          <PitchLegend />
+          <PitchLegend homeName={homeName} awayName={awayName} />
         </figcaption>
       </figure>
     </section>

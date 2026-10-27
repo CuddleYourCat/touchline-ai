@@ -38,7 +38,7 @@ export const MomentumBars = memo(function MomentumBars({
   const { bars, firstHalfEnd, axisEnd } = useMemo(() => momentumLayout(readings), [readings]);
 
   return (
-    <section className="match-section momentum" aria-label="Momentum">
+    <section className="match-section match-tray momentum" aria-label="Momentum">
       <h2>Momentum</h2>
       {bars.length === 0 ? (
         <p className="muted">No momentum readings yet.</p>

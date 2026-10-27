@@ -176,7 +176,7 @@ export function MatchTimeline({
     });
 
   return (
-    <section className="match-section timeline" aria-label="Match timeline">
+    <section className="match-section match-tray timeline" aria-label="Match timeline">
       <h2>Timeline</h2>
       <div className="timeline-legend muted">
         <span className="timeline-key timeline-key-home">{homeName} above</span>

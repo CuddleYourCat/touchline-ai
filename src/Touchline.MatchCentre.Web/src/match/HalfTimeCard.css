@@ -145,12 +145,12 @@
 }
 
 .half-time-bar-home {
-  background: var(--highlight);
+  background: var(--team-home);
   border-radius: 2px;
 }
 
 .half-time-bar-away {
-  background: var(--accent);
+  background: var(--team-away);
   border-radius: 2px;
 }
 

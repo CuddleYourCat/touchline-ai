@@ -10,9 +10,11 @@ import { MatchTimeline } from '../match/MatchTimeline';
 import { footballMinute, playerFacts } from '../match/playerFacts';
 import { PlayerFlyout } from '../match/PlayerFlyout';
 import { MomentumBars } from '../pitch/MomentumBars';
+import { parseKit } from '../pitch/kitColours';
 import { Pitch } from '../pitch/Pitch';
 import { momentAnchor } from '../questions/askQuestion';
 import { FanQuestions } from '../questions/FanQuestions';
+import { useTeamDetail } from '../teams/useTeams';
 import { useViewer } from '../viewer/viewer';
 import { ViewerSettings } from '../viewer/ViewerSettings';
 import './MatchPage.css';
@@ -53,34 +55,36 @@ function Scoreboard({ match, replay }: { match: LiveMatch; replay: boolean }) {
 
   return (
     <section className="panel scoreboard" aria-label={label}>
-      <div className="match-card-top">
-        {replay ? (
-          <span className="pill">Replay</span>
-        ) : match.fullTime ? (
-          <span className="pill">Full time</span>
-        ) : waiting ? (
-          <span className="pill" role="status">
-            Kick-off in a moment…
-          </span>
-        ) : (
-          <span className="pill pill-live">LIVE</span>
-        )}
-        <span className="match-clock data">{clockText(match)}</span>
-      </div>
       <div className="scoreboard-teams">
-        <span className="scoreboard-team">
-          <img src={home.crestUrl} alt={`${home.name} crest`} width={56} height={56} />
+        <span className="scoreboard-team scoreboard-team-home">
+          <img src={home.crestUrl} alt={`${home.name} crest`} width={52} height={52} />
           <span>{home.name}</span>
         </span>
-        <span className="scoreboard-score data">
-          {score.home} - {score.away}
-        </span>
-        <span className="scoreboard-team">
-          <img src={away.crestUrl} alt={`${away.name} crest`} width={56} height={56} />
+        <div className="scoreboard-centre">
+          <div className="scoreboard-status">
+            {replay ? (
+              <span className="pill">Replay</span>
+            ) : match.fullTime ? (
+              <span className="pill">Full time</span>
+            ) : waiting ? (
+              <span className="pill" role="status">
+                Kick-off in a moment…
+              </span>
+            ) : (
+              <span className="pill pill-live">LIVE</span>
+            )}
+            <span className="match-clock data">{clockText(match)}</span>
+          </div>
+          <span className="scoreboard-score data">
+            {score.home} - {score.away}
+          </span>
+        </div>
+        <span className="scoreboard-team scoreboard-team-away">
+          <img src={away.crestUrl} alt={`${away.name} crest`} width={52} height={52} />
           <span>{away.name}</span>
         </span>
       </div>
-      <div className="match-card-meta muted">
+      <div className="match-card-meta scoreboard-meta">
         <span>{match.detail.venue}</span>
         <span>Referee: {match.detail.referee}</span>
       </div>
@@ -255,6 +259,13 @@ interface ReadyMatchProps {
   momentIds: ReadonlySet<string>;
 }
 
+/** A club's kit from its team record, or null until that loads (or if it can't), when the pitch keeps the house colours. */
+function useKit(teamId: string) {
+  const { state } = useTeamDetail(teamId);
+  const colours = state.kind === 'ready' ? state.detail.team?.colours : undefined;
+  return useMemo(() => parseKit(colours), [colours]);
+}
+
 /** The match once it has loaded: the live view, or a replay of part of it in its place (ADR-067). */
 function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, saved, onViewerChange, momentIds }: ReadyMatchProps) {
   const replay = useMatchReplay(id, live, { viewer });
@@ -264,6 +275,8 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
   const homeName = detail.summary.home.name;
   const awayName = detail.summary.away.name;
   const { start } = replay;
+  const homeKit = useKit(detail.summary.home.id);
+  const awayKit = useKit(detail.summary.away.id);
 
   const momentList = useMemo(() => Object.values(shown.moments), [shown.moments]);
   // The timeline keeps every moment during a replay, so each icon stays clickable.
@@ -325,6 +338,7 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
         </Link>
       )}
       <ViewerSettings
+        showPitchOption
         viewer={saved}
         onChange={onViewerChange}
         clubs={[detail.summary.home, detail.summary.away].map(({ id: clubId, name }) => ({ id: clubId, name }))}
@@ -350,6 +364,8 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
             overlays={toastOverlays}
             homeName={homeName}
             awayName={awayName}
+            homeKit={homeKit}
+            awayKit={awayKit}
           />
           <GoalLayer
             card={goal.card}

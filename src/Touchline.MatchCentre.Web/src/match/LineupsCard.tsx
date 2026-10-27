@@ -35,8 +35,8 @@ function positionLabel(position: Player['position']): string {
 export function LineupsCard({ detail, moments, onSelectPlayer, selectedPlayerId }: LineupsCardProps) {
   const facts = useMemo(() => playerFacts(moments), [moments]);
 
-  const team = (name: string, starters: Player[], bench: Player[]) => (
-    <section className="lineups-team" aria-label={`${name} line-up`}>
+  const team = (side: 'home' | 'away', name: string, starters: Player[], bench: Player[]) => (
+    <section className={`lineups-team lineups-team-${side}`} aria-label={`${name} line-up`}>
       <h3 className="lineups-team-name">{name}</h3>
       <PlayerList players={starters} facts={facts} onSelectPlayer={onSelectPlayer} selectedPlayerId={selectedPlayerId} />
       <h4 className="lineups-subheading">Substitutes</h4>
@@ -52,8 +52,8 @@ export function LineupsCard({ detail, moments, onSelectPlayer, selectedPlayerId 
 
   return (
     <div className="lineups-card">
-      {team(detail.summary.home.name, detail.homeLineup, detail.homeSubstitutes)}
-      {team(detail.summary.away.name, detail.awayLineup, detail.awaySubstitutes)}
+      {team('home', detail.summary.home.name, detail.homeLineup, detail.homeSubstitutes)}
+      {team('away', detail.summary.away.name, detail.awayLineup, detail.awaySubstitutes)}
     </div>
   );
 }

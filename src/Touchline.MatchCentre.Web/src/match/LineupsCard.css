@@ -2,10 +2,6 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--gutter);
-  padding: var(--gutter);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
   color: var(--text);
 }
 
@@ -16,7 +12,22 @@
 }
 
 .lineups-team {
+  --team-edge: var(--accent);
   min-width: 0;
+  padding: 16px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--team-edge) 14%, var(--surface)), var(--surface) 60%);
+  border: 1px solid color-mix(in srgb, var(--team-edge) 55%, var(--line));
+  border-top: 3px solid var(--team-edge);
+  border-radius: var(--radius);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--team-edge) 18%, transparent);
+}
+
+.lineups-team-home {
+  --team-edge: var(--team-home);
+}
+
+.lineups-team-away {
+  --team-edge: var(--team-away);
 }
 
 .lineups-team-name {
@@ -24,7 +35,7 @@
   font-family: var(--font-display);
   font-size: 1.05rem;
   padding-bottom: 6px;
-  border-bottom: 2px solid var(--accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--team-edge) 60%, transparent);
 }
 
 .lineups-subheading {
@@ -56,8 +67,8 @@
 }
 
 .lineups-row-selected {
-  background: var(--grid);
-  border-left-color: var(--highlight);
+  background: color-mix(in srgb, var(--team-edge) 16%, transparent);
+  border-left-color: var(--team-edge);
 }
 
 .lineups-row-unused {

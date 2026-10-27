@@ -17,6 +17,18 @@
         // Storage blocked: stay on the dark default.
       }
     </script>
+    <script>
+      // Same again for the pitch colour: saved grey, or no choice saved and the browser asks for more contrast.
+      // Mirrors src/theme/pitchColour.ts.
+      try {
+        var pitch = localStorage.getItem('touchline.pitch');
+        if (pitch === 'grey' || (pitch !== 'green' && window.matchMedia('(prefers-contrast: more)').matches)) {
+          document.documentElement.dataset.pitch = 'grey';
+        }
+      } catch {
+        // Storage or matchMedia unavailable: stay on the green default.
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

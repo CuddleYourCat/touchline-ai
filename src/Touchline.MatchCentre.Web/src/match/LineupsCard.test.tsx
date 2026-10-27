@@ -63,6 +63,13 @@ describe('LineupsCard', () => {
     expect(screen.getByRole('img', { name: "Assist, 68'" })).toBeInTheDocument();
   });
 
+  it('marks each team panel with its side so the home and away colours apply', () => {
+    render(<LineupsCard detail={detail} moments={[]} onSelectPlayer={() => {}} />);
+
+    expect(screen.getByRole('region', { name: 'Northfield Rovers line-up' })).toHaveClass('lineups-team-home');
+    expect(screen.getByRole('region', { name: 'Eastbrook Town line-up' })).toHaveClass('lineups-team-away');
+  });
+
   it('shows a substitution on the starter and the bench player', () => {
     render(<LineupsCard detail={detail} moments={moments} onSelectPlayer={() => {}} />);
 

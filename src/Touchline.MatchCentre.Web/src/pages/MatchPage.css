@@ -22,6 +22,12 @@
   margin-top: 0;
 }
 
+/* The timeline and momentum panels reuse the home page's glass tray, with a cyan left edge. */
+.match-layout .timeline,
+.match-layout .momentum {
+  border-left-color: var(--highlight);
+}
+
 /* The pitch's positioned wrapper: the goal toast and the half-time card centre over it. */
 .match-stage {
   position: relative;

@@ -90,6 +90,16 @@ describe('RecapPage', () => {
     localStorage.clear();
   });
 
+  it('has no grey-pitch option, as the recap has no pitch', async () => {
+    stubRecaps(ok(model));
+
+    renderPage();
+    await flush();
+
+    expect(screen.getByRole('combobox', { name: 'Language' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Grey pitch' })).not.toBeInTheDocument();
+  });
+
   it('shows the model recap, paragraph by paragraph, for the saved viewer', async () => {
     localStorage.setItem(viewerStorageKey, JSON.stringify({ mode: 'Analyst', language: 'es', team: 'h' }));
     const get = stubRecaps(ok(model));
