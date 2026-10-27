@@ -57,6 +57,13 @@ internal static partial class MatchCentreEndpoints
         "fromPeriod (FirstHalf or SecondHalf) and fromMinute, given together and without after, start the replay " +
         "two events before the first event at or after that match time. The stream ends after fulltime.";
 
+    private static async Task<Ok<MatchCentreStatus>> GetStatus(IFeatureManager features, IMatchLauncher launcher, CancellationToken cancellationToken)
+    {
+        // Fan matches are open only if the kill switch is on (read per request, ADR-062) and a launcher can start them (ADR-072).
+        var fanMatches = launcher.CanLaunch && await features.IsEnabledAsync(FeatureNames.FanMatches, cancellationToken);
+        return TypedResults.Ok(new MatchCentreStatus("touchline-ai", "synthetic", fanMatches));
+    }
+
     /// <summary>Maps every API endpoint under <c>/api</c>.</summary>
     /// <param name="app">The app.</param>
     /// <returns>The app, for chaining.</returns>
@@ -64,7 +71,7 @@ internal static partial class MatchCentreEndpoints
     {
         var api = app.MapGroup("/api");
 
-        api.MapGet("/status", () => TypedResults.Ok(new MatchCentreStatus("touchline-ai", "synthetic")))
+        api.MapGet("/status", GetStatus)
             .WithName("GetStatus").WithTags("Status").WithSummary("What the service is, and where its data comes from.");
 
         var matches = api.MapGroup("/matches").WithTags("Matches");
@@ -394,4 +401,5 @@ internal static partial class MatchCentreEndpoints
 /// </summary>
 /// <param name="Service">The service name.</param>
 /// <param name="DataSource">Where match data comes from. Always <c>synthetic</c>, because every club, player and event is generated.</param>
-internal sealed record MatchCentreStatus(string Service, string DataSource);
+/// <param name="FanMatches">Whether a fan can start a match now: the <c>FanMatches</c> flag is on and the launcher can start matches (ADR-072). When false the kick-off page shows Coming Soon.</param>
+internal sealed record MatchCentreStatus(string Service, string DataSource, bool FanMatches);

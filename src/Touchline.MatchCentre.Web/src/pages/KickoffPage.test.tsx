@@ -7,8 +7,9 @@ import { KickoffPage } from './KickoffPage';
 
 const teams = [summary('north-bank-fc', 'North Bank', 'BuiltIn'), summary('fan-harbour-town', 'Harbour Town')];
 
-function stubGets() {
+function stubGets(status: unknown = ok({ service: 'touchline-ai', dataSource: 'synthetic', fanMatches: true })) {
   return vi.spyOn(api, 'GET').mockImplementation(((path: string, init?: { params?: { path?: { teamId?: string } } }) => {
+    if (path === '/api/status') return Promise.resolve(status);
     if (path === '/api/teams') return Promise.resolve(ok(teams));
     if (path === '/api/teams/{teamId}') return Promise.resolve(ok(detail(init?.params?.path?.teamId ?? 'x')));
     return Promise.resolve(fail(404));
@@ -40,6 +41,47 @@ describe('KickoffPage', () => {
     vi.restoreAllMocks();
   });
 
+  it('shows Coming Soon with links, and no form, when fan matches are off', async () => {
+    const get = stubGets(ok({ service: 'touchline-ai', dataSource: 'synthetic', fanMatches: false }));
+
+    renderAt();
+
+    expect(await screen.findByText('Coming Soon')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Matches' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Build a team' })).toHaveAttribute('href', '/teams/new');
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kick off' })).not.toBeInTheDocument();
+    expect(get).not.toHaveBeenCalledWith('/api/teams', expect.anything());
+  });
+
+  it('waits for the status before showing anything', () => {
+    vi.spyOn(api, 'GET').mockImplementation((() => new Promise(() => undefined)) as never);
+
+    renderAt();
+
+    expect(screen.getByText('Checking the pitch...')).toBeInTheDocument();
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(screen.queryByText('Coming Soon')).not.toBeInTheDocument();
+  });
+
+  it('shows the form when fan matches are on', async () => {
+    stubGets();
+
+    renderAt();
+
+    expect(await screen.findByRole('form', { name: 'Kick off a match' })).toBeInTheDocument();
+    expect(screen.queryByText('Coming Soon')).not.toBeInTheDocument();
+  });
+
+  it('shows the form when the status call fails', async () => {
+    stubGets(fail(500));
+
+    renderAt();
+
+    expect(await screen.findByRole('form', { name: 'Kick off a match' })).toBeInTheDocument();
+    expect(screen.queryByText('Coming Soon')).not.toBeInTheDocument();
+  });
+
   it('takes the teams from the query, lets the engine pick by default, and opens the match on a 202', async () => {
     stubGets();
     const post = stubPost(ok({ matchId: 'fan-m7', status: 'Scheduled', streamUrl: '/api/matches/fan-m7/stream' }, 202));
@@ -69,7 +111,7 @@ describe('KickoffPage', () => {
     expect(within(homeSide()).getByText('4-4-2')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Kick off' }));
 
-    expect(await screen.findByText('Fan matches go live when the match pipeline is switched on. Your teams and line-up are valid.')).toBeInTheDocument();
+    expect(await screen.findByText("Fan matches can't be started just now. Your picks are still here, so try again later.")).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText(/live pipeline/)).not.toBeInTheDocument();
     expect(screen.getByLabelText('Home team')).toHaveValue('fan-harbour-town');

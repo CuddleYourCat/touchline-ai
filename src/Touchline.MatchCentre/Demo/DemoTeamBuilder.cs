@@ -93,6 +93,9 @@ internal sealed class FormatOnlyNameGuard : INameGuard
 /// </summary>
 internal sealed class UnconnectedMatchLauncher : IMatchLauncher
 {
+    /// <inheritdoc />
+    public bool CanLaunch => false;
+
     /// <summary>What a fan sees in the demo build.</summary>
     public const string Reason = "Fan matches need the live match pipeline, which isn't connected in this demo build.";
 

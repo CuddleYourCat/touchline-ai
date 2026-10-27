@@ -124,4 +124,35 @@ public class FeatureFlagEndpointTests
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
     }
+
+    [TestCase(true, true, true)]
+    [TestCase(true, false, false)]
+    [TestCase(false, true, false)]
+    [TestCase(false, false, false)]
+    public async Task Status_reports_fan_matches_only_when_the_flag_is_on_and_the_launcher_can_start_them(bool flagOn, bool canLaunch, bool expected)
+    {
+        var launcher = new Mock<IMatchLauncher>();
+        launcher.SetupGet(l => l.CanLaunch).Returns(canLaunch);
+        await using var factory = Factory((FeatureNames.FanMatches, flagOn))
+            .WithWebHostBuilder(host => host.ConfigureTestServices(s => s.AddSingleton(launcher.Object)));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/api/status", UriKind.Relative));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("fanMatches").GetBoolean().Should().Be(expected);
+    }
+
+    [Test]
+    public async Task Status_reports_no_fan_matches_in_the_demo_build_whose_launcher_is_unconnected()
+    {
+        await using var factory = Factory((FeatureNames.FanMatches, true));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/api/status", UriKind.Relative));
+
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("fanMatches").GetBoolean().Should().BeFalse();
+    }
 }

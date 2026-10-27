@@ -11,10 +11,12 @@ import {
   type Role,
   type SideSheet,
 } from '../kickoff/sheet';
+import { useFanMatches } from '../kickoff/useFanMatches';
 import { errorsBySide, startMatch, type StartOutcome } from '../kickoff/startMatch';
 import { isTeamId } from '../teams/editKeys';
 import { positionPlural, type TeamSummary } from '../teams/teamDraft';
 import { useTeamDetail, useTeams, type DetailState } from '../teams/useTeams';
+import { ComingSoon } from './ComingSoon';
 
 type Side = 'home' | 'away';
 
@@ -144,7 +146,7 @@ function outcomeMessage(outcome: StartOutcome): { tone: 'quiet' | 'alert'; text:
     case 'accepted':
       return undefined;
     case 'pipelineOff':
-      return { tone: 'quiet', text: 'Fan matches go live when the match pipeline is switched on. Your teams and line-up are valid.' };
+      return { tone: 'quiet', text: "Fan matches can't be started just now. Your picks are still here, so try again later." };
     case 'busy':
       return {
         tone: 'alert',
@@ -300,8 +302,8 @@ function KickoffForm({ teams, initialHome, initialAway }: { teams: TeamSummary[]
   );
 }
 
-/** `/kickoff`: pick two teams and, optionally, their line-ups, then start a synthetic exhibition (ADR-032, ADR-054). */
-export function KickoffPage() {
+/** The kick-off form with its club list: pick two teams and, optionally, their line-ups (ADR-032, ADR-054). */
+function KickoffContent() {
   const { state, retry } = useTeams();
   const [params] = useSearchParams();
 
@@ -336,4 +338,21 @@ export function KickoffPage() {
       )}
     </div>
   );
+}
+
+/**
+ * `/kickoff`: checks first that a fan match can be started, and shows the Coming Soon page if not (ADR-072);
+ * otherwise a form to start a synthetic exhibition (ADR-032, ADR-054). If the check itself fails, the form shows.
+ */
+export function KickoffPage() {
+  const fanMatches = useFanMatches();
+
+  if (fanMatches === 'loading') {
+    return (
+      <p className="muted" aria-busy="true">
+        Checking the pitch...
+      </p>
+    );
+  }
+  return fanMatches === 'comingSoon' ? <ComingSoon /> : <KickoffContent />;
 }

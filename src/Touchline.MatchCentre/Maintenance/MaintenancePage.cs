@@ -4,7 +4,8 @@ namespace Touchline.MatchCentre.Maintenance;
 
 /// <summary>
 /// The maintenance page (ADR-060). Self-contained, with inline styles, an inline SVG and no scripts
-/// or bundles, because the app's hashed bundles aren't served while maintenance is on. The colours
+/// or bundles, because the app's hashed bundles aren't served while maintenance is on. Its background is the
+/// Coming Soon image, served from <see cref="MaintenanceMode.BackgroundPath"/> (ADR-072). The colours
 /// are the Match Centre's theme tokens, light and dark.
 /// </summary>
 public static class MaintenancePage
@@ -24,15 +25,17 @@ public static class MaintenancePage
           :root {{ --bg: #f3f6fb; --surface: #ffffff; --line: #d5ddeb; --text: #0e1830; --muted: #52617f; --accent: #c25e00; --highlight: #0b7f8a; }}
         }}
         * {{ box-sizing: border-box; }}
-        body {{ margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+        body {{ margin: 0; min-height: 100vh; display: flex; flex-direction: column; color: var(--text);
+          background: linear-gradient(rgba(6, 10, 22, .55), rgba(6, 10, 22, .8)), url("/maintenance/background.webp") center / cover fixed no-repeat, var(--bg);
           font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }}
         header {{ display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 14px 16px;
-          border-bottom: 1px solid var(--line); background: var(--surface); }}
+          border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 90%, transparent); }}
         .brand {{ font-weight: 800; letter-spacing: .12em; font-size: .9rem; }}
         .label {{ padding: .1rem .55rem; border: 1px solid var(--highlight); border-radius: 999px; color: var(--highlight);
           font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }}
         main {{ flex: 1; display: grid; place-items: center; padding: 32px 16px; }}
-        .card {{ max-width: 34rem; width: 100%; text-align: center; }}
+        .card {{ max-width: 34rem; width: 100%; padding: 2rem 1.5rem; text-align: center; border: 1px solid var(--line); border-radius: 12px;
+          background: color-mix(in srgb, var(--surface) 88%, transparent); }}
         svg {{ width: 88px; height: 88px; margin-bottom: 1.25rem; }}
         h1 {{ margin: 0 0 1rem; font-size: clamp(1.4rem, 5vw, 2rem); letter-spacing: .06em; }}
         p {{ margin: 0 auto 1.5rem; max-width: 30rem; color: var(--muted); }}

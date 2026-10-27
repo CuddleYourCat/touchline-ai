@@ -48,9 +48,25 @@ public class MaintenanceModeTests
             .And.Contain("Kick-off expected in roughly 20 mins.")
             .And.Contain("<a class=\"cta\" href=\"/\">RETURN TO TOUCHLINE</a>")
             .And.Contain("Synthetic data")
+            .And.Contain("url(\"/maintenance/background.webp\")")
             .And.NotContain("<script")
             .And.Contain("<meta http-equiv=\"refresh\" content=\"45\">")
             .And.NotContain("{{");
+    }
+
+    [Test]
+    public async Task The_background_image_is_served_during_maintenance()
+    {
+        using var response = await _client.GetAsync(new Uri(MaintenanceMode.BackgroundPath, UriKind.Relative));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/webp");
+        response.Headers.CacheControl?.Public.Should().BeTrue();
+        response.Headers.CacheControl?.MaxAge.Should().BeGreaterThanOrEqualTo(TimeSpan.FromHours(1));
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Length.Should().BeGreaterThan(1000).And.BeLessThan(250 * 1024);
+        System.Text.Encoding.ASCII.GetString(bytes, 0, 4).Should().Be("RIFF");
+        System.Text.Encoding.ASCII.GetString(bytes, 8, 4).Should().Be("WEBP");
     }
 
     [TestCase("/api/matches")]

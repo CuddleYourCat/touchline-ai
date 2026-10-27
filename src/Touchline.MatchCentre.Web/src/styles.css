@@ -1725,3 +1725,67 @@ a.button {
   margin: 0;
   padding-left: 18px;
 }
+
+/* Kick-off Coming Soon holding page (ADR-072). The background is set inline from the one imported image. */
+.coming-soon {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  min-height: min(70vh, 640px);
+  padding: 48px 20px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  text-align: center;
+  /* The text sits on a dark overlay in both themes, so it uses light colours that don't follow the toggle. */
+  color: #e7edf8;
+}
+
+.coming-soon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgb(6 10 22 / 0.55) 0%, rgb(6 10 22 / 0.82) 100%);
+}
+
+.coming-soon-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  max-width: 36rem;
+}
+
+.coming-soon-label {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 10vw, 5rem);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
+  text-shadow: 0 2px 18px rgb(0 0 0 / 0.6);
+}
+
+.coming-soon-copy {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.coming-soon-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.coming-soon .button-ghost {
+  color: #e7edf8;
+  border-color: rgb(231 237 248 / 0.6);
+}

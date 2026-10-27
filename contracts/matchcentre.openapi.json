@@ -1923,7 +1923,8 @@
       "MatchCentreStatus": {
         "required": [
           "service",
-          "dataSource"
+          "dataSource",
+          "fanMatches"
         ],
         "type": "object",
         "properties": {
@@ -1934,6 +1935,10 @@
           "dataSource": {
             "type": "string",
             "description": "Where match data comes from. Always `synthetic`, because every club, player and event is generated."
+          },
+          "fanMatches": {
+            "type": "boolean",
+            "description": "Whether a fan can start a match now: the `FanMatches` flag is on and the launcher can start matches (ADR-072). When false the kick-off page shows Coming Soon."
           }
         },
         "description": "What the Match Centre reports about itself."

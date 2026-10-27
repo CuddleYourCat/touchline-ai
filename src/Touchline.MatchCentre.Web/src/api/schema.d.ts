@@ -511,6 +511,8 @@ export interface components {
             service: string;
             /** @description Where match data comes from. Always `synthetic`, because every club, player and event is generated. */
             dataSource: string;
+            /** @description Whether a fan can start a match now: the `FanMatches` flag is on and the launcher can start matches (ADR-072). When false the kick-off page shows Coming Soon. */
+            fanMatches: boolean;
         };
         /** @description The players a team names for one match (ADR-032): a starting eleven and its substitutes. */
         MatchdaySheet: {

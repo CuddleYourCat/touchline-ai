@@ -2233,3 +2233,23 @@ A second smoke test changed these decisions:
 - **A replay tracks half time itself** (from the first half's `PeriodEnd` until the second half's first event), so the half-time card shows during the pause even if the replayed states don't carry `halfTime`.
 - **UI audit fixes:** on desktop Ask the Analyst docks as a slide-over that covers the Moments column (measured from the column; phones keep the near-full-width panel); the `Template` tag is gone from moment cards; the momentum panel is not drawn until there are readings, and its grid row closes; the pitch frame has a soft inner shadow and a 1px edge (darker in the light theme); key moments' Replay buttons use the accent colour; shirt numbers sit in a fixed-width, right-aligned, tabular column in the line-ups and the club squad.
 - **The open player card's player is ringed on the pitch** (audit item A): the card stays on the right, and a pulsing cyan ring marks that player's token, still under reduced motion, so the fan can find them. Tracey chose this over moving the card into the line-ups drawer.
+
+## ADR-072 — Kick-off checks fan matches first; Coming Soon page
+
+**Status:** Accepted · 27 Oct 2026, decided by Tracey ("the check should be first, show a Coming Soon holding page")
+
+**Context**
+A fan could pick two teams, set line-ups and click Kick off, and only then learn that fan matches weren't running. The `POST /api/matches` answered 503 when the `FanMatches` flag (ADR-062) was off, and the demo build's launcher (`UnconnectedMatchLauncher`, ADR-032) can never start a match. The page then said "Fan matches go live when the match pipeline is switched on", which was a surprise after all that effort. The maintenance page (ADR-060) was also plain, with no picture.
+
+**Decision**
+- **`GET /api/status` reports `fanMatches`.** It is true only when the `FanMatches` flag is on (read per request, as the kill switch is) and the registered `IMatchLauncher` says `CanLaunch`. `FanMatchLauncher` is true and `UnconnectedMatchLauncher` is false, so the status doesn't type-check a concrete class. The only work is the flag read, so the call stays cheap. The OpenAPI contract and `schema.d.ts` carry the new field.
+- **`/kickoff` asks first.** It fetches the status before loading clubs or showing the form, with a light "Checking the pitch..." line meanwhile. If `fanMatches` is false it shows a Coming Soon holding page: a full-bleed background image under a dark gradient (so the text reads in both themes), a large "COMING SOON" label in the display font, two calm sentences, and links to Matches and Build a team. If the status call fails, the form shows. The 503 handling on submit stays as the safety net, with its message reworded so it no longer claims the line-up is valid.
+- **One image, two uses.** `src/assets/coming-soon.webp` (about 80 KB, 1920px wide, converted from a 2.5 MB JPEG) is imported once by the Coming Soon page and embedded as an assembly resource in `Touchline.MatchCentre`, linked to that same file. Swapping the image is therefore a one-file change.
+- **The maintenance page uses it as its background.** The page has no scripts and the app's bundles aren't served during maintenance, so the short-circuit in `MaintenanceMode` serves one fixed path, `/maintenance/background.webp`, from the embedded resource with `Cache-Control: public, max-age=86400`, alongside the health probes' exemption. The page keeps its text and theme colours, with a dark gradient and translucent panels so it reads in light and dark. Every other path still gets the maintenance answer.
+
+**Consequences**
+- **A fan never fills in a form that can't be submitted** while the flag is off or the pipeline isn't connected. Turning the flag on in App Configuration opens the form on the next page load, with no deploy.
+- **The status call is now needed to see the form.** A failing call shows the form, so an outage of `/api/status` alone never hides a working feature, and a failing submit still ends in the calm banner.
+- **The cache is a day, not a year,** because the path is fixed and the file will be replaced by a purpose-made image. A browser may show the old picture on the maintenance page for up to a day after a swap.
+- **The embedded copy is read from the web app's assets folder,** so the .NET build needs that file present. The Dockerfile already copies all of `src/`.
+- **Light mode keeps a dark image treatment.** The Coming Soon text is always light on a dark overlay, regardless of the theme toggle.

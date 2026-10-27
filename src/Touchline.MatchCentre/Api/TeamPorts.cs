@@ -93,6 +93,13 @@ public sealed record MatchLaunch(LaunchOutcome Outcome, MatchAccepted? Match, Ti
 /// </summary>
 public interface IMatchLauncher
 {
+    /// <summary>
+    /// Whether this launcher can start a match at all. False for the stand-in used when the live
+    /// pipeline isn't connected (ADR-032), so <c>/api/status</c> can report that fan matches are
+    /// coming soon (ADR-072). Must be cheap and do no I/O.
+    /// </summary>
+    bool CanLaunch { get; }
+
     /// <summary>Starts a match that has already been validated.</summary>
     /// <param name="request">The match.</param>
     /// <param name="idempotencyKey">The client's key for this request, so a repeat returns the same match; or null.</param>

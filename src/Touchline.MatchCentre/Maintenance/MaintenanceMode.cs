@@ -15,6 +15,11 @@ public static class MaintenanceMode
     /// <summary>The response header that marks a maintenance answer, which <c>deploy.ps1</c> checks for.</summary>
     public const string HeaderName = "X-Touchline-Maintenance";
 
+    /// <summary>The one path that serves the maintenance page's background image (ADR-072), since the app's bundles aren't served during maintenance.</summary>
+    public const string BackgroundPath = "/maintenance/background.webp";
+
+    private const string _backgroundResource = "coming-soon.webp";
+
     private static readonly string[] _probePaths = ["/health", "/alive"];
     private static readonly string[] _apiPrefixes = ["/api", "/openapi"];
 
@@ -48,7 +53,9 @@ public static class MaintenanceMode
 
         return app.Use((context, next) => IsProbe(context.Request.Path)
             ? next(context)
-            : RespondAsync(context, options));
+            : context.Request.Path.Equals(BackgroundPath, StringComparison.OrdinalIgnoreCase)
+                ? WriteBackgroundAsync(context)
+                : RespondAsync(context, options));
     }
 
     private static bool IsProbe(PathString path) =>
@@ -56,6 +63,19 @@ public static class MaintenanceMode
 
     private static bool IsApi(PathString path) =>
         _apiPrefixes.Any(prefix => path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase));
+
+    private static async Task WriteBackgroundAsync(HttpContext context)
+    {
+        var response = context.Response;
+        response.Headers[HeaderName] = "on";
+        response.ContentType = "image/webp";
+        response.Headers.CacheControl = "public, max-age=86400";
+
+        await using var image = typeof(MaintenanceMode).Assembly.GetManifestResourceStream(_backgroundResource)
+            ?? throw new InvalidOperationException($"The embedded resource '{_backgroundResource}' is missing.");
+        response.ContentLength = image.Length;
+        await image.CopyToAsync(response.Body, context.RequestAborted);
+    }
 
     private static Task RespondAsync(HttpContext context, MaintenanceOptions options)
     {

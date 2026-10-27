@@ -37,6 +37,9 @@ internal sealed partial class FanMatchLauncher(
     IOptions<FanMatchOptions> options,
     ILogger<FanMatchLauncher> logger) : IMatchLauncher
 {
+    /// <inheritdoc />
+    public bool CanLaunch => true;
+
     /// <summary>The plain reason a fan sees when the match can't be started.</summary>
     internal const string StartFailedReason = "The match couldn't be started just now. Please try again in a moment.";
 
