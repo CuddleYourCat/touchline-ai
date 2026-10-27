@@ -51,6 +51,27 @@ describe('TeamsPage', () => {
     expect(screen.getByRole('link', { name: 'Build a team' })).toHaveAttribute('href', '/teams/new');
   });
 
+  it('links each card to its club page, edged in the accent rather than a per-club colour', async () => {
+    vi.spyOn(api, 'GET').mockResolvedValue(ok([summary('north-bank-fc', 'North Bank', 'BuiltIn')]) as never);
+
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: 'North Bank' });
+    expect(link).toHaveAttribute('href', '/teams/north-bank-fc');
+    expect(link.closest('li')?.getAttribute('style')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Play a match with North Bank' })).toBeInTheDocument();
+    expect(link.closest('a')?.querySelector('a')).toBeNull();
+  });
+
+  it('links the empty fan-made message to the builder', async () => {
+    vi.spyOn(api, 'GET').mockResolvedValue(ok([summary('north-bank-fc', 'North Bank', 'BuiltIn')]) as never);
+
+    renderPage();
+
+    const fan = await screen.findByRole('region', { name: 'Fan-made clubs' });
+    expect(within(fan).getByRole('link', { name: 'Build the first one' })).toHaveAttribute('href', '/teams/new');
+  });
+
   it('never puts an edit key in a link', async () => {
     rememberEditKey('fan-harbour-town', key);
     vi.spyOn(api, 'GET').mockResolvedValue(ok([summary('fan-harbour-town', 'Harbour Town')]) as never);

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { heldTeamIds } from '../teams/editKeys';
 import type { TeamSummary } from '../teams/teamDraft';
 import { useTeams } from '../teams/useTeams';
+import './TeamsPage.css';
 
 function TeamCard({ team, canEdit }: { team: TeamSummary; canEdit: boolean }) {
   const fan = team.origin === 'Fan';
@@ -11,28 +12,35 @@ function TeamCard({ team, canEdit }: { team: TeamSummary; canEdit: boolean }) {
       <div className="team-card-top">
         <img src={team.crestUrl} alt="" width={44} height={44} className="team-crest" />
         <div className="team-card-names">
-          <span className="team-card-name">{team.name}</span>
+          <Link className="team-card-link" to={`/teams/${encodeURIComponent(team.id)}`}>
+            <span className="team-card-name">{team.name}</span>
+          </Link>
           <span className="tag">
             <span className="data">{team.shortName}</span> &middot; {team.venue}
           </span>
         </div>
         {fan && <span className="pill">fan-made</span>}
       </div>
-      <div className="team-card-actions">
-        <Link className="button" to={`/kickoff?home=${encodeURIComponent(team.id)}`} aria-label={`Play a match with ${team.name}`}>
-          Play
-        </Link>
-        {canEdit && (
-          <Link className="button button-ghost" to={`/teams/${encodeURIComponent(team.id)}/edit`} aria-label={`Edit ${team.name}`}>
-            Edit
+      <div className="team-card-foot">
+        <div className="team-card-actions">
+          <Link className="button" to={`/kickoff?home=${encodeURIComponent(team.id)}`} aria-label={`Play a match with ${team.name}`}>
+            Play
           </Link>
-        )}
+          {canEdit && (
+            <Link className="button button-ghost" to={`/teams/${encodeURIComponent(team.id)}/edit`} aria-label={`Edit ${team.name}`}>
+              Edit
+            </Link>
+          )}
+        </div>
+        <span className="team-card-cue" aria-hidden="true">
+          Club &rarr;
+        </span>
       </div>
     </li>
   );
 }
 
-function TeamSection({ title, teams, held, empty }: { title: string; teams: TeamSummary[]; held: ReadonlySet<string>; empty: string }) {
+function TeamSection({ title, teams, held, empty }: { title: string; teams: TeamSummary[]; held: ReadonlySet<string>; empty: ReactNode }) {
   const headingId = `teams-${title.toLowerCase().replace(/\W+/g, '-')}`;
   return (
     <section className="match-section" aria-labelledby={headingId}>
@@ -52,7 +60,7 @@ function TeamSection({ title, teams, held, empty }: { title: string; teams: Team
 
 /**
  * `/teams`: the built-in clubs and the fan-made ones (ADR-031). "Your teams" are the fan teams this browser holds an
- * edit key for (ADR-053), and only they offer Edit.
+ * edit key for (ADR-053), and only they offer Edit. Each card links to the club's page.
  */
 export function TeamsPage() {
   const { state, retry } = useTeams();
@@ -105,7 +113,11 @@ export function TeamsPage() {
             title="Fan-made clubs"
             teams={state.teams.filter((t) => t.origin === 'Fan')}
             held={held}
-            empty="No fan-made clubs yet. Build the first one."
+            empty={
+              <>
+                No fan-made clubs yet. <Link to="/teams/new">Build the first one</Link>.
+              </>
+            }
           />
         </>
       )}

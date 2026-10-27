@@ -1,0 +1,99 @@
+/* A club card: a glass HUD card like the match cards, edged in the accent orange (--team-edge). */
+.team-card {
+  --team-edge: var(--accent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 14px 12px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--team-edge) 14%, var(--surface)), var(--surface) 60%);
+  border: 1px solid color-mix(in srgb, var(--team-edge) 45%, var(--line));
+  border-top: 3px solid var(--team-edge);
+  border-radius: var(--radius);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.team-card:hover,
+.team-card:focus-within {
+  transform: translateY(-3px);
+  border-color: var(--team-edge);
+  box-shadow: var(--shadow-md), 0 0 18px color-mix(in srgb, var(--team-edge) 30%, transparent);
+}
+
+/* The name link stretches over the whole card; the actions sit above it. */
+.team-card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.team-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+}
+
+.team-card-link:focus-visible {
+  outline: none;
+}
+
+.team-card-link:focus-visible::after {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+
+.team-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.team-card-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.team-card-cue {
+  flex: none;
+  font-family: var(--font-data);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition:
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.team-card:hover .team-card-cue,
+.team-card:focus-within .team-card-cue {
+  color: var(--accent);
+  transform: translateX(3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-card,
+  .team-card-cue {
+    transition: none;
+  }
+
+  .team-card:hover,
+  .team-card:focus-within,
+  .team-card:hover .team-card-cue,
+  .team-card:focus-within .team-card-cue {
+    transform: none;
+  }
+}

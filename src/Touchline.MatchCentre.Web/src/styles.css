@@ -1436,16 +1436,6 @@ code,
   gap: 12px;
 }
 
-.team-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
 .team-card-top {
   display: flex;
   align-items: center;
@@ -1470,7 +1460,6 @@ code,
   overflow-wrap: anywhere;
 }
 
-.team-card-actions,
 .builder-actions,
 .kickoff-actions,
 .builder-head-tags {
