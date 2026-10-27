@@ -46,6 +46,11 @@ public enum NotableMomentKind
 /// For a substitution, the player coming on, as the roster spells the name; null otherwise, or
 /// when no squad has him.
 /// </param>
+/// <param name="Ordinal">
+/// How many moments of this kind came before it in the match, counting both teams and the whole
+/// event stream (0 for the first corner). It only picks a template variant (ADR-070); set it with
+/// <see cref="NotableOrdinals"/>. Not on the wire and not stored.
+/// </param>
 public sealed record NotableMoment(
     NotableMomentKind Kind,
     MatchEvent Trigger,
@@ -53,7 +58,8 @@ public sealed record NotableMoment(
     TeamSide Team,
     string? PlayerName,
     string? PlayerTeam,
-    string? ReplacementName = null)
+    string? ReplacementName = null,
+    int Ordinal = 0)
 {
     /// <summary>
     /// True for a throw-in or a goal kick: it produces a moment, a low-priority card and a template
@@ -73,4 +79,26 @@ public sealed record NotableMoment(
         NotableMomentKind.Substitution => Trigger.ReplacementPlayerId,
         _ => null
     };
+}
+
+/// <summary>
+/// Numbers a match's notable moments within their kind, in event order, so the first, second and
+/// third corner pick different template variants (ADR-070). One instance per walk of a match: feed
+/// it every notable moment found, in sequence order, before any viewer filtering, so every viewer
+/// and every reader sees the same numbering.
+/// </summary>
+public sealed class NotableOrdinals
+{
+    private readonly Dictionary<NotableMomentKind, int> _seen = [];
+
+    /// <summary>The moment, numbered.</summary>
+    /// <param name="moment">The next notable moment of the match.</param>
+    /// <returns>The same moment with its ordinal within its kind.</returns>
+    public NotableMoment Number(NotableMoment moment)
+    {
+        ArgumentNullException.ThrowIfNull(moment);
+        var ordinal = _seen.GetValueOrDefault(moment.Kind);
+        _seen[moment.Kind] = ordinal + 1;
+        return moment with { Ordinal = ordinal };
+    }
 }

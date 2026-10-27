@@ -97,6 +97,7 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
         _notableAt = new NotableMoment?[events.Count];
         _notableDetector = notable ?? new NotableMomentDetector(detector, teams.Values);
         var state = MatchState.KickOff(events[0].MatchId);
+        var ordinals = new NotableOrdinals();
         for (var i = 0; i < events.Count; i++)
         {
             if (detector.Detect(events[i], state) is { } moment)
@@ -104,8 +105,9 @@ internal sealed class DemoMatchSource : IMatchReadModel, ILiveFeed
                 _moments.Add((i, moment));
                 _momentAt[i] = moment;
             }
-            else if (_notableDetector.DetectAfterKey(events[i], state) is { } notableMoment)
+            else if (_notableDetector.DetectAfterKey(events[i], state) is { } found)
             {
+                var notableMoment = ordinals.Number(found);
                 _notables.Add((i, notableMoment));
                 _notableAt[i] = notableMoment;
             }

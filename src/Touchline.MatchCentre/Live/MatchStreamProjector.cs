@@ -50,6 +50,7 @@ internal sealed partial class MatchStreamProjector
 {
     private readonly KeyMomentDetector _detector;
     private readonly NotableMomentDetector _notable;
+    private readonly NotableOrdinals _ordinals = new();
     private readonly IReadOnlyDictionary<string, TeamProfile>? _teams;
     private readonly ILogger _logger;
     private readonly List<MatchEvent> _events = [];
@@ -134,7 +135,7 @@ internal sealed partial class MatchStreamProjector
         _openWindow = window;
 
         var moment = _detector.Detect(matchEvent, _state);
-        var notable = moment is null ? _notable.DetectAfterKey(matchEvent, _state) : null;
+        var notable = moment is null && _notable.DetectAfterKey(matchEvent, _state) is { } found ? _ordinals.Number(found) : null;
         _state = _state.Apply(matchEvent);
         _events.Add(matchEvent);
 

@@ -237,6 +237,28 @@ public class CosmosMatchReadModelTests
         (await _readModel.ListMatchesAsync(MatchStatus.Scheduled, null, CancellationToken.None)).Matches.Should().BeEmpty("a stored match has kicked off");
     }
 
+    [Test]
+    public async Task The_read_model_picks_the_same_variant_as_the_live_projector_for_each_notable_moment()
+    {
+        var stored = Stored(_match.Count);
+        Store(stored);
+        _events.Setup(c => c.GetItemQueryStreamIterator(It.IsAny<QueryDefinition>(), It.IsAny<string>(), It.IsAny<QueryRequestOptions>()))
+            .Returns(() => Pages(_match));
+        var projector = new Touchline.MatchCentre.Live.MatchStreamProjector(stored.MatchId, new KeyMomentDetector(), _teams);
+        var live = _match.Select(projector.Apply)
+            .Where(p => p.Notable is not null)
+            .ToDictionary(p => p.Notable!.Trigger.Sequence, p => NotableLines.Text(p.Notable!, "en"));
+        var analyst = Viewer.Create(ViewingMode.Analyst, "en", null, null, null, _ => true, _ => true).Viewer!;
+
+        var moments = (await _readModel.GetMomentsAsync(stored.MatchId, analyst, CancellationToken.None))!
+            .Where(m => m.Tier != MomentTier.Key).ToList();
+
+        moments.Should().NotBeEmpty();
+        moments.Should().Contain(m => m.Kind == "ThrowIn").And.Contain(m => m.Kind == "GoalKick", "minor moments are checked too");
+        moments.Should().OnlyContain(m => live.ContainsKey(m.Sequence) && live[m.Sequence] == m.Commentary!.Text);
+        moments.Where(m => m.Kind == "Corner").Select(m => m.Commentary!.Text).Distinct().Should().HaveCountGreaterThan(1);
+    }
+
     private static CosmosMatchReadModel.StoredMatch Stored(int played) =>
         new(_match[0].MatchId, _match[0].MatchId, _match[0].Metadata,
             _match.Take(played).Aggregate(MatchState.KickOff(_match[0].MatchId), (state, e) => state.Apply(e)));

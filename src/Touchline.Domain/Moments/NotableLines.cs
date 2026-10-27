@@ -14,35 +14,83 @@ public static class NotableLines
     private const string _fallback = "en";
 
     // {0} is the player, {1} their club's short name, and for a substitution {2} the player
-    // coming on (ADR-064). The English row is the fallback.
-    private static readonly Dictionary<string, Dictionary<NotableMomentKind, string>> _templates = new(StringComparer.OrdinalIgnoreCase)
+    // coming on (ADR-064). For a restart, {0} and {1} are the side that conceded it, never the
+    // side that won it. Corners, throw-ins and goal kicks have three variants each (ADR-070);
+    // the first is the original line. Every language must have the same number per kind.
+    // The English row is the fallback.
+    private static readonly Dictionary<string, Dictionary<NotableMomentKind, string[]>> _templates = new(StringComparer.OrdinalIgnoreCase)
     {
         ["en"] = new()
         {
-            [NotableMomentKind.YellowCard] = "{0} ({1}) goes into the book.",
-            [NotableMomentKind.Corner] = "Corner. It came off {0} ({1}).",
-            [NotableMomentKind.Woodwork] = "Off the woodwork! {0} ({1}) is denied by the frame of the goal.",
-            [NotableMomentKind.ThrowIn] = "Throw-in. {0} ({1}) was the last to touch it.",
-            [NotableMomentKind.GoalKick] = "Goal kick. {0} ({1}) put it out.",
-            [NotableMomentKind.Substitution] = "Substitution: {2} comes on for {0} ({1})."
+            [NotableMomentKind.YellowCard] = ["{0} ({1}) goes into the book."],
+            [NotableMomentKind.Corner] =
+            [
+                "Corner. It came off {0} ({1}).",
+                "Behind for a corner, after a touch from {0} ({1}).",
+                "Out over the byline off {0} ({1}), and it's a corner."
+            ],
+            [NotableMomentKind.Woodwork] = ["Off the woodwork! {0} ({1}) is denied by the frame of the goal."],
+            [NotableMomentKind.ThrowIn] =
+            [
+                "Throw-in. {0} ({1}) was the last to touch it.",
+                "Out for a throw-in, last touched by {0} ({1}).",
+                "The ball goes out off {0} ({1}), so it's a throw-in."
+            ],
+            [NotableMomentKind.GoalKick] =
+            [
+                "Goal kick. {0} ({1}) put it out.",
+                "Out for a goal kick, off {0} ({1}).",
+                "{0} ({1}) sends it over the byline, and it's a goal kick."
+            ],
+            [NotableMomentKind.Substitution] = ["Substitution: {2} comes on for {0} ({1})."]
         },
         ["es"] = new()
         {
-            [NotableMomentKind.YellowCard] = "{0} ({1}) ve la tarjeta amarilla.",
-            [NotableMomentKind.Corner] = "Saque de esquina. El último en tocarlo fue {0} ({1}).",
-            [NotableMomentKind.Woodwork] = "¡Al palo! {0} ({1}) se queda sin gol por el marco.",
-            [NotableMomentKind.ThrowIn] = "Saque de banda. El último en tocarlo fue {0} ({1}).",
-            [NotableMomentKind.GoalKick] = "Saque de puerta. {0} ({1}) la mandó fuera.",
-            [NotableMomentKind.Substitution] = "Cambio: entra {2} por {0} ({1})."
+            [NotableMomentKind.YellowCard] = ["{0} ({1}) ve la tarjeta amarilla."],
+            [NotableMomentKind.Corner] =
+            [
+                "Saque de esquina. El último en tocarlo fue {0} ({1}).",
+                "Se va por la línea de fondo tras tocarla {0} ({1}): saque de esquina.",
+                "Córner tras un toque de {0} ({1})."
+            ],
+            [NotableMomentKind.Woodwork] = ["¡Al palo! {0} ({1}) se queda sin gol por el marco."],
+            [NotableMomentKind.ThrowIn] =
+            [
+                "Saque de banda. El último en tocarlo fue {0} ({1}).",
+                "Balón fuera por la banda tras un toque de {0} ({1}): saque de banda.",
+                "Saque de banda. La pelota salió después de tocarla {0} ({1})."
+            ],
+            [NotableMomentKind.GoalKick] =
+            [
+                "Saque de puerta. {0} ({1}) la mandó fuera.",
+                "Se va por la línea de fondo tras un toque de {0} ({1}): saque de puerta.",
+                "{0} ({1}) la manda fuera por el fondo y es saque de puerta."
+            ],
+            [NotableMomentKind.Substitution] = ["Cambio: entra {2} por {0} ({1})."]
         },
         ["fr"] = new()
         {
-            [NotableMomentKind.YellowCard] = "{0} ({1}) prend un carton jaune.",
-            [NotableMomentKind.Corner] = "Corner. Dernier contact de {0} ({1}).",
-            [NotableMomentKind.Woodwork] = "Sur le poteau ! {0} ({1}) est repoussé par le cadre.",
-            [NotableMomentKind.ThrowIn] = "Touche. Dernier contact de {0} ({1}).",
-            [NotableMomentKind.GoalKick] = "Six mètres. {0} ({1}) l'a envoyé dehors.",
-            [NotableMomentKind.Substitution] = "Remplacement : {2} entre à la place de {0} ({1})."
+            [NotableMomentKind.YellowCard] = ["{0} ({1}) prend un carton jaune."],
+            [NotableMomentKind.Corner] =
+            [
+                "Corner. Dernier contact de {0} ({1}).",
+                "Le ballon sort derrière la ligne de but après un contact de {0} ({1}) : corner.",
+                "Corner après un contact de {0} ({1})."
+            ],
+            [NotableMomentKind.Woodwork] = ["Sur le poteau ! {0} ({1}) est repoussé par le cadre."],
+            [NotableMomentKind.ThrowIn] =
+            [
+                "Touche. Dernier contact de {0} ({1}).",
+                "Le ballon sort sur le côté après un contact de {0} ({1}) : touche.",
+                "Touche. La balle est sortie après un contact de {0} ({1})."
+            ],
+            [NotableMomentKind.GoalKick] =
+            [
+                "Six mètres. {0} ({1}) l'a envoyé dehors.",
+                "Le ballon sort derrière la ligne de but après un contact de {0} ({1}) : six mètres.",
+                "{0} ({1}) l'envoie derrière la ligne de but, et ce sera six mètres."
+            ],
+            [NotableMomentKind.Substitution] = ["Remplacement : {2} entre à la place de {0} ({1})."]
         }
     };
 
@@ -81,8 +129,16 @@ public static class NotableLines
     /// <summary>The languages the catalogue is written in: English, Spanish and French (ADR-045).</summary>
     public static IReadOnlyList<string> Languages { get; } = ["en", "es", "fr"];
 
+    /// <summary>How many variants a kind has in a language (the same in every language).</summary>
+    /// <param name="kind">The kind of moment.</param>
+    /// <param name="language">A catalogue language tag; one it doesn't have counts as English.</param>
+    /// <returns>The number of named lines, at least 1.</returns>
+    public static int VariantCount(NotableMomentKind kind, string language) =>
+        _templates[_templates.ContainsKey(BaseLanguage(language)) ? BaseLanguage(language) : _fallback][kind].Length;
+
     /// <summary>
-    /// The line for a moment in a language.
+    /// The line for a moment in a language. A kind with several variants picks one by the
+    /// moment's <see cref="NotableMoment.Ordinal"/>, so consecutive moments of a kind differ (ADR-070).
     /// </summary>
     /// <param name="moment">The moment.</param>
     /// <param name="language">
@@ -100,8 +156,9 @@ public static class NotableLines
         // both names, so it never prints one name and a gap.
         var named = moment is { PlayerName: not null, PlayerTeam: not null }
             && (moment.Kind != NotableMomentKind.Substitution || moment.ReplacementName is not null);
+        var variants = _templates[key][moment.Kind];
         return named
-            ? string.Format(CultureInfo.InvariantCulture, _templates[key][moment.Kind], moment.PlayerName, moment.PlayerTeam, moment.ReplacementName)
+            ? string.Format(CultureInfo.InvariantCulture, variants[Math.Max(0, moment.Ordinal) % variants.Length], moment.PlayerName, moment.PlayerTeam, moment.ReplacementName)
             : _anonymous[key][moment.Kind];
     }
 

@@ -170,6 +170,7 @@ public sealed partial class CosmosMatchReadModel(
 
         var moments = new List<MomentView>();
         var state = MatchState.KickOff(matchId);
+        var ordinals = new NotableOrdinals();
         foreach (var matchEvent in events)
         {
             // The processor skips sequences it lost (MatchEventProcessor), so the stored events
@@ -184,12 +185,19 @@ public sealed partial class CosmosMatchReadModel(
                 var line = CommentarySelection.Pick(lines[MomentIds.For(matchId, matchEvent.Sequence)], viewer.Mode, viewer.Language);
                 moments.Add(MomentViews.From(moment, matchId, line));
             }
-            else if (notableDetector.DetectAfterKey(matchEvent, state) is { } notableMoment && (!notableMoment.IsMinor || viewer.Mode == ViewingMode.Analyst))
+            else if (notableDetector.DetectAfterKey(matchEvent, state) is { } found)
             {
+                // Number every notable moment on the full stream before the viewer filter, so
+                // every viewer sees the same variant (ADR-070).
+                var notableMoment = ordinals.Number(found);
+
                 // A notable moment's line is a template worked out here, so it needs no stored commentary.
                 // A minor moment is listed for the Analyst only (ADR-055).
-                var line = CommentarySelection.Pick(NotableLines.For(notableMoment, matchId), viewer.Mode, viewer.Language);
-                moments.Add(MomentViews.From(notableMoment, matchId, line));
+                if (!notableMoment.IsMinor || viewer.Mode == ViewingMode.Analyst)
+                {
+                    var line = CommentarySelection.Pick(NotableLines.For(notableMoment, matchId), viewer.Mode, viewer.Language);
+                    moments.Add(MomentViews.From(notableMoment, matchId, line));
+                }
             }
 
             state = state.Apply(matchEvent);

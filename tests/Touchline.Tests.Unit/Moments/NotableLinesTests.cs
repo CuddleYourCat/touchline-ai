@@ -140,6 +140,79 @@ public class NotableLinesTests
         checkedLines.Should().Be(74 * 6, "every notable moment, minor ones included, has a line in each language and mode");
     }
 
+    private static readonly NotableMomentKind[] _varied = [NotableMomentKind.Corner, NotableMomentKind.ThrowIn, NotableMomentKind.GoalKick];
+
+    [Test]
+    public void Every_language_has_as_many_variants_of_each_kind_as_english_and_the_restarts_have_three()
+    {
+        foreach (var kind in Enum.GetValues<NotableMomentKind>())
+        {
+            var english = NotableLines.VariantCount(kind, "en");
+            english.Should().Be(_varied.Contains(kind) ? 3 : 1, kind.ToString());
+            foreach (var language in NotableLines.Languages)
+            {
+                NotableLines.VariantCount(kind, language).Should().Be(english, $"{kind} in {language}");
+            }
+        }
+    }
+
+    [Test]
+    public void Consecutive_moments_of_a_kind_never_read_the_same_in_any_language()
+    {
+        foreach (var kind in _varied)
+        {
+            foreach (var language in NotableLines.Languages)
+            {
+                var count = NotableLines.VariantCount(kind, language);
+                for (var ordinal = 0; ordinal < count * 3; ordinal++)
+                {
+                    var now = NotableLines.Text(Moment(kind) with { Ordinal = ordinal }, language);
+                    var next = NotableLines.Text(Moment(kind) with { Ordinal = ordinal + 1 }, language);
+                    now.Should().NotBe(next, $"{kind} {language} ordinal {ordinal}");
+                }
+            }
+        }
+    }
+
+    [Test]
+    public void The_pick_is_deterministic_ordinal_zero_is_todays_line_and_the_variants_cycle()
+    {
+        NotableLines.Text(Moment(NotableMomentKind.Corner), "en").Should().Be("Corner. It came off Reggie Ashworth (NBK).");
+        var second = NotableLines.Text(Moment(NotableMomentKind.Corner) with { Ordinal = 1 }, "en");
+        NotableLines.Text(Moment(NotableMomentKind.Corner) with { Ordinal = 1 }, "en").Should().Be(second);
+        NotableLines.Text(Moment(NotableMomentKind.Corner) with { Ordinal = 4 }, "en").Should().Be(second, "three variants cycle");
+        NotableLines.Text(Moment(NotableMomentKind.Corner) with { Ordinal = 3 }, "en").Should().Be(NotableLines.Text(Moment(NotableMomentKind.Corner), "en"));
+    }
+
+    [Test]
+    public void Every_variant_fills_both_placeholders_and_leaves_no_brace()
+    {
+        foreach (var kind in _varied)
+        {
+            foreach (var language in NotableLines.Languages)
+            {
+                for (var ordinal = 0; ordinal < NotableLines.VariantCount(kind, language); ordinal++)
+                {
+                    var text = NotableLines.Text(Moment(kind) with { Ordinal = ordinal }, language);
+                    text.Should().Contain("Reggie Ashworth").And.Contain("NBK").And.NotContain("{").And.NotContain("}");
+                    NotableLines.Text(Moment(kind) with { Ordinal = ordinal, PlayerName = null }, language).Should().NotContain("{");
+                }
+            }
+        }
+    }
+
+    [Test]
+    public void Ordinals_count_per_kind_in_the_order_the_moments_arrive()
+    {
+        var ordinals = new NotableOrdinals();
+
+        ordinals.Number(Moment(NotableMomentKind.Corner)).Ordinal.Should().Be(0);
+        ordinals.Number(Moment(NotableMomentKind.ThrowIn)).Ordinal.Should().Be(0);
+        ordinals.Number(Moment(NotableMomentKind.Corner)).Ordinal.Should().Be(1);
+        ordinals.Number(Moment(NotableMomentKind.Corner)).Ordinal.Should().Be(2);
+        ordinals.Number(Moment(NotableMomentKind.ThrowIn)).Ordinal.Should().Be(1);
+    }
+
     [Test]
     public void A_null_moment_is_refused()
     {

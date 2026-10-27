@@ -2154,3 +2154,31 @@ Proposed: look A, images A.
 - **Binary files in git:** about 250 KB for the first two images, more as more are added. Cheap, but they never leave the history.
 - **No build-time image pipeline:** if the art changes, someone reruns the one-off resize by hand.
 - **Fixed background art** repaints on scroll in some browsers. It is low-contrast and masked, and reduced-motion users are unaffected because nothing animates.
+
+---
+
+## ADR-070 — Notable lines that don't repeat themselves (UI-B4)
+
+**Status:** Accepted · 26 Oct, Tracey's call (the small version, before submission)
+
+**Question**
+Consecutive notable moments of the same kind read as copies in the feed. A run of corners shows "Corner. It came off …" each time. These are template lines (ADR-046, `NotableLines`), not model lines. How should they vary without a model call, a contract change or any invented facts?
+
+**Options**
+- **A. De-duplicate identical consecutive lines.** This drops a moment's line from the feed, so a corner happens with nothing said.
+- **B. Template variants, chosen by `Trigger.Sequence`.** Stateless, but two corners in a row land on the same variant about a third of the time.
+- **C. Template variants, chosen by the moment's ordinal within its kind** (the 1st, 2nd, 3rd corner of the match) modulo the variant count. Two moments of the same kind in a row always get different variants.
+- **D. Tactical context in the agent prompts.** It doesn't apply: the repeated lines never reach a model. Agent prompts and budgets stay as they are.
+
+**Decision**
+**C.** The scope is the kinds that repeat:
+- **Corner, Throw-in and Goal kick** get three variants each, in English, Spanish and French.
+- Yellow card, Woodwork and Substitution keep one line, because they rarely come back to back.
+- The anonymous "a player" lines keep one line.
+- The ordinal is counted from the match's ordered event stream, so the live hub, the read model and the demo pick the same variant for the same moment. No viewer or subscriber state is involved.
+
+**Trade-offs**
+- **Placeholders keep their meaning.** In every variant, `{0}` and `{1}` are still the last player to touch the ball and their club. For a restart, that is the side that **conceded** it. A variant must never read as if `{1}` won the corner.
+- **The wording stays neutral.** It is filled only from roster names, with no invented tactical or medical detail. The roster guardrail is unaffected.
+- **No change on the wire or in storage.** Only the text of a `CommentaryLine` changes. Lines are built when read, not stored, so a finished match shows the new wording too.
+- **There are 27 new strings to keep in step across three languages.** A test checks every kind and language has the same number of variants.
