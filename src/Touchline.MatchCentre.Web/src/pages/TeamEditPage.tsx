@@ -232,7 +232,7 @@ function TeamEditor({ options, detail, onCreated, onReload }: TeamEditorProps) {
           return;
         case 'invalid':
           setErrors(outcome.errors);
-          setNotice({ tone: 'alert', text: 'Some details need changing. They are marked below.' });
+          setNotice({ tone: 'alert', text: 'Some details need changing. They are listed at the top of the form and marked on each field.' });
           return;
         case 'rateLimited':
           setNotice({
@@ -267,7 +267,7 @@ function TeamEditor({ options, detail, onCreated, onReload }: TeamEditorProps) {
         return;
       case 'invalid':
         setErrors(outcome.errors);
-        setNotice({ tone: 'alert', text: 'Some details need changing. They are marked below.' });
+        setNotice({ tone: 'alert', text: 'Some details need changing. They are listed at the top of the form and marked on each field.' });
         return;
       case 'stale':
         setNotice({ tone: 'alert', text: 'This team changed since you loaded it. Reload it to see the latest, then make your changes again.', reload: true });

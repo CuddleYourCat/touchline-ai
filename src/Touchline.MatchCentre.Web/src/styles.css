@@ -21,6 +21,9 @@
   --grid: rgb(56 214 227 / 0.06);
   --card-yellow: #f2c919;
   --card-red: #e5484d;
+  /* Form errors: softer than a red card on the dark navy, still well above AA contrast. */
+  --error: #f2898c;
+  --error-edge: rgb(229 72 77 / 0.55);
   --shadow: rgb(0 0 0 / 0.3);
   --shadow-sm: 0 2px 4px rgb(0 0 0 / 0.3);
   --shadow-md: 0 6px 18px rgb(0 0 0 / 0.4);
@@ -64,6 +67,8 @@
   --grid: rgb(14 24 48 / 0.04);
   --card-yellow: #d9a800;
   --card-red: #c8242b;
+  --error: #c8242b;
+  --error-edge: #c8242b;
   --shadow: rgb(14 24 48 / 0.15);
   --shadow-sm: 0 2px 4px rgb(14 24 48 / 0.06);
   --shadow-md: 0 6px 18px rgb(14 24 48 / 0.1);
@@ -1422,8 +1427,8 @@ a.button {
 }
 
 .pill-bad {
-  border-color: var(--card-red);
-  color: var(--card-red);
+  border-color: var(--error-edge);
+  color: var(--error);
 }
 
 /* Team builder (ADR-031, ADR-053) */
@@ -1517,11 +1522,11 @@ a.button {
 
 .input[aria-invalid='true'],
 .select[aria-invalid='true'] {
-  border-color: var(--card-red);
+  border-color: var(--error-edge);
 }
 
 .field-error {
-  color: var(--card-red);
+  color: var(--error);
   font-size: 0.85rem;
 }
 
@@ -1542,7 +1547,7 @@ a.button {
 .error-summary {
   margin: 0;
   padding: 12px 12px 12px 32px;
-  border-color: var(--card-red);
+  border-color: var(--error-edge);
 }
 
 .crest-picker {
