@@ -892,6 +892,35 @@ code,
   stroke: var(--away-rim, var(--pitch-away-rim));
 }
 
+/* The player whose card is open: a pulsing cyan ring round their token, so the fan can find them on the pitch. */
+.player .player-ring {
+  fill: none;
+  stroke: var(--pitch-trail);
+  stroke-width: 0.6;
+  filter: drop-shadow(0 0 1.2px var(--pitch-trail));
+  animation: player-ring-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes player-ring-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.pitch-still .player-ring {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-ring {
+    animation: none;
+  }
+}
+
 .ball {
   fill: #ffffff;
   stroke: #000000;

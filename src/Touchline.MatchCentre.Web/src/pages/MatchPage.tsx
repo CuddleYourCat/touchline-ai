@@ -441,6 +441,7 @@ function ReadyMatch({ id, live, stale, momentsFailed, retryMoments, viewer, save
             awayBench={detail.awaySubstitutes}
             overlays={shown.overlays}
             replay={replaying}
+            highlightPlayerId={selected ? selected.p.id : null}
             homeName={homeName}
             awayName={awayName}
             homeKit={homeKit}

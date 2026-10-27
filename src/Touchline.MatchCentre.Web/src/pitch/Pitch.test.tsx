@@ -70,6 +70,18 @@ describe('Pitch', () => {
     expect(screen.getByText('Modelled positions, not tracking data')).toBeInTheDocument();
   });
 
+  it('rings only the highlighted player, and no one without a highlight', () => {
+    const { rerender } = renderPitch({ shape: shape(10), highlightPlayerId: 'a3' });
+
+    const rings = screen.getAllByTestId('player-ring');
+    expect(rings).toHaveLength(1);
+    expect(rings[0]!.closest('[data-testid="player-dot"]')).toHaveAttribute('data-player', 'a3');
+    expect(rings[0]!.closest('[data-testid="player-dot"]')).toHaveClass('player-highlight');
+
+    rerender(<Pitch shape={shape(10)} ballPath={null} events={[]} homeLineup={lineup('h')} awayLineup={lineup('a')} />);
+    expect(screen.queryByTestId('player-ring')).not.toBeInTheDocument();
+  });
+
   it('draws 22 dots with shirt numbers, and moves them to a later shape', () => {
     const { rerender } = renderPitch({ shape: shape(10) });
 

@@ -38,6 +38,8 @@ export interface PitchProps {
   awayKit?: Kit | null;
   /** True while a replay is on, which puts a REPLAY badge over the pitch. */
   replay?: boolean;
+  /** The player whose card is open, whose token gets a ring so the fan can find them on the pitch. */
+  highlightPlayerId?: string | null;
 }
 
 // One empty bench for every pitch without one, so the default doesn't defeat the memo.
@@ -120,6 +122,7 @@ export const Pitch = memo(function Pitch({
   homeKit = null,
   awayKit = null,
   replay = false,
+  highlightPlayerId = null,
 }: PitchProps) {
   const reducedMotion = useReducedMotion();
   const players = useMemo(
@@ -184,15 +187,18 @@ export const Pitch = memo(function Pitch({
                   const at = toSvg(p);
                   const player = players.get(p.playerId);
                   const label = player ? String(player.shirtNumber) : unknownPlayerLabel(p.playerId);
+                  const highlighted = p.playerId === highlightPlayerId;
                   return (
                     <g
                       key={p.playerId}
                       data-testid="player-dot"
                       data-player={p.playerId}
-                      className={p.team === 'Home' ? 'player player-home' : 'player player-away'}
+                      data-highlighted={highlighted || undefined}
+                      className={`player ${p.team === 'Home' ? 'player-home' : 'player-away'}${highlighted ? ' player-highlight' : ''}`}
                       style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
                     >
                       <title>{player ? `${player.shirtNumber} ${player.name}` : 'Player not in the line-up'}</title>
+                      {highlighted && <circle className="player-ring" data-testid="player-ring" r={3.2} />}
                       <PlayerShape team={p.team} />
                       <text dy="0.6">{label}</text>
                     </g>
