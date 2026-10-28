@@ -2,7 +2,7 @@
 
 I built touchline-ai with AI coding agents (Claude Code). This page sets out what I did, what the agents did, and how I checked their work. The evidence is in this repository, mainly [DECISIONS.md](../DECISIONS.md), the tests and the commit history.
 
-Most commits on `main` carry a `Co-Authored-By: Claude` line: 77 of the 105. The other 28 lost the line when the pull request was squash-merged, and they were made the same way.
+Every commit on `main` was made this way, and almost all carry a `Co-Authored-By: Claude` line. The 28 that don't lost it when their pull request was squash-merged.
 
 ## Who did what
 
@@ -12,7 +12,7 @@ Most commits on `main` carry a `Co-Authored-By: Claude` line: 77 of the 105. The
 | **Architecture** | Every decision in DECISIONS.md: I chose an option, or overruled the recommendation | Drafted each ADR: the question, the options, a recommendation and the trade-offs |
 | **Planning** | Broke the work into stages, lanes and small slices | Scouted a lane and proposed a slice plan |
 | **Code** | Set the conventions, chose which fixes to make, and decided what to defer | Wrote the implementation and tests, and first drafts such as the KQL runbook queries in the README |
-| **Review** | Read every pull request and merged all 104 myself | Ran a code review on each slice and recorded its findings |
+| **Review** | Read every pull request and merged all 105 myself | Ran a code review on each slice and recorded its findings |
 | **Cost and quality gates** | Set the budgets, the switches that keep paid features off by default, the CI gates and the token caps | Worked inside them |
 
 ## The workflow
@@ -29,7 +29,7 @@ flowchart LR
 ```
 
 - **An ADR comes first.** Nothing that depended on a decision was built until I'd accepted it (the statuses at the top of DECISIONS.md). There are 73 ADRs, and many have amendments recording what changed once the code met reality.
-- **Then a small pull request.** 104 were merged between 16 and 28 October 2026, all squash-merged into `main`.
+- **Then a small pull request.** 105 were merged between 16 and 28 October 2026, each squash-merged into `main` as one commit. The pull requests themselves stay in a private archive.
 - **Delegation.** From 24 October the lead agent handed each slice to a subagent with a narrow list of files to read. Cheaper models took well-pinned work, and the top model kept the engine, agents, UI and every review. The builder pushed its branch, the lead agent reviewed it, and the fixes went back to the same builder.
 - **The review goes in the pull request.** From the 47th pull request onwards, each description has a *Code review* section listing the findings and what happened to each: fixed, accepted, deferred or no change. Earlier review fixes are recorded in the ADRs as "Review fixes".
 - **CI gates every pull request:** `dotnet format --verify-no-changes`, build, the .NET tests, the web app's type check, lint, build and tests, a check that the TypeScript API types match the OpenAPI contract, and a Bicep build and lint ([ci.yml](../.github/workflows/ci.yml)).
@@ -67,10 +67,10 @@ flowchart LR
 | | | How to check |
 |---|---|---|
 | Days | 13 (16 to 28 October 2026) | `git log --reverse --format=%ad --date=short` |
-| Pull requests merged | 104 | every commit on `main` after the first is one squash-merged pull request |
+| Pull requests merged | 105 | one squash commit each on `main`, from the second commit up to *Portfolio cleanup: README fact-check, not-submitted framing, no private paths* |
 | ADRs | 73 | `grep -c '^## ADR-' DECISIONS.md` |
 | Tests | 1,962 passing, 15 skipped | `dotnet test` and `npm test` in `src/Touchline.MatchCentre.Web` |
-| Commits with a Claude co-author line | 77 of 105 | `git log --format='%B%x00' \| tr -d '\n' \| tr '\0' '\n' \| grep -c "Co-Authored-By: Claude"` |
+| Commits without a Claude co-author line | 28, all squash merges that dropped it | `git log --format='%B%x00' \| tr -d '\n' \| tr '\0' '\n' \| grep -vc "Co-Authored-By: Claude"` |
 
 ## What I'd do differently
 

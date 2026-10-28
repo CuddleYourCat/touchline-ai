@@ -2159,7 +2159,7 @@ Look A, images A.
 - **Images are decoration only.** They sit behind a dark gradient overlay and carry no information, so they have no alt text and nothing relies on them. Text over them keeps WCAG AA contrast.
 - **Fallback.** Where `backdrop-filter` is missing, glass panels fall back to the opaque surface colour.
 - **Provenance.** The images are AI-generated (Gemini) with no real clubs, crests, logos or Premier League marks, checked by eye on 26 Oct. The "synthetic" badge stays in the header.
-- **Pipeline.** A one-off `sharp` run, not a build step and not a new dependency. The originals are kept in `touchline-ai.notes`, outside this repo.
+- **Pipeline.** A one-off `sharp` run, not a build step and not a new dependency. The originals are kept outside this repo.
 
 **Trade-offs**
 - **Binary files in git:** about 250 KB for the first two images, more as more are added. Cheap, but they never leave the history.
