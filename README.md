@@ -51,7 +51,7 @@ pwsh ./infra/deploy.ps1 -Action deploy
 
 `whatif` previews the changes. `deploy` creates the resource group if needed, applies the template and prints the endpoints. `teardown` deletes everything and purges the soft-deleted Key Vault and Foundry account. No keys are used anywhere: services authenticate with a managed identity, and Foundry, Event Hubs, Service Bus and Cosmos DB all have local (key) authentication disabled (ADR-024).
 
-Every push to `main` then deploys the code: the Match Centre as a new revision (ADR-013), and the event pipeline (ADR-024), which means the simulator image for the `job-simulator` Container Apps job and the Event Processor's package for the function app. The pipeline deploy reads one more repository variable, the function app's name from the deploy outputs:
+Once the repository variable `DEPLOY_TO_AZURE` is `true` (`gh variable set DEPLOY_TO_AZURE --body true`), every push to `main` deploys the code (ADR-073): the Match Centre as a new revision (ADR-013), and the event pipeline (ADR-024), which means the simulator image for the `job-simulator` Container Apps job and the Event Processor's package for the function app. The pipeline deploy reads one more repository variable, the function app's name from the deploy outputs:
 
 ```bash
 gh variable set PROCESSOR_APP_NAME --body <processorAppName output>

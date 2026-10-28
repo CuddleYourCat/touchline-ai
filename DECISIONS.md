@@ -2283,3 +2283,18 @@ A fan could pick two teams, set line-ups and click Kick off, and only then learn
 - **Built-in clubs have commissioned crests.** North Bank FC and Thames Valley United are 256 x 256 WebP files (17 KB and 18 KB), cropped from the navy-square sources, embedded in `Touchline.MatchCentre`. `GetCrest` serves them as `image/webp` with a hash ETag from the same `/crest.svg` route, so every `crestUrl` works with no client change; browsers decode an `<img>` by content, not by suffix. Fan teams still get the generated SVG. Crest images get a 12% border radius so the navy square reads as a badge tile.
 - **The Coming Soon page follows the theme in light mode too.** It used a dark navy overlay with light text in both themes, which made the light image look dark. The light theme now fades to the page background (45% to 75%) with dark text and a light label shadow, like the error and not-found pages; the dark theme is unchanged. This replaces the "Light mode keeps a dark image treatment" consequence above.
 - **Ask the Analyst follows its flag too.** `GET /api/status` also reports `fanQa` (the `FanQa` flag, kill switch included), and the match page leaves the Ask the Analyst button out while it is off. If the status call fails or is still loading, the button shows and the 503 on asking stays the safety net. Like every flag, a change in App Configuration reaches the apps at their next refresh, up to 15 minutes later, or at once on a restart.
+
+## ADR-073 — CI deploys to Azure only while DEPLOY_TO_AZURE is on
+
+**Status:** Accepted · 28 Oct 2026, decided by Tracey ("switch it off", after choosing a full teardown)
+
+**Context**
+After the hackathon the Azure environment is torn down (`deploy.ps1 -Action teardown`), which deletes the CI identity's federated credential with the resource group. Every push to `main` would then fail at the Azure sign-in in both deploy jobs (ADR-013, ADR-024), leaving a red check on a public repository.
+
+**Decision**
+- **Both deploy jobs also need the repository variable `DEPLOY_TO_AZURE` set to `true`.** Unset, or any other value, the jobs are skipped; build, test, UI and infrastructure validation still run on every push and pull request.
+- **Turning deploys back on** is a redeploy (`deploy.ps1 -Action deploy`), the deploy outputs set as repository variables as before, then `gh variable set DEPLOY_TO_AZURE --body true`.
+
+**Consequences**
+- **`main` stays green while nothing is deployed,** and the deploy jobs show as skipped rather than failed.
+- **A forgotten variable fails quietly:** with the environment back but the variable unset, pushes build but don't deploy. The README's deploy section names the variable so it isn't missed.

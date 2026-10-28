@@ -156,9 +156,11 @@ jobs:
 
   deploy:
     name: Deploy Match Centre
-    # Only after both checks pass, and only for commits that reached main.
+    # Only after both checks pass, only for commits that reached main, and only while
+    # the repository variable DEPLOY_TO_AZURE is 'true' (ADR-073): unset, the job is
+    # skipped, so main stays green while nothing is deployed.
     needs: [build-test, web, validate-infra]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_TO_AZURE == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # One deploy at a time, and never cancel one half-way through.
@@ -232,9 +234,9 @@ jobs:
 
   deploy-pipeline:
     name: Deploy event pipeline
-    # Beside the Match Centre deploy, after the same checks (ADR-024).
+    # Beside the Match Centre deploy, after the same checks and the same switch (ADR-024, ADR-073).
     needs: [build-test, web, validate-infra]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_TO_AZURE == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
