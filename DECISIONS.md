@@ -1,8 +1,10 @@
 # DECISIONS.md — Architecture Decision Records
 
-`touchline-ai` · .NET 10 + Azure AI · Inside the Game hackathon entry
+`touchline-ai` · .NET 10 + Azure AI · started for the Inside the Game hackathon (October 2026), not submitted
 
 Each entry records what was decided, what the alternatives were, why this option was chosen, and the trade-offs. Numbers are stable. A superseded decision gets a new entry rather than an edit.
+
+**Reading this log.** It was written as the project was built, between 16 and 28 October 2026, and is kept as it was. "The brief", "judging", "demo day" and "the submission" refer to the hackathon. Dates without a year are 2026. An early entry's figures can be overtaken by a later update or amendment, and where they differ, the latest entry and the code are right. `CLAUDE.md` was the private working agreement for the coding assistant and isn't part of this repository; its rules that matter here are stated in the entries that cite it.
 
 **Statuses:** *Accepted* means decided. *Proposed* means options are laid out and waiting for a decision, and no code that depends on it gets written until it's accepted.
 
@@ -2280,7 +2282,7 @@ A fan could pick two teams, set line-ups and click Kick off, and only then learn
 - **Coming Soon has its own pictures per theme.** `coming-soon-dark.webp` (131 KB) and `coming-soon-light.webp` (204 KB), 1920 px wide, are applied through a `--coming-soon-art` token set for each theme, so the default (dark) and the toggle both work. The readable overlay stays.
 - **The maintenance page keeps its own picture.** The old file is renamed `maintenance.webp` (assets folder, embedded resource `maintenance.webp`), so the two pages no longer share an image.
 - **The light theme gets page artwork.** `bg-hud-grid-light.webp` (68 KB, its native 1376 px) is the light counterpart of `bg-hud-grid.webp` behind the page.
-- **Built-in clubs have commissioned crests.** North Bank FC and Thames Valley United are 256 x 256 WebP files (17 KB and 18 KB), cropped from the navy-square sources, embedded in `Touchline.MatchCentre`. `GetCrest` serves them as `image/webp` with a hash ETag from the same `/crest.svg` route, so every `crestUrl` works with no client change; browsers decode an `<img>` by content, not by suffix. Fan teams still get the generated SVG. Crest images get a 12% border radius so the navy square reads as a badge tile.
+- **Built-in clubs have image crests.** Both were AI-generated, and one was then edited by hand. North Bank FC and Thames Valley United are 256 x 256 WebP files (17 KB and 18 KB), cropped from the navy-square sources, embedded in `Touchline.MatchCentre`. `GetCrest` serves them as `image/webp` with a hash ETag from the same `/crest.svg` route, so every `crestUrl` works with no client change; browsers decode an `<img>` by content, not by suffix. Fan teams still get the generated SVG. Crest images get a 12% border radius so the navy square reads as a badge tile.
 - **The Coming Soon page follows the theme in light mode too.** It used a dark navy overlay with light text in both themes, which made the light image look dark. The light theme now fades to the page background (45% to 75%) with dark text and a light label shadow, like the error and not-found pages; the dark theme is unchanged. This replaces the "Light mode keeps a dark image treatment" consequence above.
 - **Ask the Analyst follows its flag too.** `GET /api/status` also reports `fanQa` (the `FanQa` flag, kill switch included), and the match page leaves the Ask the Analyst button out while it is off. If the status call fails or is still loading, the button shows and the 503 on asking stays the safety net. Like every flag, a change in App Configuration reaches the apps at their next refresh, up to 15 minutes later, or at once on a restart.
 

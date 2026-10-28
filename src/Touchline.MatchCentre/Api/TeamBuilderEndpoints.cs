@@ -279,7 +279,7 @@ internal static class TeamBuilderEndpoints
             return NoTeam(teamId);
         }
 
-        // A built-in club has commissioned artwork, served from this same route (ADR-072 amendment).
+        // A built-in club has its own crest image (AI-generated), served from this same route (ADR-072 amendment).
         if (CrestArtwork.TryGet(teamId, out var artwork))
         {
             response.Headers.CacheControl = "public, max-age=300";

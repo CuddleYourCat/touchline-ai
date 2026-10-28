@@ -255,7 +255,7 @@ public class MatchEventProcessorTests
         _store.Matches[second[0].MatchId].State.LastSequence.Should().Be(40);
     }
 
-    // Chaos test (CLAUDE.md): a dependency fails part-way, then recovers.
+    // Chaos test: a dependency fails part-way, then recovers.
 
     [Test]
     public async Task If_publishing_fails_the_state_isn_t_written_so_a_retry_publishes_every_moment()

@@ -4,8 +4,8 @@
 
 .DESCRIPTION
     Reads one term per line from a text file, and adds them to the blocklist 100 at a time
-    (the API's limit for one request). The list is kept in the private notes repository and is
-    passed in by path: this repository never holds it. Re-running is safe, because adding a term
+    (the API's limit for one request). The list is passed in by path: this repository never
+    holds it. Re-running is safe, because adding a term
     that is already there updates it. Terms are never removed: to remove one, delete it in the
     portal or call the removeBlocklistItems operation.
 
@@ -13,8 +13,8 @@
 
     You need the Cognitive Services User role on the Foundry account (main.bicep grants it to the
     developer principal). The script signs in with an Entra ID token, never a key. By default it
-    asks `az account get-access-token`; if that fails (this machine fails TLS verification against
-    login.microsoftonline.com), pass a token you got another way:
+    asks `az account get-access-token`; if that fails (for example when a proxy breaks TLS
+    verification against login.microsoftonline.com), pass a token you got another way:
 
         # Azure CLI, run wherever it works:
         az account get-access-token --resource https://cognitiveservices.azure.com --query accessToken -o tsv
@@ -39,7 +39,7 @@
     Optional: when omitted, the script runs `az account get-access-token`, then tries Get-AzAccessToken.
 
 .EXAMPLE
-    ./infra/load-name-blocklist.ps1 -Endpoint https://ais-touchline-xxxx.cognitiveservices.azure.com/ -Path E:\Dev\repos\touchline-ai.notes\blocklist\real-names.txt
+    ./infra/load-name-blocklist.ps1 -Endpoint https://ais-touchline-xxxx.cognitiveservices.azure.com/ -Path ./real-names.txt
 #>
 [CmdletBinding()]
 param(

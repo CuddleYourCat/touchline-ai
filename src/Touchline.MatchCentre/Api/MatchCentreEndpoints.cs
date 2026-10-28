@@ -271,7 +271,7 @@ internal static partial class MatchCentreEndpoints
             return Unavailable("Fan questions are switched off right now. The match feed carries on; try again later.");
         }
 
-        // Untrusted input (CLAUDE.md): checked here for shape and size; the agents keep it out of
+        // Untrusted input: checked here for shape and size; the agents keep it out of
         // their system prompts.
         if (string.IsNullOrWhiteSpace(request.Question) || request.Question.Length > QuestionRequest.MaxLength)
         {

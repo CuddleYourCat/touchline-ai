@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 namespace Touchline.MatchCentre.TeamBuilding;
 
 /// <summary>
-/// The commissioned crest artwork for the built-in clubs (ADR-072 amendment). It is embedded in this assembly as
+/// The crest images for the built-in clubs, AI-generated and one edited by hand (ADR-072 amendment). It is embedded in this assembly as
 /// 256 × 256 WebP and served in place of the generated SVG, from the same crest route, so every page that follows a
 /// team's <c>crestUrl</c> picks it up with no client change.
 /// </summary>
@@ -18,7 +18,7 @@ internal static class CrestArtwork
     /// <summary>Finds the artwork for a team.</summary>
     /// <param name="teamId">The team's ID.</param>
     /// <param name="artwork">The artwork, when the team has any.</param>
-    /// <returns>True when the team has commissioned artwork.</returns>
+    /// <returns>True when the team has a crest image.</returns>
     public static bool TryGet(string teamId, out Artwork artwork) => _byTeamId.Value.TryGetValue(teamId, out artwork!);
 
     private static FrozenDictionary<string, Artwork> Load() =>

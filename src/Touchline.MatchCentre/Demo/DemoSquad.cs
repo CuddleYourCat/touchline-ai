@@ -12,7 +12,7 @@ namespace Touchline.MatchCentre.Demo;
 /// <param name="matches">The demo match source.</param>
 internal sealed class DemoSquad(DemoMatchSource matches) : ISquad
 {
-    /// <summary>Starts every stand-in answer, so the UI and the judges can tell.</summary>
+    /// <summary>Starts every stand-in answer, so the UI and its readers can tell.</summary>
     public const string StandInNotice = "The Analyst isn't connected in this demo build.";
 
     /// <inheritdoc />

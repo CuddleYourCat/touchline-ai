@@ -51,7 +51,7 @@ public sealed partial class CosmosMatchReadModel(
 {
     private readonly NotableMomentDetector _notable = notable ?? new NotableMomentDetector(detector, teams.Values);
 
-    /// <summary>Every match and event is labelled as generated (CLAUDE.md club and IP rules).</summary>
+    /// <summary>Every match and event is labelled as generated, because every club and player is fictional.</summary>
     private const string _dataSource = "synthetic";
 
     /// <summary>A page of events after a sequence, in order, with one extra to detect a next page.</summary>

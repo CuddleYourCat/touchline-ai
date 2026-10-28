@@ -445,7 +445,7 @@ resource smallModelDeployment 'Microsoft.CognitiveServices/accounts/deployments@
       version: smallModel.version
     }
     raiPolicyName: squadContentFilter.name
-    versionUpgradeOption: 'OnceCurrentVersionExpired' // no silent model change mid-judging
+    versionUpgradeOption: 'OnceCurrentVersionExpired' // no silent model change mid-demo
   }
 }
 
@@ -1501,7 +1501,7 @@ resource secretsOfficerForDeveloper 'Microsoft.Authorization/roleAssignments@202
 // ============================================================
 // Azure Managed Redis (ADR-061)
 // ============================================================
-// Balanced B0 with high availability off: half the price and no SLA, which suits a judged demo.
+// Balanced B0 with high availability off: half the price and no SLA, which suits a demo.
 // It bills by the hour from creation, so it's behind deployRedis and needs a teardown date in the
 // resource ledger. Keyless: access keys are off on the database, and the Match Centre's identity
 // signs in with Entra ID through an access policy assignment (Managed Redis has no Entra RBAC data
